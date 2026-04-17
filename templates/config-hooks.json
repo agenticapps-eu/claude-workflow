@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "context_warnings": true,
+    "pre_phase": {
+      "brainstorm_ui": true,
+      "brainstorm_architecture": true
+    },
+    "post_phase": {
+      "review": true,
+      "cso": "auth,storage,api,llm",
+      "qa": "if_dev_server"
+    },
+    "per_plan": {
+      "tdd_enforcement": true,
+      "ui_preview": true
+    }
+  }
+}
