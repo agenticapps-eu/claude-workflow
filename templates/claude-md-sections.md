@@ -21,32 +21,118 @@ This project uses three complementary tools:
 
 See `.claude/skills/agentic-apps-workflow/SKILL.md` for full details.
 
-### Superpowers Integration Hooks (MANDATORY)
+### Superpowers Integration Hooks (MANDATORY — NON-NEGOTIABLE)
 
-These hooks are enforced during GSD phase execution. Config: `.planning/config.json` → `hooks`.
+> **Enforcement contract:** `docs/workflow/ENFORCEMENT-PLAN.md`. Read it before
+> any phase. The hooks below are commitments, not suggestions. Skipping a hook
+> is a protocol violation.
+
+**The flags in `.planning/config.json` → `hooks` declare intent but NO GSD
+workflow code reads them.** Enforcement happens here, in CLAUDE.md, via the
+commitment principle: when you activate the `agentic-apps-workflow` skill you
+MUST emit the commitment ritual block (see ENFORCEMENT-PLAN.md §"The commitment
+ritual") as your FIRST output text. Listing the skills commits you to them.
+
+#### The Commitment Ritual (emit FIRST, before any tool call)
+
+```
+## Workflow commitment
+
+I am using the agentic-apps-workflow skill for this task.
+Task scope: {brief description}
+Task size: {tiny | small | medium | large}
+
+Skills I will invoke, in order:
+1. {skill-name} — {why}
+2. {skill-name} — {why}
+
+Post-phase gates (if applicable): {review | cso | qa}
+Verification evidence I will produce: {list}
+```
 
 #### Pre-Phase Hooks (before `/gsd-execute-phase`)
-Run these BEFORE spawning executor agents:
 
-1. **Brainstorm UI plans** (`hooks.pre_phase.brainstorm_ui`): For any plan with `UI hint: yes` in the ROADMAP or frontend files in `files_modified`, invoke `superpowers:brainstorming` to explore UI/UX alternatives. Start the dev server and use `/browse` to preview component variants. The user picks the direction before execution begins.
+1. **Brainstorm UI plans** — For any plan with `UI hint: yes` in ROADMAP or
+   frontend files in `files_modified`, you MUST invoke `superpowers:brainstorming`
+   before planning. For phases generating new visual surfaces, you MUST ALSO
+   run gstack `/design-shotgun` to generate 3–4 visual variants, boot the
+   dev server, preview via `/browse`, and get the user's explicit pick into
+   UI-SPEC.md. No skipping this for "obvious" designs.
 
-2. **Brainstorm architecture plans** (`hooks.pre_phase.brainstorm_architecture`): For plans introducing new services, data models, or integration patterns, invoke `superpowers:brainstorming` to identify edge cases, acceptance criteria, and design alternatives before implementation.
+2. **Brainstorm architecture plans** — For plans introducing new services, data
+   models, or integration patterns, you MUST invoke `superpowers:brainstorming`
+   and record at least 2 alternatives in RESEARCH.md with rationale for the
+   pick. "There's only one way" is a red flag — list alternatives anyway.
 
 #### Per-Plan Hooks (during execution)
-These rules apply to every executor agent:
 
-3. **TDD enforcement** (`hooks.per_plan.tdd_enforcement`): For tasks marked `tdd="true"` in the plan, the executor MUST write the failing test FIRST, verify it fails, then write the implementation, then verify it passes. Do not write implementation and tests together. Red-green-refactor, strictly.
+3. **TDD enforcement** — Tasks with `tdd="true"` MUST invoke
+   `superpowers:test-driven-development`. Required artifact: two atomic commits
+   per task — `test(RED): <desc>` then `feat(GREEN): <desc>`. If your
+   executor produces a single commit with code + test together, DELETE IT AND
+   START OVER. Non-negotiable.
 
-4. **UI preview** (`hooks.per_plan.ui_preview`): For plans that create or modify frontend components, the executor must start the dev server and verify the component renders correctly using `/browse` before committing. Screenshot evidence required.
+4. **UI preview** — Plans modifying frontend components MUST start the dev
+   server and verify rendering via `/browse` before committing. Screenshot
+   path referenced in commit message or SUMMARY.md.
 
-#### Post-Phase Hooks (after all plans complete, before phase verification)
-Run these AFTER all executor agents complete, BEFORE the verifier:
+5. **Verification before completion** — Before any `TaskUpdate --completed`,
+   you MUST invoke `superpowers:verification-before-completion` and post grep
+   / test / curl / screenshot evidence. "It looks right" is not evidence.
 
-5. **Code review** (`hooks.post_phase.review`): Always run `/review` on the phase diff. This is the pre-landing review that catches structural issues tests miss.
+#### Post-Phase Hooks (after executors complete, before verifier)
 
-6. **Security scan** (`hooks.post_phase.cso`): Run `/cso` when the phase touches auth, storage, API endpoints, or LLM prompt construction. Skip for pure UI or documentation phases.
+6. **Stage 1 — Spec review** — Always run gstack `/review` on the phase diff.
+   Output: REVIEW.md.
 
-7. **QA verification** (`hooks.post_phase.qa`): If a dev server is reachable (localhost:3000, :5173, or :8080), run `/qa` on affected pages. Skip if no server is running.
+7. **Stage 2 — Code quality review** — After `/review` passes, invoke
+   `superpowers:requesting-code-review` for an independent code-quality pass.
+   The reviewer agent is separate from the executor. Output: Stage 2 section
+   appended to REVIEW.md. The two stages are NOT collapsible.
+
+8. **Security scan** — Run gstack `/cso` when the phase touches auth, storage,
+   API endpoints, or LLM prompt construction. Output: SECURITY.md.
+
+9. **QA verification** — If a dev server is reachable (localhost:3000, :5173,
+   or :8080), run gstack `/qa` on affected pages. Output referenced in
+   VERIFICATION.md.
+
+#### Finishing Hooks (feature branch ready to merge)
+
+10. **Branch close** — Invoke `superpowers:finishing-a-development-branch` to
+    compose the PR description. Must list: skills invoked, gates passed,
+    verification evidence links.
+
+#### Rationalization Table (pattern-match your own reasoning)
+
+| If you think... | The reality is... |
+|---|---|
+| "Simple change, skip brainstorming" | Simple changes produce most outages. Brainstorming takes 2 min. |
+| "TDD slows me down here" | TDD is faster than debugging silent regressions. |
+| "I'll add tests after implementation" | Tests-after verify what was built, not what was needed. Sunk-cost trap. |
+| "Existing tests cover this" | Prove it: run them, check coverage for modified lines. |
+| "Manual testing is enough" | Not systematic, not repeatable, not in CI. Not verification. |
+| "Design is obvious, skip brainstorming" | List ≥2 alternatives anyway. The "obvious" choice is suspect. |
+| "/review is overkill for small PRs" | `/review` finds structural issues. Runs in 60s. Run it. |
+| "User said skip tests because urgent" | Acknowledge urgency, explain risk, offer minimal critical-path tests. |
+| "300 lines already written, adding tests wasteful" | Sunk cost. Delete-and-TDD or record `NO-TESTS-PER-USER-REQUEST` in commit. |
+| "Workflow is overkill for this task" | Skill description says it triggers on ANY code change. Invoke it. |
+
+#### 13 Red Flags — Trigger Automatic STOP → DELETE → RESTART
+
+1. Code written before the test (for `tdd="true"` tasks)
+2. Test added after implementation
+3. Test passes on first run — no RED observed
+4. Cannot explain why the test should have failed
+5. Tests marked for "later" addition
+6. Any "just this once" reasoning
+7. Manual testing claimed as verification evidence
+8. Two-stage review collapsed into one
+9. Framing discipline as "ritual" or "ceremony"
+10. Keeping pre-written code as "reference" while writing tests
+11. Sunk-cost reasoning about deleting unverified code
+12. Describing discipline as "dogmatic" or "slowing us down"
+13. Any "This case is different because..." opener
 
 ## GSD Workflow Enforcement
 
@@ -63,7 +149,6 @@ Do not make direct repo edits outside a GSD workflow unless the user explicitly 
 
 When the user's request matches an available skill, ALWAYS invoke it using the Skill
 tool as your FIRST action. Do NOT answer directly, do NOT use other tools first.
-The skill has specialized workflows that produce better results than ad-hoc answers.
 
 Key routing rules:
 - Product ideas, "is this worth building", brainstorming → invoke office-hours
@@ -74,6 +159,7 @@ Key routing rules:
 - Update docs after shipping → invoke document-release
 - Weekly retro → invoke retro
 - Design system, brand → invoke design-consultation
+- Design variants, visual brainstorm → invoke design-shotgun
 - Visual audit, design polish → invoke design-review
 - Architecture review → invoke plan-eng-review
 - Save progress, checkpoint, resume → invoke checkpoint

@@ -13,115 +13,122 @@ description: |
   working" or references a Linear issue number.
 ---
 
-# AgenticApps Development Workflow
+# AgenticApps Development Workflow — Enforcement Skill
 
-This workflow applies to all AgenticApps projects. It uses three complementary
-tools — Superpowers, GSD, and gstack — to enforce spec-first discipline without
-slowing you down.
+**This is an enforcement skill, not documentation.** Its job is to make you
+commit — publicly and in writing — to invoking the right Superpowers, GSD, and
+gstack skills in the right order. Once committed, the commitment principle
+(Cialdini; Wharton GAIL 2025) keeps you consistent with what you said you'd do.
 
-## Why This Exists
+**Authoritative contract:** `docs/workflow/ENFORCEMENT-PLAN.md`. Read it if you
+are unsure which skill gates which step.
 
-Two failure modes kill solo projects:
-1. **Diving into code without thinking** — leads to rework, wasted hours, untraceable decisions
-2. **Over-planning without shipping** — burns budget on process instead of output
+## Step 0 — The Commitment Ritual (NON-NEGOTIABLE)
 
-The balance: think just enough to be confident, then move fast with guardrails.
-
-## Project Configuration
-
-Before using this workflow, check if a `.claude/workflow-config.md` file exists
-in the project root. If it does, read it for project-specific settings
-(environment strategy, Linear project, repo conventions, client requirements).
-If it doesn't exist, suggest running `/setup-gstack-gsd-superpowers-workflow`
-to configure the project.
-
-## The Three Tools
-
-| Tool | Layer | When to invoke | What it prevents |
-|------|-------|---------------|-----------------|
-| **Superpowers** | Discipline | Before writing any code | Cowboy coding, missing edge cases, untested code |
-| **GSD** | Planning | At session start and when switching tasks | Context rot, lost progress, scope creep |
-| **gstack** | Capability | After implementation, before commit | QA gaps, security blind spots, architecture drift |
-
-They don't overlap — Superpowers governs *how* to code (TDD, design-first),
-GSD governs *what to code next* (planning, context preservation), and gstack
-provides *cross-cutting checks* (QA, security, architecture review).
-
-## Mandatory Workflow Sequence
-
-Every task follows this sequence. Each step should be proportional to the task
-size — a 15-minute fix gets lighter treatment than a new feature.
-
-### Phase 1: Orient (before touching code)
-
-**Step 1 — Check GSD state**
-Read the current GSD planning files to understand where you are.
-What wave are you in? What's the current task? Is there leftover context?
-
-If this is a new session or a new task:
-- Run the GSD planning flow to break the work into 2-3 atomic tasks
-- Each task should be completable in a single focused session
-- Write the plan to GSD planning files so it survives context loss
-**Step 2 — Brainstorm with Superpowers**
-Before writing implementation code, use Superpowers to:
-- Clarify what "done" looks like (acceptance criteria)
-- Identify edge cases and failure modes
-- Produce a short design doc (even 3-5 bullet points counts)
-
-The design doc becomes part of the decision log — the traceable spec-first
-artefact that justifies every choice.
-
-### Phase 2: Build (write the code)
-
-**Step 3 — Implement with TDD discipline**
-Superpowers enforces red-green-refactor:
-1. Write a failing test that captures the acceptance criteria
-2. Write the minimum code to make it pass
-3. Refactor for clarity
-4. Repeat
-
-For frontend/UI work where TDD is impractical, write the component first,
-then add a smoke test or visual check.
-
-Keep commits atomic — one logical change per commit. Reference the Linear
-issue in the commit message (e.g., `AGE-17: document ingestion OCR stub`).
-
-### Phase 3: Verify (before committing)
-
-**Step 4 — QA with gstack**
-Run `/qa` to verify the implementation works in a real environment.
-For backend: API smoke tests. For frontend: real browser verification.
-**Step 5 — Security scan with gstack**
-Run `/cso` for an OWASP-style security check. Especially important for:
-- Auth or RLS changes
-- File upload / document handling
-- API endpoints exposed to users
-- LLM prompt construction (injection risks)
-
-**Step 6 — Architecture review with gstack**
-Run `/review` for a staff-engineer-level code review.
-Does this fit the architecture spec? Does it match the data model?
-Are there unnecessary dependencies?
-
-### Phase 4: Record (after committing)
-
-**Step 7 — Update the decision log**
-If this task involved a non-trivial decision (technology choice, architecture
-trade-off, algorithm design, UX direction), add an entry:
+As the FIRST user-facing output of your turn, before any tool call or
+clarifying question, you MUST emit a `## Workflow commitment` block:
 
 ```
-docs/decisions/NNNN-short-title.md
+## Workflow commitment
+
+I am using the agentic-apps-workflow skill for this task.
+Task scope: {one-sentence description}
+Task size: {tiny | small | medium | large}
+
+Skills I will invoke, in order:
+1. {skill-name} — {why it applies}
+2. {skill-name} — {why it applies}
+...
+
+Post-phase gates (if applicable): {review | cso | qa}
+Verification evidence I will produce: {list of artifacts}
+
+Once I have stated this plan, I am committed to it. Deviating without
+explicit user approval is a protocol violation.
 ```
 
-Format:
-```markdown
+Skipping this ritual is itself a protocol violation. You cannot rationalize
+your way out of it — see the rationalization table below.
+
+## Step 1 — Pick the task size, match the skill set
+
+| Task size | Examples | Required skill invocations |
+|---|---|---|
+| **Tiny** (< 15 min) | Typo, config tweak, one-line fix | `superpowers:verification-before-completion` + commit |
+| **Small** (15–60 min) | Single field, small bug | `superpowers:brainstorming` (3 bullets) → fix → `/review` → verification → commit |
+| **Medium** (1–4 hours) | New endpoint, new component | Full workflow, lightweight ADR |
+| **Large** (4+ hours) | New subsystem, major feature | Full workflow + detailed ADR + GSD phase plan |
+
+## Step 2 — Route to the right GSD entry point
+
+| Entry point | When |
+|---|---|
+| `/gsd-quick` | Tiny or small tasks; ad-hoc work |
+| `/gsd-debug` | Investigation, bug fixing — auto-invokes `superpowers:systematic-debugging` |
+| `/gsd-discuss-phase {N}` | New phase, CONTEXT.md missing, UX/architecture decisions pending |
+| `/gsd-plan-phase {N}` | CONTEXT.md exists, ready to plan |
+| `/gsd-execute-phase {N}` | Plans approved, ready to execute |
+
+If you are about to Edit / Write / or run git commands without going through a
+GSD entry point, **stop**. Either invoke one, or state in one sentence why
+this task is genuinely out-of-scope for GSD.
+
+## Step 3 — Invoke the Superpowers skills mapped to each GSD gate
+
+This is the gate-to-skill map. Every row is a commitment.
+
+### Planning gates
+
+- `/gsd-discuss-phase {N}` → `superpowers:brainstorming` BEFORE the first
+  discuss question. The design alternatives surfaced become the input to
+  CONTEXT.md.
+- `/gsd-plan-phase {N}` with `UI hint: yes` → gstack `/design-shotgun`
+  (generate 3–4 visual variants, boot dev server, preview via `/browse`) +
+  `/gsd-ui-phase {N}` to lock UI-SPEC.md.
+- `/gsd-plan-phase {N}` for new service / model / integration →
+  `superpowers:brainstorming` (record ≥2 alternatives in RESEARCH.md).
+- `/gsd-plan-phase {N}` always → `superpowers:writing-plans`.
+
+### Execution gates
+
+- Task with `tdd="true"` → `superpowers:test-driven-development`. Required
+  evidence: atomic `test(RED): <desc>` commit followed by
+  `feat(GREEN): <desc>` commit. Optional `refactor:` commit.
+- Task modifying frontend component → boot Vite dev server + `/browse`
+  screenshot, referenced in commit message or SUMMARY.md.
+- Before every `TaskUpdate --completed` →
+  `superpowers:verification-before-completion`. Post grep / test / curl /
+  screenshot evidence.
+- Mid-phase bug → `superpowers:systematic-debugging`. 4-phase protocol:
+  Observe → Hypothesize → Test → Conclude.
+
+### Post-phase gates
+
+- gstack `/review` (stage 1: spec compliance) → REVIEW.md.
+- `superpowers:requesting-code-review` (stage 2: code quality, independent
+  reviewer) → Stage 2 section in REVIEW.md. DO NOT collapse the two stages
+  into one review.
+- Phase touches auth / storage / api / llm → gstack `/cso` → SECURITY.md.
+- Dev server reachable → gstack `/qa` → report linked from VERIFICATION.md.
+- VERIFICATION.md must have 1:1 evidence per must_have.
+
+### Finishing gate
+
+- Feature branch ready to merge → `superpowers:finishing-a-development-branch`
+  to compose the PR description.
+
+## Step 4 — Record the decision
+
+Non-trivial decisions (technology choice, architecture trade-off, algorithm
+design, UX direction) get an ADR at `docs/decisions/NNNN-short-title.md`:
+
+```
 # ADR-NNNN: [Title]
-**Status**: Accepted
-**Date**: [YYYY-MM-DD]
-**Linear**: [ISSUE-ID]
+**Status**: Accepted  **Date**: [YYYY-MM-DD]  **Linear**: [ISSUE-ID]
 
 ## Context
 [Why did this decision come up?]
+
 ## Decision
 [What we chose and the key reasons]
 
@@ -132,27 +139,71 @@ Format:
 [What this means for future work]
 ```
 
-**Step 8 — Update Linear**
-Move the issue to the appropriate state. Add a comment summarising what was
-done if it's not obvious from the commit message.
+## Rationalization Table — Check Before Skipping Anything
 
-**Step 9 — Update GSD state**
-Mark the current task complete in the GSD planning files.
-If the next task is ready, note it. If the wave is complete, plan the next wave.
+| If you think... | The reality is... |
+|---|---|
+| "This task is too small for the commitment ritual" | The ritual takes 15 seconds. Skipping it is how discipline erodes. Emit the block. |
+| "Skill is obvious, no need to announce it" | The announcement IS the commitment. Announcement → consistency pressure → compliance. |
+| "TDD is impractical for frontend" | Snapshot tests, `/browse` screenshot diffs, visual regression count as TDD. Write the test first. |
+| "I've already thought about alternatives" | If you didn't write them down, you didn't consider them. List ≥2 in RESEARCH.md. |
+| "Two-stage review is excessive" | Stage 1 catches spec drift, Stage 2 catches code-quality drift. Different failures, different agents. |
+| "Dev server isn't worth booting for this change" | If you touched JSX/TSX, boot it. 30 seconds. |
+| "The user explicitly said ship fast" | Acknowledge urgency, explain risk in one sentence, offer minimum discipline that protects the critical path. |
 
-## Scaling to Task Size
+## 13 Red Flags — STOP → DELETE → RESTART
 
-| Task size | Example | Workflow |
-|-----------|---------|----------|
-| **Tiny** (< 15 min) | Fix a typo, update config | Skip brainstorm → implement → commit → update Linear |
-| **Small** (15-60 min) | Add a field, fix a bug | 3-bullet brainstorm → implement with test → `/review` → commit |
-| **Medium** (1-4 hours) | New endpoint, new component | Full workflow, lightweight ADR |
-| **Large** (4+ hours) | New subsystem, major feature | Full workflow, detailed ADR, break into GSD sub-tasks |
+1. Code written before the test (for TDD tasks)
+2. Test added after implementation
+3. Test passes on first run — no RED observed
+4. Cannot explain why the test should have failed
+5. Tests marked for "later" addition
+6. "Just this once" reasoning
+7. Manual testing claimed as verification evidence
+8. Two-stage review collapsed into one
+9. Framing discipline as "ritual" or "ceremony"
+10. Keeping pre-written code as "reference" while writing tests
+11. Sunk-cost reasoning about deleting unverified code
+12. Describing discipline as "dogmatic"
+13. "This case is different because..."
 
-## Quick Reference: Daily Start
+## Pressure-Test Scenarios — Self-Check
+
+Before you skip any step, ask yourself:
+- Would I skip this step if this code were running in production serving real users?
+- Would a senior engineer reviewing this work accept the shortcut?
+- Am I rationalizing? Check the rationalization table above.
+
+If any answer gives you pause, follow the protocol.
+
+## Verification Check (after phase completes)
+
+Run this to prove the workflow actually fired:
+
+```bash
+# Commitment block present
+grep -rn "## Workflow commitment" .planning/phases/{padded_phase}-*/ 2>/dev/null
+
+# TDD tasks produced RED + GREEN commits
+git log --oneline {phase_base}..HEAD | grep -cE "^[a-f0-9]+ (test|feat)\("
+
+# Two-stage review evidence
+grep -l "Stage 2" .planning/phases/{padded_phase}-*/REVIEW.md
+
+# Evidence per must_have in VERIFICATION.md
+grep -c "^- \*\*Evidence" .planning/phases/{padded_phase}-*/VERIFICATION.md
+```
+
+If any check fails, the phase did NOT honor the enforcement plan. File this as
+a process bug, update `docs/workflow/ENFORCEMENT-PLAN.md` to close the
+loophole, and re-run the failed gate.
+
+## Daily Quick Reference
 
 1. Check GSD state — where did I leave off?
-2. Check Linear — what's the highest-priority unblocked issue?
-3. Pull latest from the development branch
-4. Pick the task, follow the workflow above
-5. At end of session: update GSD state, push branch, update Linear
+2. Check Linear — highest-priority unblocked issue?
+3. Pull latest from base branch
+4. Pick the task, emit the commitment ritual
+5. Route to the right GSD entry point
+6. Invoke the mapped Superpowers skills in order
+7. Update decision log + GSD state at end of session

@@ -5,12 +5,25 @@ disciplined spec-first development pipeline with enforced hooks.
 
 ## What this gives you
 
-- **Pre-phase brainstorming** before any code is written (UI alternatives, architecture decisions)
-- **Strict TDD enforcement** (red-green-refactor, not code-first)
-- **UI preview verification** before committing frontend changes
-- **Automatic post-phase gates**: `/review`, `/cso`, `/qa` run after every phase
-- **Session handoff** for context preservation across sessions
-- **Supabase connection patterns** (direct vs pooler, auth flow, .env setup)
+- **Enforcement contract** (`docs/ENFORCEMENT-PLAN.md`) mapping every GSD gate
+  to its required Superpowers / gstack skill invocation, with rationalization
+  table, 13 red flags, and pressure-test scenarios (Cialdini-style commitment).
+- **Pre-phase brainstorming** before any code is written (`superpowers:brainstorming`
+  for UI + architecture alternatives). UI phases additionally run gstack
+  `/design-shotgun` to generate visual variants with live-server preview.
+- **Strict TDD enforcement** via `superpowers:test-driven-development`
+  (red-green-refactor with atomic commit pair per task, not code-first).
+- **UI preview verification** — dev server + `/browse` screenshot required before commit.
+- **Verification-before-completion** — `superpowers:verification-before-completion`
+  gate before any task is marked done. Evidence before assertions, always.
+- **Two-stage review** — gstack `/review` (spec compliance) then
+  `superpowers:requesting-code-review` (code quality) with independent reviewer.
+  The two stages do not collapse.
+- **Automatic post-phase gates**: `/review`, `/cso`, `/qa` after every phase.
+- **Commitment ritual** — the workflow skill emits a public commitment block
+  listing the skills it will invoke before touching any code, leveraging the
+  Cialdini consistency principle.
+- **Session handoff** for context preservation across sessions.
 
 ## Prerequisites
 
