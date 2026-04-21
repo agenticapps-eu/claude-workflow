@@ -1,18 +1,81 @@
 {
   "hooks": {
+    "_enforcement_contract": "docs/workflow/ENFORCEMENT-PLAN.md",
+    "_note": "These hooks are declarative intent. Enforcement is in CLAUDE.md + .claude/skills/agentic-apps-workflow/SKILL.md via the commitment principle. Orchestrator code does NOT read this block today.",
     "context_warnings": true,
     "pre_phase": {
-      "brainstorm_ui": true,
-      "brainstorm_architecture": true
-    },
-    "post_phase": {
-      "review": true,
-      "cso": "auth,storage,api,llm",
-      "qa": "if_dev_server"
+      "brainstorm_ui": {
+        "enabled": true,
+        "skill": "superpowers:brainstorming",
+        "trigger": "ui_hint_yes || frontend_files_in_scope",
+        "evidence": "CONTEXT.md contains '## Design alternatives'"
+      },
+      "brainstorm_architecture": {
+        "enabled": true,
+        "skill": "superpowers:brainstorming",
+        "trigger": "new_service || new_model || new_integration",
+        "evidence": "RESEARCH.md contains 'Alternatives considered'"
+      },
+      "design_shotgun": {
+        "enabled": true,
+        "skill": "gstack:design-shotgun",
+        "trigger": "ui_hint_yes && no_ui_spec_yet",
+        "evidence": "UI-SPEC.md references variant paths + user's pick"
+      }
     },
     "per_plan": {
-      "tdd_enforcement": true,
-      "ui_preview": true
+      "tdd_enforcement": {
+        "enabled": true,
+        "skill": "superpowers:test-driven-development",
+        "trigger": "task.tdd == true",
+        "evidence": "atomic test(RED) + feat(GREEN) commit pair per task"
+      },
+      "ui_preview": {
+        "enabled": true,
+        "skill": "gstack:browse",
+        "trigger": "task modifies frontend components",
+        "evidence": "screenshot path in commit message or SUMMARY.md"
+      },
+      "verification_before_done": {
+        "enabled": true,
+        "skill": "superpowers:verification-before-completion",
+        "trigger": "before any TaskUpdate --completed",
+        "evidence": "grep/test/curl/screenshot output posted before status change"
+      }
+    },
+    "post_phase": {
+      "spec_review": {
+        "enabled": true,
+        "skill": "gstack:review",
+        "trigger": "always",
+        "evidence": "REVIEW.md in phase directory"
+      },
+      "code_quality_review": {
+        "enabled": true,
+        "skill": "superpowers:requesting-code-review",
+        "trigger": "always, after spec_review",
+        "evidence": "Stage 2 section appended to REVIEW.md"
+      },
+      "security": {
+        "enabled": true,
+        "skill": "gstack:cso",
+        "trigger": "scope matches auth|storage|api|llm",
+        "evidence": "SECURITY.md in phase directory"
+      },
+      "qa": {
+        "enabled": true,
+        "skill": "gstack:qa",
+        "trigger": "dev server reachable on localhost",
+        "evidence": "QA report linked from VERIFICATION.md"
+      }
+    },
+    "finishing": {
+      "branch_close": {
+        "enabled": true,
+        "skill": "superpowers:finishing-a-development-branch",
+        "trigger": "feature branch ready to merge",
+        "evidence": "PR description lists skills + gates + evidence links"
+      }
     }
   }
 }
