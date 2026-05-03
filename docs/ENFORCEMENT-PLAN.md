@@ -64,6 +64,7 @@ GSD step, you MUST invoke the mapped skill.
 | Phase touches auth/storage/api/llm | gstack `/cso` | Scope match | SECURITY.md with ASVS-level threat coverage |
 | Dev server reachable on localhost | gstack `/qa` | Scope match | QA report referenced in phase VERIFICATION.md |
 | Before STATUS = Complete | `superpowers:verification-before-completion` | Always | VERIFICATION.md has 1:1 evidence for every must_have |
+| Phase touches DB schema or RLS | `database-sentinel:audit` | Scope matches Supabase / Postgres / MongoDB | DB-AUDIT.md present; Critical / High findings resolved or recorded in ADR via `templates/adr-db-security-acceptance.md`; otherwise BLOCKS branch close |
 
 ### Language-specific code-quality gates (extension of post-phase Stage 2)
 

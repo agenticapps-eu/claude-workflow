@@ -57,7 +57,7 @@ They are read from `.planning/config.json` → `hooks` and enforced via CLAUDE.m
 | Hook | Trigger | Skill | What it does |
 |------|---------|-------|-------------|
 | `review` | Always | `/review` | Pre-landing structural review of phase diff |
-| `cso` | Phase touches auth, storage, API, or LLM | `/cso` | OWASP security scan |
+| `cso` | Phase touches auth, storage, API, or LLM | `gstack:/cso` + `database-sentinel:audit` (if Supabase / Postgres / MongoDB touched) | OWASP security scan + RLS / DB security audit on Supabase / Postgres / MongoDB scope. **BLOCKS branch close on unresolved Critical / High `database-sentinel` findings** unless accepted via `templates/adr-db-security-acceptance.md`. |
 | `qa` | Dev server reachable on localhost | `/qa` | Automated QA on affected pages |
 
 ### Hook execution order

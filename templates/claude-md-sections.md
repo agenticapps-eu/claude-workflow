@@ -95,6 +95,12 @@ Verification evidence I will produce: {list}
 
 8. **Security scan** — Run gstack `/cso` when the phase touches auth, storage,
    API endpoints, or LLM prompt construction. Output: SECURITY.md.
+   **Additionally,** when the phase touches Supabase / Postgres / MongoDB,
+   you MUST also run `database-sentinel:audit`. Output: DB-AUDIT.md.
+   Critical or High findings BLOCK branch close — they must be fixed
+   (database-sentinel produces exact SQL DDL fixes) or accepted via ADR with
+   user-explicit override using the template at
+   `templates/adr-db-security-acceptance.md`.
 
 9. **QA verification** — If a dev server is reachable (localhost:3000, :5173,
    or :8080), run gstack `/qa` on affected pages. Output referenced in
