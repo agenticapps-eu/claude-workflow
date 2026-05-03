@@ -39,6 +39,15 @@ disciplined spec-first development pipeline with enforced hooks.
   non-destructively via `/update-agenticapps-workflow`. Setup and update
   share one runtime (no divergent code paths). See
   [Updating an existing project](#updating-an-existing-project) below.
+- **Programmatic hooks layer** (v1.4.0+) — deterministic enforcement at
+  the tool-call boundary. Database safety, design preflight, premature
+  stop catch, skill audit log, post-compaction commitment re-injection.
+  Complements (doesn't replace) the conceptual CLAUDE.md prose layer.
+  See [Programmatic hooks layer](#programmatic-hooks-layer) below.
+- **Cross-PR architecture drift catch** — `/improve-codebase-architecture`
+  (mattpocock) audits architecture weekly via SessionStart reminder hook
+  + LaunchAgent / systemd-user cron. See
+  [Architecture audits](#architecture-audits) below.
 - **Session handoff** for context preservation across sessions.
 
 ## Prerequisites
@@ -201,6 +210,66 @@ in roadmap; until then, install per the upstream pack's own instructions.
 ### Python projects
 
 No language pack adopted yet. Track in roadmap.
+
+## Programmatic hooks layer
+
+v1.4.0 adds a deterministic enforcement layer that fires shell scripts
+(or prompt-type sub-agents) on Claude Code's hook events. Exit code 2
+truly blocks the triggering tool call; exit code 1 only logs. Five hooks:
+
+| Hook | Event | Matcher | What it enforces | Override |
+|---|---|---|---|---|
+| 1 Database Sentinel | `PreToolUse` | `Bash\|Edit\|Write` | DROP/TRUNCATE/DELETE-no-WHERE, .env*, migrations/* without phase approval | ADR or `touch .planning/current-phase/migrations-approved` |
+| 2 Design Shotgun Gate | `PreToolUse` | `Edit\|Write` | .tsx/.css/design-surface edits without preflight sentinel | `/design-shotgun` or `touch .planning/current-phase/design-shotgun-passed` |
+| 3 Phase Sentinel | `Stop` | (none) | Haiku checks `.planning/current-phase/checklist.md` against conversation | Mark items complete or update checklist |
+| 4 Skill Router Audit | `PostToolUse` + `SessionStart` | `mcp__skills__.*\|Bash` | JSONL log of skill invocations + tail-20 on each session start | Informational; no blocking |
+| 5 Commitment Re-Injector | `SessionStart` | `compact` | Re-injects `CLAUDE.md` head + current-phase `COMMITMENT.md` after compaction. **GLOBAL** — cwd-aware. | Informational; no blocking |
+
+Hooks 1–4 are project-scoped, installed by migration `0004` into
+`.claude/hooks/` + registered in `.claude/settings.json`. Hook 5 lives
+globally at `~/.claude/hooks/commitment-reinject.sh`; one install per
+machine. Verify installation with:
+
+```bash
+~/.claude/skills/agenticapps-workflow/bin/check-hooks.sh
+```
+
+The full architecture decision (split rule, why both prose and
+programmatic, why exit code 2 matters) is in `docs/ENFORCEMENT-PLAN.md`
+§ "Two-layer enforcement" + ADR-0015.
+
+## Architecture audits
+
+`/improve-codebase-architecture` (mattpocock skill, installed in v1.4.0)
+runs a periodic, repo-scoped architecture audit using the deletion test
++ locality/leverage vocabulary. Closes the cross-PR drift gap that
+forward-discipline pipelines don't address. Findings land in Linear
+backlog, never auto-applied — preserves the verification-before-completion
+gate.
+
+Two reminder mechanisms with a shared snooze contract:
+
+```bash
+# Mechanism 1 (in-session): SessionStart hook fires automatically
+# whenever you open an AgenticApps project with a stale audit. Hook
+# script: templates/.claude/hooks/architecture-audit-check.sh
+
+# Mechanism 2 (out-of-session): weekly cron — install once per machine
+~/.claude/skills/agenticapps-workflow/bin/install-architecture-cron.sh        # macOS
+# OR
+~/.claude/skills/agenticapps-workflow/bin/install-systemd-architecture-cron.sh  # Linux
+```
+
+Snooze a project (skips both mechanisms until the date passes):
+
+```bash
+mkdir -p .planning/audits && touch .planning/audits/.snooze-until-2026-05-10
+```
+
+The cron reads `~/.agenticapps/dashboard/registry.json` for the active
+project list (heuristic fallback if empty). Linear notifications via
+`linear` CLI; falls back to `~/.agenticapps/architecture-audit-cron.log`
+if no CLI access.
 
 ## Updating an existing project
 
