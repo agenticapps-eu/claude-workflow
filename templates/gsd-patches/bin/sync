@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# sync — idempotent copy of patched files from ~/.config/gsd-patches/patches/
+# into the live GSD install. Re-run after every `gsd update` to re-apply
+# the patches that gsd-update wipes.
+#
+# Strategy: each file under patches/ maps 1:1 to a relative path under the
+# GSD install root. Use rsync-like `cp` semantics — if patched content
+# differs, copy; if identical, no-op.
+
+set -euo pipefail
+
+PATCHES_DIR="$HOME/.config/gsd-patches/patches"
+GSD_DIR="${GSD_DIR:-$HOME/.claude/get-shit-done}"
+
+[ -d "$PATCHES_DIR" ] || { echo "ERROR: $PATCHES_DIR does not exist"; exit 1; }
+[ -d "$GSD_DIR" ]    || { echo "ERROR: GSD install not found at $GSD_DIR"; exit 1; }
+
+APPLIED=0
+SKIPPED=0
+FAILED=0
+
+# Walk every file in patches/, mirror to GSD_DIR
+while IFS= read -r -d '' src; do
+  rel="${src#$PATCHES_DIR/}"
+  dst="$GSD_DIR/$rel"
+
+  if [ ! -f "$dst" ]; then
+    echo "  ⊘ target missing: $dst (GSD layout changed?) — skipping"
+    SKIPPED=$((SKIPPED+1))
+    continue
+  fi
+
+  if cmp -s "$src" "$dst"; then
+    SKIPPED=$((SKIPPED+1))
+    continue
+  fi
+
+  cp "$src" "$dst"
+  echo "  ✓ patched: $rel"
+  APPLIED=$((APPLIED+1))
+done < <(find "$PATCHES_DIR" -type f -print0)
+
+echo ""
+echo "Summary: applied=$APPLIED already-current=$SKIPPED skipped=0 failed=$FAILED"
+[ "$FAILED" -gt 0 ] && exit 1
+exit 0
