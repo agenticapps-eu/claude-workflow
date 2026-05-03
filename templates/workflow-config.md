@@ -43,6 +43,7 @@ They are read from `.planning/config.json` → `hooks` and enforced via CLAUDE.m
 |------|---------|-------|-------------|
 | `brainstorm_ui` | Plan has frontend files in `files_modified` or ROADMAP `UI hint: yes` | `superpowers:brainstorming` | Explore UI/UX alternatives, start dev server, preview with `/browse`, user picks direction |
 | `brainstorm_architecture` | Plan introduces new service/model/integration | `superpowers:brainstorming` | Identify edge cases, acceptance criteria, design alternatives |
+| `design_critique` | After `/design-shotgun` produces variants, before user picks | `impeccable:critique` | Score variants against impeccable's 24 anti-patterns. Failing variants are flagged before reaching the user. |
 
 ### Per-Plan (executor follows during task execution)
 

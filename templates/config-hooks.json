@@ -21,6 +21,12 @@
         "skill": "gstack:design-shotgun",
         "trigger": "ui_hint_yes && no_ui_spec_yet",
         "evidence": "UI-SPEC.md references variant paths + user's pick"
+      },
+      "design_critique": {
+        "enabled": true,
+        "skill": "impeccable:critique",
+        "trigger": "ui_hint_yes && design_shotgun_completed",
+        "evidence": "UI-SPEC.md cites impeccable critique scores per variant"
       }
     },
     "per_plan": {
@@ -75,6 +81,12 @@
         "skill": "superpowers:finishing-a-development-branch",
         "trigger": "feature branch ready to merge",
         "evidence": "PR description lists skills + gates + evidence links"
+      },
+      "impeccable_audit": {
+        "enabled": true,
+        "skill": "impeccable:audit",
+        "trigger": "feature touches frontend && branch ready to merge",
+        "evidence": "audit report referenced in PR description; no Red findings unresolved"
       }
     }
   }

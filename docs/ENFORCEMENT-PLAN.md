@@ -43,6 +43,7 @@ GSD step, you MUST invoke the mapped skill.
 | `/gsd-plan-phase {N}` (UI hint: yes) | gstack `/design-shotgun` or `/design-consultation` | Phase has frontend indicators | UI-SPEC.md references generated variant paths + user's pick |
 | `/gsd-plan-phase {N}` (new service/model) | `superpowers:brainstorming` | Phase introduces new backend service, data model, or integration | RESEARCH.md has "Alternatives considered" section with ≥2 options |
 | `/gsd-plan-phase {N}` (always) | `superpowers:writing-plans` | Always, once plans are drafted | PLAN.md frontmatter includes `written_via: superpowers:writing-plans` |
+| `/gsd-plan-phase {N}` (UI hint: yes), after `/design-shotgun` | `impeccable:critique` | Always when shotgun fires | UI-SPEC.md records impeccable score per variant + chosen variant ≥ quality bar |
 
 ### Phase execution gates
 

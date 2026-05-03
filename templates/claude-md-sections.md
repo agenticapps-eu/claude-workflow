@@ -52,12 +52,15 @@ Verification evidence I will produce: {list}
 
 #### Pre-Phase Hooks (before `/gsd-execute-phase`)
 
-1. **Brainstorm UI plans** — For any plan with `UI hint: yes` in ROADMAP or
+1. **Brainstorm UI plans + design critique** — For any plan with `UI hint: yes` in ROADMAP or
    frontend files in `files_modified`, you MUST invoke `superpowers:brainstorming`
    before planning. For phases generating new visual surfaces, you MUST ALSO
-   run gstack `/design-shotgun` to generate 3–4 visual variants, boot the
-   dev server, preview via `/browse`, and get the user's explicit pick into
-   UI-SPEC.md. No skipping this for "obvious" designs.
+   run gstack `/design-shotgun` to generate 3–4 visual variants. **Then run
+   `impeccable:critique` against each variant.** Variants scoring below the
+   impeccable quality bar are eliminated before the user picks. Boot the dev
+   server, preview via `/browse`, and get the user's explicit pick into
+   UI-SPEC.md, with the impeccable score for the chosen variant recorded.
+   No skipping this for "obvious" designs.
 
 2. **Brainstorm architecture plans** — For plans introducing new services, data
    models, or integration patterns, you MUST invoke `superpowers:brainstorming`
