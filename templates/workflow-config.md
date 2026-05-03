@@ -22,6 +22,16 @@
 - **ADR path**: `docs/decisions/NNNN-short-title.md`
 - **Languages**: code in English, user-facing as needed
 
+## Backend language routing
+
+| Detection | Skills auto-triggered | Notes |
+|---|---|---|
+| `*.go` files in plan | `samber:cc-skills-golang`, `netresearch:go-development-skill` | Auto-load on Go scope |
+| `*.ts`, `*.tsx` files in plan | `QuantumLynx:ts-react-linter-driven-development` | Frontend + Node TS |
+| `*.py` files in plan | (none yet — see README §Per-language skill packs → Python) | LLM/agent backends |
+
+For mixed-language phases, all matching skill packs trigger; skills self-scope by file. Install per-project (not global) so non-language repos don't pay the context cost — see README "Per-language skill packs" for install commands.
+
 ## Superpowers Integration Hooks
 
 These hooks enforce the Superpowers + GSD + gstack workflow.
@@ -33,6 +43,7 @@ They are read from `.planning/config.json` → `hooks` and enforced via CLAUDE.m
 |------|---------|-------|-------------|
 | `brainstorm_ui` | Plan has frontend files in `files_modified` or ROADMAP `UI hint: yes` | `superpowers:brainstorming` | Explore UI/UX alternatives, start dev server, preview with `/browse`, user picks direction |
 | `brainstorm_architecture` | Plan introduces new service/model/integration | `superpowers:brainstorming` | Identify edge cases, acceptance criteria, design alternatives |
+| `design_critique` | After `/design-shotgun` produces variants, before user picks | `impeccable:critique` | Score variants against impeccable's 24 anti-patterns. Failing variants are flagged before reaching the user. |
 
 ### Per-Plan (executor follows during task execution)
 
@@ -46,7 +57,7 @@ They are read from `.planning/config.json` → `hooks` and enforced via CLAUDE.m
 | Hook | Trigger | Skill | What it does |
 |------|---------|-------|-------------|
 | `review` | Always | `/review` | Pre-landing structural review of phase diff |
-| `cso` | Phase touches auth, storage, API, or LLM | `/cso` | OWASP security scan |
+| `cso` | Phase touches auth, storage, API, or LLM | `gstack:/cso` + `database-sentinel:audit` (if Supabase / Postgres / MongoDB touched) | OWASP security scan + RLS / DB security audit on Supabase / Postgres / MongoDB scope. **BLOCKS branch close on unresolved Critical / High `database-sentinel` findings** unless accepted via `templates/adr-db-security-acceptance.md`. |
 | `qa` | Dev server reachable on localhost | `/qa` | Automated QA on affected pages |
 
 ### Hook execution order

@@ -43,6 +43,7 @@ GSD step, you MUST invoke the mapped skill.
 | `/gsd-plan-phase {N}` (UI hint: yes) | gstack `/design-shotgun` or `/design-consultation` | Phase has frontend indicators | UI-SPEC.md references generated variant paths + user's pick |
 | `/gsd-plan-phase {N}` (new service/model) | `superpowers:brainstorming` | Phase introduces new backend service, data model, or integration | RESEARCH.md has "Alternatives considered" section with ≥2 options |
 | `/gsd-plan-phase {N}` (always) | `superpowers:writing-plans` | Always, once plans are drafted | PLAN.md frontmatter includes `written_via: superpowers:writing-plans` |
+| `/gsd-plan-phase {N}` (UI hint: yes), after `/design-shotgun` | `impeccable:critique` | Always when shotgun fires | UI-SPEC.md records impeccable score per variant + chosen variant ≥ quality bar |
 
 ### Phase execution gates
 
@@ -63,6 +64,18 @@ GSD step, you MUST invoke the mapped skill.
 | Phase touches auth/storage/api/llm | gstack `/cso` | Scope match | SECURITY.md with ASVS-level threat coverage |
 | Dev server reachable on localhost | gstack `/qa` | Scope match | QA report referenced in phase VERIFICATION.md |
 | Before STATUS = Complete | `superpowers:verification-before-completion` | Always | VERIFICATION.md has 1:1 evidence for every must_have |
+| Phase touches DB schema or RLS | `database-sentinel:audit` | Scope matches Supabase / Postgres / MongoDB | DB-AUDIT.md present; Critical / High findings resolved or recorded in ADR via `templates/adr-db-security-acceptance.md`; otherwise BLOCKS branch close |
+
+### Language-specific code-quality gates (extension of post-phase Stage 2)
+
+These gates extend Stage 2 (`superpowers:requesting-code-review`) with language-specific
+linter packs. They fire only when the phase touches files in the matching language.
+
+| GSD step | Required skill | Trigger | Evidence |
+|---|---|---|---|
+| Stage 2 review on Go phase | `samber:cc-skills-golang` linter checks (modernize, errors, testing, security pack) | Phase touches `*.go` | Stage 2 REVIEW.md cites which Go skills fired |
+| Resilience-touching Go phase | `netresearch:go-development-skill` checks (retry, graceful shutdown, observability) | Phase introduces or modifies a long-running service, scheduler, or external call | Resilience checklist appended to REVIEW.md |
+| Stage 2 review on TS/React phase | `QuantumLynx:ts-react-linter-driven-development` (`@pre-commit-review` + `@refactoring`) | Phase touches `*.tsx`/`*.ts` | SonarJS thresholds passed (cognitive ≤15, cyclomatic ≤10, function ≤200 lines, file ≤600), Red findings resolved |
 
 ### Finishing gates
 

@@ -21,6 +21,12 @@
         "skill": "gstack:design-shotgun",
         "trigger": "ui_hint_yes && no_ui_spec_yet",
         "evidence": "UI-SPEC.md references variant paths + user's pick"
+      },
+      "design_critique": {
+        "enabled": true,
+        "skill": "impeccable:critique",
+        "trigger": "ui_hint_yes && design_shotgun_completed",
+        "evidence": "UI-SPEC.md cites impeccable critique scores per variant"
       }
     },
     "per_plan": {
@@ -60,7 +66,14 @@
         "enabled": true,
         "skill": "gstack:cso",
         "trigger": "scope matches auth|storage|api|llm",
-        "evidence": "SECURITY.md in phase directory"
+        "evidence": "SECURITY.md in phase directory",
+        "sub_gates": [
+          {
+            "skill": "database-sentinel:audit",
+            "trigger": "scope matches supabase|postgres|mongodb",
+            "evidence": "DB-AUDIT.md in phase directory; all High and Critical findings resolved or acknowledged via templates/adr-db-security-acceptance.md; otherwise BLOCKS branch close"
+          }
+        ]
       },
       "qa": {
         "enabled": true,
@@ -75,6 +88,19 @@
         "skill": "superpowers:finishing-a-development-branch",
         "trigger": "feature branch ready to merge",
         "evidence": "PR description lists skills + gates + evidence links"
+      },
+      "impeccable_audit": {
+        "enabled": true,
+        "skill": "impeccable:audit",
+        "trigger": "feature touches frontend && branch ready to merge",
+        "evidence": "audit report referenced in PR description; no Red findings unresolved"
+      },
+      "db_pre_launch_audit": {
+        "enabled": true,
+        "skill": "database-sentinel:audit",
+        "scope": "full — audit every supported backend in the project, not phase-scoped",
+        "trigger": "branch is main && app pre-launch checklist active",
+        "evidence": "Pre-launch DB-AUDIT.md with zero Critical, zero High findings; otherwise BLOCKS launch"
       }
     }
   }
