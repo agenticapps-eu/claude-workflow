@@ -59,6 +59,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 - **`skill/SKILL.md` frontmatter `version: 1.3.0`** — installed version
   is now recorded explicitly. `update-agenticapps-workflow` reads this
   field to determine pending migrations.
+- **`install.sh`** — bootstraps Claude Code's skill discovery by
+  symlinking `skill/`, `setup/`, `update/` subdirectories out to their
+  canonical `~/.claude/skills/<name>/` paths. Idempotent. Required after
+  initial clone AND after every `git pull` that adds new skill subdirs.
+  Fixes a long-standing bug where `/setup-agenticapps-workflow` and the
+  new `/update-agenticapps-workflow` weren't actually registered as
+  slash commands (the loader scans one level deep; this repo nests
+  skills two levels deep for logical grouping). README install steps
+  now invoke `install.sh` automatically.
 
 ### Changed
 
@@ -84,8 +93,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 Projects on v1.2.0 upgrade to v1.3.0 by:
 
 ```bash
-# Pull the latest scaffolder
-cd ~/.claude/skills/agenticapps-workflow && git pull && cd -
+# Pull the latest scaffolder AND re-run install.sh (idempotent — required
+# because v1.3.0 introduces a new update/ skill subdir that needs symlinking)
+cd ~/.claude/skills/agenticapps-workflow && git pull && ./install.sh && cd -
 
 # Preview, then apply
 cd <your-project>
