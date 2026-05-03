@@ -1,0 +1,68 @@
+{
+  "_comment": "Settings template for AgenticApps projects. Merged into the project's .claude/settings.json by /setup-agenticapps-workflow. Adds 4 of the 5 programmatic hooks (Hook 5 lives globally in ~/.claude/settings.json; Hooks 1-4 are project-scoped here).",
+  "_enforcement_contract": "docs/ENFORCEMENT-PLAN.md",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "_hook": "Hook 1 — Database Sentinel",
+        "matcher": "Bash|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/database-sentinel.sh",
+            "timeout": 5000
+          }
+        ]
+      },
+      {
+        "_hook": "Hook 2 — Design Shotgun Pre-Flight Gate",
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/design-shotgun-gate.sh",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "_hook": "Hook 4a — Skill Router Audit Log",
+        "matcher": "mcp__skills__.*|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/skill-router-log.sh",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "_hook": "Hook 3 — Phase Sentinel (Haiku, prompt-type)",
+        "hooks": [
+          {
+            "type": "prompt",
+            "model": "claude-haiku-4-5-20251001",
+            "timeout": 30000,
+            "prompt": "Read $CLAUDE_PROJECT_DIR/.planning/current-phase/checklist.md if it exists. Compare it to the assistant's actions in this conversation. Did the assistant complete ALL unchecked items in the current phase? Return JSON: {\"ok\": true} if yes, or {\"ok\": false, \"reason\": \"<which items remain>\"} if no. If checklist.md doesn't exist, return {\"ok\": true} — don't block on its absence."
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "_hook": "Hook 4b — Session Bootstrap (last 20 skill invocations)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-bootstrap.sh",
+            "timeout": 5000
+          }
+        ]
+      }
+    ]
+  }
+}

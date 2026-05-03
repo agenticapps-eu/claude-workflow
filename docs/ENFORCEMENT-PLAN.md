@@ -83,6 +83,66 @@ linter packs. They fire only when the phase touches files in the matching langua
 |---|---|---|---|
 | Feature branch ready to merge | `superpowers:finishing-a-development-branch` | Always | PR description lists skills invoked, gates passed, evidence links |
 
+## Two-layer enforcement: programmatic + conceptual
+
+The gate-to-skill mapping above describes the **conceptual** enforcement layer:
+prose in CLAUDE.md + the commitment ritual + skill invocations. This works
+while the session is fresh, but degrades silently on compaction or cold-start.
+
+The **programmatic** layer is shell scripts (or prompt-type sub-agents) that
+fire on Claude Code's hook events with deterministic exit codes. Exit code 2
+truly blocks the triggering tool call; exit code 1 only logs a warning. The
+two layers compose: programmatic for *gates that must never be overridden*;
+conceptual for *intent and skill routing*.
+
+| Layer | Enforces | How | Failure mode |
+|---|---|---|---|
+| **Conceptual** | Which skill fires when, how phases sequence, the commitment ritual | CLAUDE.md prose + Cialdini commitment | Compaction degrades context; prose drifts |
+| **Programmatic** | Tool-level deterministic gates (DB safety, design preflight, premature stop, audit log) | `PreToolUse` / `PostToolUse` / `Stop` / `SessionStart` shell scripts with `exit 2` | Latency budget per `PreToolUse` invocation (~100ms); schema lock-in |
+
+### Programmatic hooks (5 hooks, v1.5.0+)
+
+| Hook | Event | Matcher | What it enforces | Override |
+|---|---|---|---|---|
+| **1 Database Sentinel** | `PreToolUse` | `Bash\|Edit\|Write` | Blocks `DROP/TRUNCATE TABLE`, `DELETE` without `WHERE`, edits to `.env*`, edits to `migrations/*` without phase approval | `touch .planning/current-phase/migrations-approved` for migrations; ADR with explicit acceptance for SQL |
+| **2 Design Shotgun Gate** | `PreToolUse` | `Edit\|Write` | Blocks edits to `*.tsx`/`*.css`/`design/`/`src/components/` without preflight sentinel | Run `/design-shotgun`; or `touch .planning/current-phase/design-shotgun-passed` for one-off (document override in commit) |
+| **3 Phase Sentinel** | `Stop` | (none) | Haiku checks `.planning/current-phase/checklist.md` against the conversation; blocks `Stop` if items remain | Mark items complete or update the checklist before retry |
+| **4 Skill Router Audit Log** | `PostToolUse` + `SessionStart` | `mcp__skills__.*\|Bash` | Logs every skill invocation as JSONL to `.planning/skill-observations/skill-router-{date}.jsonl`; surfaces last 20 on each new session | Informational only; no blocking |
+| **5 Commitment Re-Injector** | `SessionStart` | `compact` | Re-injects `head -50 CLAUDE.md` + current-phase `COMMITMENT.md` after compaction | Informational only; no blocking. **GLOBAL** (cwd-aware, no-ops on non-AgenticApps projects) |
+
+The 5 hooks split between two install locations:
+
+- **Hooks 1-4** are project-scoped: live at `.claude/hooks/<name>.sh` and
+  registered in the project's `.claude/settings.json`. Installed during
+  `/setup-agenticapps-workflow` from `templates/.claude/hooks/` and the
+  `templates/claude-settings.json` template.
+- **Hook 5** is global: lives at `~/.claude/hooks/commitment-reinject.sh`
+  and is registered in `~/.claude/settings.json` with `matcher: compact`.
+  cwd-aware — no-ops on non-AgenticApps projects.
+
+### Verifying hook installation
+
+In any AgenticApps project, run:
+
+```bash
+~/.claude/skills/agenticapps-workflow/bin/check-hooks.sh
+```
+
+Reports `✓` for each hook present and registered; `✗` for anything missing.
+
+### Why programmatic + conceptual instead of programmatic-only
+
+Sah and Damle's articles correctly identify that programmatic hooks fire
+deterministically while prose discipline degrades. But the commitment
+principle (Cialdini; Wharton GAIL 2025) only works because the agent
+**states** the commitment publicly and **listens** to its own statement.
+Replacing the prose layer with hooks alone would dissolve the commitment
+binding — you'd have enforcement without consistency.
+
+The split rule: **if a violation costs you a phase iteration → programmatic
+hook. If it's a routing/intent question → prose.** Both layers must be
+present.
+
 ## The commitment ritual
 
 When `agentic-apps-workflow` activates, the agent MUST emit this block as its
