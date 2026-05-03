@@ -22,6 +22,16 @@
 - **ADR path**: `docs/decisions/NNNN-short-title.md`
 - **Languages**: code in English, user-facing as needed
 
+## Backend language routing
+
+| Detection | Skills auto-triggered | Notes |
+|---|---|---|
+| `*.go` files in plan | `samber:cc-skills-golang`, `netresearch:go-development-skill` | Auto-load on Go scope |
+| `*.ts`, `*.tsx` files in plan | `QuantumLynx:ts-react-linter-driven-development` | Frontend + Node TS |
+| `*.py` files in plan | (none yet — see README §Per-language skill packs → Python) | LLM/agent backends |
+
+For mixed-language phases, all matching skill packs trigger; skills self-scope by file. Install per-project (not global) so non-language repos don't pay the context cost — see README "Per-language skill packs" for install commands.
+
 ## Superpowers Integration Hooks
 
 These hooks enforce the Superpowers + GSD + gstack workflow.

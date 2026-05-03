@@ -114,6 +114,41 @@ CLAUDE.md additions:
   +-- PHASE VERIFICATION (GSD verifier agent)
 ```
 
+## Per-language skill packs
+
+Beyond the universal hooks, the workflow auto-routes language-specific skill packs
+when a phase touches matching files. These packs are **project-local** installs —
+only repos that need them pay the context cost.
+
+### Go projects
+
+```bash
+# samber/cc-skills-golang (40+ Go skills with measured eval data)
+cd <go-repo>
+git clone https://github.com/samber/cc-skills-golang .claude/skills/cc-skills-golang
+```
+
+For `netresearch/go-development-skill` (production resilience patterns —
+retry/backoff/graceful-shutdown/observability), install per the upstream pack's
+own README. The action plan source documents an `npx @netresearch/skills add
+go-development` invocation but it has not been independently verified in this
+scaffolder; verify against the upstream README before relying on it.
+
+Both packs compose: samber covers breadth + idioms, netresearch covers
+production resilience. Routing is documented in
+`templates/workflow-config.md` (Backend language routing section) and the
+language-specific Stage 2 gates in `docs/ENFORCEMENT-PLAN.md`.
+
+### TypeScript / React projects
+
+`QuantumLynx:ts-react-linter-driven-development` is referenced in the routing
+table but a verified install command is not yet documented in this repo. Track
+in roadmap; until then, install per the upstream pack's own instructions.
+
+### Python projects
+
+No language pack adopted yet. Track in roadmap.
+
 ## Customization
 
 Edit `.claude/workflow-config.md` to adjust:

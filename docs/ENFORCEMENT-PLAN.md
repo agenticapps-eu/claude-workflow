@@ -64,6 +64,17 @@ GSD step, you MUST invoke the mapped skill.
 | Dev server reachable on localhost | gstack `/qa` | Scope match | QA report referenced in phase VERIFICATION.md |
 | Before STATUS = Complete | `superpowers:verification-before-completion` | Always | VERIFICATION.md has 1:1 evidence for every must_have |
 
+### Language-specific code-quality gates (extension of post-phase Stage 2)
+
+These gates extend Stage 2 (`superpowers:requesting-code-review`) with language-specific
+linter packs. They fire only when the phase touches files in the matching language.
+
+| GSD step | Required skill | Trigger | Evidence |
+|---|---|---|---|
+| Stage 2 review on Go phase | `samber:cc-skills-golang` linter checks (modernize, errors, testing, security pack) | Phase touches `*.go` | Stage 2 REVIEW.md cites which Go skills fired |
+| Resilience-touching Go phase | `netresearch:go-development-skill` checks (retry, graceful shutdown, observability) | Phase introduces or modifies a long-running service, scheduler, or external call | Resilience checklist appended to REVIEW.md |
+| Stage 2 review on TS/React phase | `QuantumLynx:ts-react-linter-driven-development` (`@pre-commit-review` + `@refactoring`) | Phase touches `*.tsx`/`*.ts` | SonarJS thresholds passed (cognitive ≤15, cyclomatic ≤10, function ≤200 lines, file ≤600), Red findings resolved |
+
 ### Finishing gates
 
 | GSD step | Required skill | Trigger | Evidence |
