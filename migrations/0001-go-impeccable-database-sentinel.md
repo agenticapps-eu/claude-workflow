@@ -253,7 +253,7 @@ cp ~/.claude/skills/agenticapps-workflow/templates/adr-db-security-acceptance.md
 # Markdown patches landed
 grep -q "^## Backend language routing" .claude/workflow-config.md
 grep -q "design_critique" .claude/workflow-config.md
-grep -q "database-sentinel:audit (if Supabase / Postgres / MongoDB touched)" .claude/workflow-config.md
+grep -q "if Supabase / Postgres / MongoDB touched" .claude/workflow-config.md  # anchor on phrase, not backtick-bracketed token (matches Step 3 idempotency-check fix)
 
 # JSON entries present + structurally valid
 jq -e '.hooks.pre_phase.design_critique' .planning/config.json

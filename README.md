@@ -64,6 +64,11 @@ claude plugins install superpowers
 # Clone to your global skills directory
 git clone https://github.com/agenticapps-eu/claude-workflow.git ~/.claude/skills/agenticapps-workflow
 
+# REQUIRED: register the skills with Claude Code's loader.
+# This creates symlinks so /setup-agenticapps-workflow,
+# /update-agenticapps-workflow, and /agentic-apps-workflow are discoverable.
+~/.claude/skills/agenticapps-workflow/install.sh
+
 # Copy the global CLAUDE.md additions
 cat ~/.claude/skills/agenticapps-workflow/global-claude-additions.md >> ~/.claude/CLAUDE.md
 ```
@@ -75,11 +80,16 @@ cat ~/.claude/skills/agenticapps-workflow/global-claude-additions.md >> ~/.claud
 mkdir -p .claude/skills
 git clone https://github.com/agenticapps-eu/claude-workflow.git .claude/skills/agenticapps-workflow
 
+# REQUIRED: register the skills (per-project paths use project-local install)
+.claude/skills/agenticapps-workflow/install.sh
+
 # Run the setup command
 claude "/setup-agenticapps-workflow"
 ```
 
 ### Option C: Setup a new project from scratch
+
+(Requires Option A done once, so /setup-agenticapps-workflow is available.)
 
 ```bash
 # From your project root
@@ -200,8 +210,9 @@ non-destructively by applying pending migrations:
 ```bash
 cd <your-project>
 
-# Make sure the scaffolder is fresh
-cd ~/.claude/skills/agenticapps-workflow && git pull && cd -
+# Make sure the scaffolder is fresh, and re-run install.sh in case new
+# skill subdirectories were added since your last pull (idempotent)
+cd ~/.claude/skills/agenticapps-workflow && git pull && ./install.sh && cd -
 
 # Preview what would change (recommended first)
 claude "/update-agenticapps-workflow --dry-run"
