@@ -1,0 +1,9 @@
+[Unit]
+Description=AgenticApps weekly architecture audit reminder
+Documentation=https://github.com/agenticapps-eu/claude-workflow
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash {SCAFFOLDER_BIN}/agenticapps-architecture-cron.sh
+StandardOutput=append:{HOME}/.agenticapps/logs/architecture-cron-stdout.log
+StandardError=append:{HOME}/.agenticapps/logs/architecture-cron-stderr.log

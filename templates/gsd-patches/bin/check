@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# check — verify all patches are byte-equal in the live GSD install.
+# Exits non-zero if any patch has drifted (i.e. gsd-update wiped it
+# or someone edited the GSD copy directly without going through patches/).
+
+set -euo pipefail
+
+PATCHES_DIR="$HOME/.config/gsd-patches/patches"
+GSD_DIR="${GSD_DIR:-$HOME/.claude/get-shit-done}"
+
+[ -d "$PATCHES_DIR" ] || { echo "ERROR: $PATCHES_DIR does not exist"; exit 1; }
+[ -d "$GSD_DIR" ]    || { echo "ERROR: GSD install not found at $GSD_DIR"; exit 1; }
+
+DRIFTED=()
+
+while IFS= read -r -d '' src; do
+  rel="${src#$PATCHES_DIR/}"
+  dst="$GSD_DIR/$rel"
+
+  if [ ! -f "$dst" ]; then
+    DRIFTED+=("MISSING: $rel (file gone from GSD)")
+    continue
+  fi
+
+  if ! cmp -s "$src" "$dst"; then
+    DRIFTED+=("DRIFTED: $rel")
+  fi
+done < <(find "$PATCHES_DIR" -type f -print0)
+
+if [ "${#DRIFTED[@]}" -eq 0 ]; then
+  echo "✓ All patches in sync ($(find "$PATCHES_DIR" -type f | wc -l | tr -d ' ') files)"
+  exit 0
+fi
+
+echo "✗ Drift detected:"
+for d in "${DRIFTED[@]}"; do echo "  - $d"; done
+echo ""
+echo "Resolve by running: ~/.config/gsd-patches/bin/sync"
+exit 1

@@ -4,6 +4,110 @@ All notable changes to the AgenticApps Claude Workflow scaffolder are
 documented here. The format follows [Keep a Changelog](https://keepachangelog.com/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.4.0] — 2026-05-03
+
+### Added
+
+- **Programmatic hooks layer (5 hooks)** — deterministic enforcement at
+  the tool-call boundary. Complements (does not replace) the conceptual
+  CLAUDE.md prose layer. Closes the "prose degrades on compaction"
+  failure mode that Sah and Damle's articles identify.
+  - **Hook 1 — Database Sentinel** (`PreToolUse: Bash|Edit|Write`) —
+    blocks `DROP/TRUNCATE TABLE`, `DELETE FROM` without `WHERE`, edits
+    to `.env*`, edits to `migrations/*` without phase approval.
+  - **Hook 2 — Design Shotgun Pre-Flight Gate** (`PreToolUse:
+    Edit|Write`) — blocks design-surface edits without
+    `.planning/current-phase/design-shotgun-passed` sentinel.
+  - **Hook 3 — Phase Sentinel** (`Stop`, prompt-type, Haiku 4.5) —
+    compares `.planning/current-phase/checklist.md` against the
+    conversation; blocks `Stop` if items remain unchecked.
+  - **Hook 4 — Skill Router Audit Log** (`PostToolUse` + `SessionStart`) —
+    JSONL log of every skill invocation to
+    `.planning/skill-observations/skill-router-{date}.jsonl`; warm
+    context on each new session via tail-20.
+  - **Hook 5 — Commitment Re-Injector** (`SessionStart matcher: compact`,
+    GLOBAL) — re-injects `head -50 CLAUDE.md` + current-phase
+    `COMMITMENT.md` after compaction. cwd-aware: no-ops on non-AgenticApps
+    projects.
+  - 43 bats tests across 4 hook test files; all green. `bin/check-hooks.sh`
+    validates installation.
+- **Architecture audit scheduling** — two complementary mechanisms with
+  shared snooze contract:
+  - **In-session SessionStart hook** (`templates/.claude/hooks/architecture-audit-check.sh`)
+    nags when last audit > 7 days. Honors
+    `.planning/audits/.snooze-until-{YYYY-MM-DD}` markers.
+  - **Out-of-session weekly cron** (`bin/agenticapps-architecture-cron.sh`)
+    Mondays 09:00 local. Reads `~/.agenticapps/dashboard/registry.json`
+    `tags: ["active"]` (heuristic fallback for empty registry). Files
+    Linear issues with reminder, falls back to log file.
+  - Two installers: `bin/install-architecture-cron.sh` (macOS LaunchAgent)
+    and `bin/install-systemd-architecture-cron.sh` (Linux systemd-user).
+  - Plist + systemd unit templates with `{SCAFFOLDER_BIN}` / `{HOME}`
+    placeholders that installers `sed`-substitute.
+- **Mattpocock skills installed** — `mattpocock-improve-architecture` +
+  `mattpocock-grill-with-docs` cloned from upstream into
+  `~/.claude/skills/`. Closes the cross-PR architectural drift gap.
+- **`templates/gsd-patches/`** — mirror of the rogs.me-style canonical
+  patch storage at `~/.config/gsd-patches/`. Cross-machine
+  reproducibility: clone scaffolder → copy → `bin/sync` to apply patches
+  to the live `~/.claude/get-shit-done/` install.
+- **GSD bug fix** — `~/.claude/get-shit-done/workflows/review.md:169`
+  patched to strip `2>/dev/null` from the `opencode run` invocation
+  (rogs.me's Bug 1). Bug 2 (`--no-input` flag) not present in this
+  install. Bug 3 (sequential reviewers) skipped to respect upstream's
+  explicit "(not parallel — avoid rate limits)" comment.
+- **`migrations/0004-programmatic-hooks-architecture-audit.md`** —
+  applies hooks + settings merge + version bump to v1.3.0 projects via
+  `/update-agenticapps-workflow`.
+- **4 new ADRs:** 0014 (GSD bug fixes), 0015 (programmatic hooks layer),
+  0016 (mattpocock architecture audit), 0017 (audit scheduling).
+
+### Changed
+
+- **`templates/claude-settings.json`** — added entries for Hooks 1–4 +
+  architecture-audit-check (5 entries total). Hook 5 is global,
+  not project-scoped.
+- **`docs/ENFORCEMENT-PLAN.md`** — new "Two-layer enforcement:
+  programmatic + conceptual" section between Finishing gates and the
+  Commitment ritual. Documents the split rule, lists all 6 hooks,
+  points at `bin/check-hooks.sh`.
+- **`skill/SKILL.md`** version bumped 1.3.0 → 1.4.0.
+
+### Migration path for existing projects (v1.3.0 → v1.4.0)
+
+```bash
+# 1. Pull the latest scaffolder + re-run install.sh (in case new skill
+#    subdirs were added; v1.4.0 didn't add any but the discipline holds)
+cd ~/.claude/skills/agenticapps-workflow && git pull && ./install.sh && cd -
+
+# 2. Install mattpocock skills (required by 0004 pre-flight)
+git clone https://github.com/mattpocock/skills /tmp/mattpocock-skills
+mkdir -p ~/.claude/skills/mattpocock-improve-architecture ~/.claude/skills/mattpocock-grill-with-docs
+cp -r /tmp/mattpocock-skills/skills/engineering/improve-codebase-architecture/. ~/.claude/skills/mattpocock-improve-architecture/
+cp -r /tmp/mattpocock-skills/skills/engineering/grill-with-docs/. ~/.claude/skills/mattpocock-grill-with-docs/
+
+# 3. Preview, then apply
+cd <your-project>
+claude "/update-agenticapps-workflow --dry-run"
+claude "/update-agenticapps-workflow"
+
+# 4. Install Hook 5 (Commitment Re-Injector) GLOBALLY (one-time per machine)
+cp ~/.claude/skills/agenticapps-workflow/templates/global-hooks/commitment-reinject.sh \
+   ~/.claude/hooks/commitment-reinject.sh 2>/dev/null \
+  || echo "TODO: Hook 5 will live at templates/global-hooks/ once setup-skill installs it; for now copy from your local Claude Code session that ran P2A"
+chmod +x ~/.claude/hooks/commitment-reinject.sh
+# Then add SessionStart matcher: compact entry to ~/.claude/settings.json
+
+# 5. Install the weekly cron (optional but recommended)
+~/.claude/skills/agenticapps-workflow/bin/install-architecture-cron.sh   # macOS
+# OR
+~/.claude/skills/agenticapps-workflow/bin/install-systemd-architecture-cron.sh   # Linux
+```
+
+### Removed
+
+Nothing. v1.4.0 is purely additive.
+
 ## [1.3.0] — 2026-05-03
 
 ### Added
