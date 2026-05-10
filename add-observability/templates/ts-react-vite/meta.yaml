@@ -1,0 +1,123 @@
+# meta.yaml — ts-react-vite
+# Consumed by add-observability skill init/scan logic.
+
+stack_id: ts-react-vite
+language: typescript
+runtime: browser-react
+spec_version: 0.2.1
+path_root: package.json    # spec §10.7.1 — module-root manifest for this stack
+description: |
+  React + Vite SPA running in the browser. Uses @sentry/react as the
+  destination SDK with its built-in ErrorBoundary, and a module-level
+  trace-context stack (browsers lack AsyncLocalStorage). Trace IDs are
+  generated at the user-interaction edge (clicks, route changes, form
+  submits) and propagated via a global fetch interceptor.
+
+  Differs from ts-cloudflare-worker in three ways:
+  1. No AsyncLocalStorage — module-level trace context with a push/pop
+     stack discipline (best-effort; concurrent async ops may interleave).
+  2. No HTTP middleware — instead, an ErrorBoundary component wraps the
+     React tree, and the global fetch is monkey-patched at init.
+  3. Init is at React-root mount time (typically src/main.tsx), not
+     per-request.
+
+  All target.* paths below are resolved relative to the directory
+  containing path_root, NOT relative to the project's repo root. For a
+  monorepo with multiple frontend apps, the skill scaffolds independently
+  into each.
+
+# ─── Detection ─────────────────────────────────────────────────────────────
+
+detection:
+  must:
+    - file_contains:
+        path: package.json
+        pattern: '"react"'
+    - file_contains:
+        path: package.json
+        pattern: '"vite"|"@vitejs/plugin-react"'
+  any_of:
+    - file_exists: vite.config.ts
+    - file_exists: vite.config.js
+    - file_exists: vite.config.mts
+
+# ─── Target paths ──────────────────────────────────────────────────────────
+
+target:
+  wrapper_path: src/lib/observability/index.ts
+  error_boundary_path: src/lib/observability/ErrorBoundary.tsx
+  policy_path: src/lib/observability/policy.md
+  readme_path: src/lib/observability/README.md
+
+  # Where init + ErrorBoundary mount. The generator scans entry_file_candidates
+  # for the React root creation (createRoot or hydrateRoot) and inserts:
+  #   - import { init } from "./lib/observability"; init();
+  #   - <ObservabilityErrorBoundary> wrapping the existing <App/> JSX
+  entry_file_candidates:
+    - src/main.tsx
+    - src/main.jsx
+    - src/index.tsx
+    - src/index.jsx
+
+# ─── Required environment variables ────────────────────────────────────────
+# Vite exposes only VITE_-prefixed env vars to client code. The Sentry DSN
+# is intentionally exposed — Sentry's browser DSNs are public keys by design.
+
+required_env:
+  - name: VITE_SERVICE_NAME
+    location: .env
+    required: true
+    example: '"{{service_name_default}}-frontend"'
+  - name: VITE_DEPLOY_ENV
+    location: .env
+    required: true
+    example: '"dev"'
+  - name: VITE_SENTRY_DSN
+    location: .env
+    secret: false   # Sentry browser DSNs are public by design
+    required: false # wrapper degrades to console-only when blank
+    example: 'https://<key>@<org>.ingest.sentry.io/<project>'
+
+# ─── Required npm dependencies ────────────────────────────────────────────
+
+required_deps:
+  - package: '@sentry/react'
+    version: '^8.0.0'
+
+# ─── Test runner detection ────────────────────────────────────────────────
+# The contract test fixture uses vitest by default. If the project uses
+# jest, the generator substitutes the imports.
+
+test_runner:
+  preferred: vitest
+  fallback: jest
+
+# ─── Generator parameter substitutions ────────────────────────────────────
+
+parameters:
+  SERVICE_NAME:
+    description: Service identifier emitted on every event. Convention is "<project>-frontend".
+    derive_from: 'package.json "name" field, fallback to project dirname + "-frontend"'
+  ENV_VAR_DSN:
+    default: VITE_SENTRY_DSN
+  ENV_VAR_ENV:
+    default: VITE_DEPLOY_ENV
+  ENV_VAR_SERVICE:
+    default: VITE_SERVICE_NAME
+  REDACTED_KEYS:
+    description: Substrings (lowercased) to scrub from attribute keys. Includes browser-specific defaults like "credit_card" since browsers handle payment forms.
+    default:
+      - password
+      - token
+      - api_key
+      - card_number
+      - cvv
+      - ssn
+      - credit_card
+  DEBUG_SAMPLE_RATE:
+    default: 0.1
+  TRACE_SAMPLE_RATE:
+    default: 0.1
+  DESTINATION:
+    default: sentry
+    accepted: [sentry, axiom, otel, postgres]

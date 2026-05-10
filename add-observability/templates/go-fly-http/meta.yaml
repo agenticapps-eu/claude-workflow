@@ -1,0 +1,108 @@
+# meta.yaml — go-fly-http
+# Consumed by add-observability skill init/scan logic.
+
+stack_id: go-fly-http
+language: go
+runtime: fly-io
+spec_version: 0.2.1
+path_root: go.mod    # spec §10.7.1 — module-root manifest for this stack
+description: |
+  Go HTTP services running on Fly.io. Compatible with net/http, chi,
+  echo, gorilla/mux, and any router that accepts http.Handler middleware.
+  Uses sentry-go as the destination SDK and context.Context for trace
+  propagation.
+
+  All target.* paths below are resolved relative to the directory
+  containing path_root, NOT relative to the project's repo root. For a
+  repo where the Go module lives at `backend/go.mod`, the wrapper
+  lands at `backend/internal/observability/observability.go` (verified
+  against cparx in the 2026-05-10 pilot).
+
+# ─── Detection ─────────────────────────────────────────────────────────────
+
+detection:
+  must:
+    - file_exists: go.mod
+  any_of:
+    - file_exists: fly.toml
+    - file_contains:
+        path: go.mod
+        pattern: 'github.com/getsentry/sentry-go|net/http'
+
+# ─── Target paths ──────────────────────────────────────────────────────────
+
+target:
+  wrapper_path: internal/observability/observability.go
+  middleware_path: internal/observability/middleware.go
+  policy_path: internal/observability/policy.md
+  readme_path: internal/observability/README.md
+
+  # Where the middleware mounts. The generator scans entry_file_candidates
+  # for the http.Handler / http.ServeMux registration and inserts a wrap.
+  entry_file_candidates:
+    - cmd/server/main.go
+    - cmd/api/main.go
+    - main.go
+    - internal/server/server.go
+
+# ─── Required environment variables ────────────────────────────────────────
+
+required_env:
+  - name: SERVICE_NAME
+    location: fly.toml
+    section: env
+    required: true
+    example: '"{{service_name_default}}"'
+  - name: DEPLOY_ENV
+    location: fly.toml
+    section: env
+    required: true
+    example: '"dev"'
+  - name: SENTRY_DSN
+    location: fly.toml
+    section: secrets   # set via `fly secrets set`
+    secret: true
+    required: true
+    example: 'https://<key>@<org>.ingest.sentry.io/<project>'
+
+# ─── Required Go modules ───────────────────────────────────────────────────
+
+required_deps:
+  - module: github.com/getsentry/sentry-go
+    version: 'v0.31.0'
+
+# ─── Generator parameter substitutions ────────────────────────────────────
+
+parameters:
+  PACKAGE_NAME:
+    description: Go package name for the wrapper module.
+    default: observability
+  MODULE_PATH:
+    description: Full Go module path for cross-package imports.
+    derive_from: 'module declaration in go.mod'
+    example: 'github.com/agenticapps-eu/cparx/internal/observability'
+  SERVICE_NAME:
+    description: Service identifier emitted on every event.
+    derive_from: 'fly.toml [app] field, fallback to project dirname + "-backend"'
+  ENV_VAR_DSN:
+    default: SENTRY_DSN
+  ENV_VAR_ENV:
+    default: DEPLOY_ENV
+  ENV_VAR_SERVICE:
+    default: SERVICE_NAME
+  REDACTED_KEYS:
+    description: Substrings (lowercased) to scrub from attribute keys.
+    default:
+      - password
+      - token
+      - api_key
+      - card_number
+      - cvv
+      - ssn
+  DEBUG_SAMPLE_RATE:
+    default: 0.1
+  TRACE_SAMPLE_RATE:
+    default: 0.1
+  DESTINATION:
+    default: sentry
+    accepted: [sentry, axiom, otel, postgres]

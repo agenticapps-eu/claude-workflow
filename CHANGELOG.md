@@ -4,6 +4,71 @@ All notable changes to the AgenticApps Claude Workflow scaffolder are
 documented here. The format follows [Keep a Changelog](https://keepachangelog.com/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] — Unreleased
+
+### Added
+
+- **`add-observability` skill** — Claude Code implementation of
+  AgenticApps core spec §10 v0.2.1 (observability contract). Three
+  subcommands:
+  - `init` — greenfield: scaffold the wrapper module + middleware into
+    each detected stack.
+  - `scan` — brownfield: audit conformance against §10.4 mandatory
+    instrumentation points; produce `.scan-report.md` with findings
+    classified high / medium / low confidence.
+  - `scan-apply` — apply high-confidence gaps with **per-file or
+    per-batch consent in chat** (§10.7 fourth bullet). Edit-tool
+    content-matching is the safety net; stale findings flagged for
+    re-scan rather than fuzzy-merged.
+- **Five stack templates** ship with the skill at
+  `add-observability/templates/`:
+  - `ts-cloudflare-worker` (Workers fetch / scheduled / queue handlers)
+  - `ts-cloudflare-pages` (Pages Functions; inherits worker wrapper)
+  - `ts-supabase-edge` (Deno; uses `npm:@sentry/deno`)
+  - `ts-react-vite` (browser; module-level span stack +
+    `ObservabilityErrorBoundary` for React)
+  - `go-fly-http` (chi / std net/http; `context.Context` propagation)
+- **61 contract tests across 4 runtimes** ship with the templates and
+  pass against materialized-from-template wrappers (vitest+jsdom for
+  TS, deno test for Deno, go test for Go).
+- **Migration `0002-observability-spec-0.2.1.md`** — installs the skill
+  on `/update-agenticapps-workflow` for projects on 1.4.x. Steps:
+  install skill, bump version, add `/add-observability` reference to
+  CLAUDE.md. Non-destructive — does not instrument any source code;
+  the user explicitly invokes `init` / `scan-apply` afterward.
+
+### Spec context
+
+- This release implements AgenticApps core spec §10 v0.2.1.
+  v0.2.1 patches over v0.2.0:
+  - §10.5 — added a note clarifying interaction with framework-level
+    recoverer middleware (mount inside Recoverer).
+  - §10.7.1 — clarified that target paths resolve against the
+    *language module root* (`go.mod`, `package.json`, `Cargo.toml`,
+    `supabase/config.toml`), not the repo root. Supports monorepos and
+    non-root manifests (e.g. cparx's `backend/go.mod`).
+- The spec text itself lives in the (still-pending) `agenticapps-workflow-core` repo;
+  this release ships the implementation that satisfies it. The skill's
+  `SKILL.md` declares `implements_spec: 0.2.1` for forward-compat
+  conformance tracking.
+
+### Pilot
+
+- **cparx pilot (2026-05-10)** validated the templates end-to-end
+  against the cparx Go backend. `go build ./...`, `go vet ./...`, and
+  the existing test suite all passed after the templates were applied.
+  Six gaps surfaced and were resolved in v0.2.1 (G1 module-root
+  resolution, G2 transport composition for custom RoundTrippers, G4
+  recoverer ordering, G6 contract test fixtures shipping with each
+  template). G3 detached-goroutine instrumentation and G5 RequestID
+  coexistence deferred to v0.3.0+. Pilot artifacts live in the design
+  folder; the cparx adoption itself happens via the project's own
+  feature-branch + GSD workflow.
+
+### Changed
+
+- `skill/SKILL.md` frontmatter version bumped 1.4.0 → 1.5.0.
+
 ## [1.4.0] — 2026-05-03
 
 ### Added

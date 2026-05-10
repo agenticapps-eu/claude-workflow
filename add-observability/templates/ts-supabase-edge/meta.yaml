@@ -1,0 +1,109 @@
+# meta.yaml — ts-supabase-edge
+# Consumed by add-observability skill init/scan logic.
+
+stack_id: ts-supabase-edge
+language: typescript
+runtime: deno-supabase-edge
+spec_version: 0.2.1
+path_root: supabase/config.toml    # Supabase project root, not a Node manifest
+description: |
+  Supabase Edge Functions running on Deno. Each function lives at
+  `supabase/functions/<name>/index.ts` with a `Deno.serve(handler)` call.
+  Uses @sentry/deno (via npm: specifier) as the destination SDK.
+
+  The wrapper module is generated once at
+  `supabase/functions/_shared/observability/index.ts` and imported by
+  each function via the relative path
+  `../_shared/observability/index.ts`. This is the canonical shared-code
+  pattern for Supabase Edge Functions.
+
+  The middleware is NOT auto-applied — each function explicitly wraps
+  its handler with `withObservability(handler)` from the shared module.
+  This is because Edge Functions don't have a per-project middleware
+  hook; each function is independently deployed.
+
+# ─── Detection ─────────────────────────────────────────────────────────────
+
+detection:
+  must:
+    - file_exists: supabase/config.toml
+    - file_exists: supabase/functions/        # the canonical functions dir
+  any_of:
+    - file_exists: supabase/functions/import_map.json
+    - file_exists: supabase/functions/deno.json
+    - file_exists: supabase/functions/_shared/
+
+# ─── Target paths ──────────────────────────────────────────────────────────
+
+target:
+  wrapper_path: supabase/functions/_shared/observability/index.ts
+  middleware_path: supabase/functions/_shared/observability/middleware.ts
+  policy_path: supabase/functions/_shared/observability/policy.md
+  readme_path: supabase/functions/_shared/observability/README.md
+
+  # No automatic per-function wiring — each function must import
+  # withObservability and wrap its Deno.serve handler. The skill's scan
+  # subcommand identifies functions that haven't done this.
+  per_function_pattern:
+    glob: supabase/functions/*/index.ts
+    skip:
+      - supabase/functions/_shared/**     # not a function
+      - supabase/functions/_health/**     # health-check stub if present
+
+# ─── Required environment variables ────────────────────────────────────────
+# Supabase Edge Functions read env vars set via:
+#   supabase secrets set SENTRY_DSN=...
+# For local dev: supabase/.env (loaded by `supabase functions serve`).
+
+required_env:
+  - name: SERVICE_NAME
+    location: supabase/.env
+    required: true
+    example: '"{{service_name_default}}-edge"'
+  - name: DEPLOY_ENV
+    location: supabase/.env
+    required: true
+    example: '"dev"'
+  - name: SENTRY_DSN
+    location: supabase/.env
+    secret: true
+    required: true
+
+# ─── Deno-specific config ─────────────────────────────────────────────────
+
+deno_imports:
+  - specifier: 'npm:@sentry/deno@^8.0.0'
+    name: '@sentry/deno'
+  # Deno's std library AsyncLocalStorage equivalent — node:async_hooks
+  # is supported by Supabase's Edge Functions runtime via Deno's Node
+  # compatibility layer.
+
+# ─── Generator parameter substitutions ────────────────────────────────────
+
+parameters:
+  SERVICE_NAME:
+    description: Service identifier emitted on every event.
+    derive_from: 'supabase/config.toml [project] field, fallback to project dirname + "-edge"'
+  ENV_VAR_DSN: { default: SENTRY_DSN }
+  ENV_VAR_ENV: { default: DEPLOY_ENV }
+  ENV_VAR_SERVICE: { default: SERVICE_NAME }
+  REDACTED_KEYS:
+    default: [password, token, api_key, card_number, cvv, ssn]
+  DEBUG_SAMPLE_RATE: { default: 0.1 }
+  TRACE_SAMPLE_RATE: { default: 0.1 }
+  DESTINATION:
+    default: sentry
+    accepted: [sentry, axiom, otel, postgres]
+
+# ─── Inheritance ──────────────────────────────────────────────────────────
+
+inherits_wrapper_from: ts-cloudflare-worker
+# The wrapper logic is the same; only the import specifiers and the
+# environment-read mechanism differ. The generator copies the worker
+# template's lib-observability.ts and applies these substitutions:
+#   - "@sentry/cloudflare" → "npm:@sentry/deno"
+#   - `import.meta.env.X` access not used here; Deno reads via Deno.env.get(X)
+#   - `ctx.waitUntil(...)` → standalone (no Edge Function equivalent;
+#     fire-and-forget runs in background, accepting that the function
+#     may complete before emission flushes — Sentry's flush-on-init plus
+#     a short flush-on-handler-end mitigates).

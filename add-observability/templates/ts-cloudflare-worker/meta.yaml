@@ -1,0 +1,115 @@
+# meta.yaml — ts-cloudflare-worker
+# Consumed by add-observability skill init/scan logic.
+
+stack_id: ts-cloudflare-worker
+language: typescript
+runtime: cloudflare-workers
+spec_version: 0.2.1
+path_root: package.json    # spec §10.7.1 — module-root manifest for this stack
+description: |
+  Cloudflare Workers running TypeScript. Covers fetch, scheduled, queue,
+  and email handlers. Uses @sentry/cloudflare as the destination SDK and
+  AsyncLocalStorage (via nodejs_compat) for trace context propagation.
+
+  All target.* paths below are resolved relative to the directory
+  containing path_root, NOT relative to the project's repo root. For a
+  monorepo where the Worker lives at `worker/package.json`, the wrapper
+  lands at `worker/src/lib/observability/index.ts`.
+
+# ─── Detection ─────────────────────────────────────────────────────────────
+# All `must` rules and at least one `any_of` rule must hold for the stack
+# to be considered present in a project.
+
+detection:
+  must:
+    - file_contains:
+        path: package.json
+        pattern: '"@cloudflare/workers-types"|"wrangler"'
+  any_of:
+    - file_exists: wrangler.toml
+    - file_exists: wrangler.jsonc
+
+# ─── Target paths ──────────────────────────────────────────────────────────
+# Where the generator writes wrapper code into the project.
+
+target:
+  wrapper_path: src/lib/observability/index.ts
+  middleware_path: src/lib/observability/middleware.ts
+  policy_path: src/lib/observability/policy.md
+  readme_path: src/lib/observability/README.md
+
+  # Where the middleware mounts. The generator scans `entry_file` for the
+  # `default export` of a fetch handler and rewrites it to wrap the handler
+  # via `withObservability`.
+  entry_file_candidates:
+    - src/index.ts
+    - src/worker.ts
+    - worker/index.ts
+    - src/main.ts
+
+# ─── Required environment variables ────────────────────────────────────────
+# Stubs added to wrangler.toml [vars] and .dev.vars; user fills values.
+
+required_env:
+  - name: SERVICE_NAME
+    location: wrangler.toml
+    section: vars
+    required: true
+    example: '"{{service_name_default}}"'
+  - name: DEPLOY_ENV
+    location: wrangler.toml
+    section: vars
+    required: true
+    example: '"dev"'
+  - name: SENTRY_DSN
+    location: .dev.vars
+    secret: true
+    required: true
+    example: 'https://<key>@<org>.ingest.sentry.io/<project>'
+
+# ─── Cloudflare-specific config ───────────────────────────────────────────
+
+wrangler_compat_flags:
+  - nodejs_compat       # required for AsyncLocalStorage from node:async_hooks
+
+# ─── Required npm dependencies ────────────────────────────────────────────
+
+required_deps:
+  - package: '@sentry/cloudflare'
+    version: '^8.0.0'
+
+# ─── Generator parameter substitutions ────────────────────────────────────
+# The init subcommand replaces these tokens in the template files.
+
+parameters:
+  SERVICE_NAME:
+    description: Service identifier emitted on every event.
+    derive_from: 'wrangler.toml [name] field, fallback to project dirname + "-worker"'
+  ENV_VAR_DSN:
+    description: Env var holding the Sentry DSN.
+    default: SENTRY_DSN
+  ENV_VAR_ENV:
+    description: Env var holding the deployment environment.
+    default: DEPLOY_ENV
+  ENV_VAR_SERVICE:
+    description: Env var holding the service name (allows override at deploy time).
+    default: SERVICE_NAME
+  REDACTED_KEYS:
+    description: Array of attribute key substrings to redact. Derived from policy.md §"Redacted attributes".
+    default:
+      - password
+      - token
+      - api_key
+      - card_number
+      - cvv
+      - ssn
+  DEBUG_SAMPLE_RATE:
+    description: Sample rate for severity=debug events. 0.0–1.0.
+    default: 0.1
+  TRACE_SAMPLE_RATE:
+    description: Sample rate for traces sent to Sentry. 0.0–1.0.
+    default: 0.1
+  DESTINATION:
+    description: Destination identifier baked into the wrapper as a comment.
+    default: sentry
+    accepted: [sentry, axiom, otel, postgres]

@@ -1,0 +1,102 @@
+# meta.yaml — ts-cloudflare-pages
+# Consumed by add-observability skill init/scan logic.
+
+stack_id: ts-cloudflare-pages
+language: typescript
+runtime: cloudflare-pages-functions
+spec_version: 0.2.1
+path_root: package.json
+description: |
+  Cloudflare Pages Functions (the server-side companion to a Pages site).
+  Pages Functions run on the Workers runtime but use the
+  PagesFunction<Env> handler shape with `onRequest` / `onRequestPost` /
+  etc. exports from files under `functions/`. The wrapper module is
+  identical to ts-cloudflare-worker; only the middleware export shape
+  differs.
+
+  Use this stack for the server-side handlers of a Cloudflare Pages app.
+  For the React/Vite client portion of the same app, additionally apply
+  the ts-react-vite stack — both can coexist in one repo.
+
+  All target.* paths below are resolved relative to the directory
+  containing path_root, NOT relative to the project's repo root.
+
+# ─── Detection ─────────────────────────────────────────────────────────────
+
+detection:
+  must:
+    - file_exists: functions/        # canonical Pages-Functions directory
+  any_of:
+    - file_exists: wrangler.toml
+    - file_contains:
+        path: package.json
+        pattern: '"@cloudflare/workers-types"|"@cloudflare/pages-plugin"|"wrangler"'
+
+# ─── Target paths ──────────────────────────────────────────────────────────
+
+target:
+  wrapper_path: functions/_lib/observability/index.ts
+  middleware_path: functions/_middleware.ts
+  policy_path: functions/_lib/observability/policy.md
+  readme_path: functions/_lib/observability/README.md
+
+  # Pages Functions auto-loads `functions/_middleware.ts` (and per-folder
+  # equivalents) for every request under that path. The skill's init
+  # writes a top-level `_middleware.ts` that wraps the chain via
+  # `pagesPluginObservability`. If a `_middleware.ts` already exists,
+  # the generator merges (chains the existing middleware after ours).
+  middleware_mount:
+    file: functions/_middleware.ts
+    mode: prepend_or_chain
+
+# ─── Required environment variables ────────────────────────────────────────
+
+required_env:
+  - name: SERVICE_NAME
+    location: wrangler.toml
+    section: vars
+    required: true
+    example: '"{{service_name_default}}-pages"'
+  - name: DEPLOY_ENV
+    location: wrangler.toml
+    section: vars
+    required: true
+    example: '"dev"'
+  - name: SENTRY_DSN
+    location: .dev.vars
+    secret: true
+    required: true
+
+# ─── Cloudflare-specific config ───────────────────────────────────────────
+
+wrangler_compat_flags:
+  - nodejs_compat       # required for AsyncLocalStorage from node:async_hooks
+
+required_deps:
+  - package: '@sentry/cloudflare'
+    version: '^8.0.0'
+
+# ─── Generator parameter substitutions ────────────────────────────────────
+
+parameters:
+  SERVICE_NAME:
+    description: Service identifier emitted on every event. Convention is "<project>-pages".
+    derive_from: 'wrangler.toml [name] field, fallback to project dirname + "-pages"'
+  ENV_VAR_DSN: { default: SENTRY_DSN }
+  ENV_VAR_ENV: { default: DEPLOY_ENV }
+  ENV_VAR_SERVICE: { default: SERVICE_NAME }
+  REDACTED_KEYS:
+    default: [password, token, api_key, card_number, cvv, ssn]
+  DEBUG_SAMPLE_RATE: { default: 0.1 }
+  TRACE_SAMPLE_RATE: { default: 0.1 }
+  DESTINATION:
+    default: sentry
+    accepted: [sentry, axiom, otel, postgres]
+
+# ─── Inheritance ──────────────────────────────────────────────────────────
+
+inherits_wrapper_from: ts-cloudflare-worker
+# The wrapper module (lib-observability.ts) is byte-identical to the
+# ts-cloudflare-worker template after parameter substitution. The
+# generator copies it without changes; only the middleware shape differs
+# (this stack's middleware exports a PagesFunction, not a fetch handler).
