@@ -35,6 +35,43 @@ project (currently the v1.2.0 default). Every other migration is incremental.
 
 ---
 
+## Application order
+
+Migrations are applied by **`from_version` matching**, not by ID order. The
+`update` skill repeatedly looks at the project's currently-installed version,
+finds the migration whose `from_version` matches, applies it, and bumps the
+project to that migration's `to_version`. It loops until no more matching
+migration is found.
+
+This decouples the file's sequential ID from its place in the version chain.
+Two consequences worth stating explicitly:
+
+1. **IDs and versions can be out of sync.** A project on `1.3.0` runs
+   migration `0004` (`1.3.0 → 1.4.0`) before migration `0002` (`1.4.0 →
+   1.5.0`), even though `0004 > 0002` numerically. The IDs identify
+   migrations; they don't sequence them.
+
+2. **Two migrations MUST NOT share the same `from_version`.** If both
+   `0002` and `0007` had `from_version: 1.4.0`, the update skill would have
+   no rule for picking one. Releases that need parallel branches (e.g. a
+   1.4.x security patch alongside an in-flight 1.5.0 feature) get one
+   `to_version` each — `1.4.1` for the patch, `1.5.0` for the feature —
+   so the chain stays linear.
+
+If you're authoring a migration, the safe pattern is:
+
+- Pick the next free `to_version` per semver (patch for clarifications,
+  minor for additive, major for breaking).
+- Set `from_version` to the highest currently-released `to_version` your
+  migration needs to chain after.
+- Pick the next free `id` numerically — it doesn't need to be one greater
+  than the last migration that ran chronologically.
+
+The drift-report tool (`tools/drift-report.sh` in core) flags any chain
+gap or duplicate `from_version` automatically.
+
+---
+
 ## File format
 
 Every migration file uses this structure:
