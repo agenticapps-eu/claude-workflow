@@ -1,0 +1,19 @@
+# Phase 09 — T5b Post-Apply Smoke Test Evidence
+
+Captured: $(date)
+Sandbox: $TMP
+
+## Check 1: plugin manifest parses
+jq empty ~/.claude/plugins/llm-wiki-compiler/.claude-plugin/plugin.json → exit 0
+
+## Check 2: plugin declares canonical commands
+wiki-compile, wiki-lint both present in commands[] array
+
+## Check 3: per-family configs parse
+agenticapps/.wiki-compiler.json → jq empty exit 0
+
+## Check 4: source globs resolve
+agenticapps/.wiki-compiler.json sources[*].path → at least one glob resolved to ≥1 real file
+   (e.g. */docs/decisions matched agenticapps/claude-workflow/docs/decisions/)
+
+Verdict: T5b PASS — install produces a parseable, discoverable, populated wiki integration.
