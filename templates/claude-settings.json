@@ -37,6 +37,17 @@
             "timeout": 5000
           }
         ]
+      },
+      {
+        "_hook": "Hook 6 — Normalize CLAUDE.md after Edit/Write (migration 0010)",
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/normalize-claude-md.sh \"$CLAUDE_PROJECT_DIR/CLAUDE.md\"",
+            "timeout": 5000
+          }
+        ]
       }
     ],
     "Stop": [

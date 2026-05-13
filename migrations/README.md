@@ -45,6 +45,7 @@ project (currently the v1.2.0 default). Every other migration is incremental.
 | `0006` | 1.5.1 → 1.6.0 | LLM wiki builder integration |
 | `0007` | 1.6.0 → 1.7.0 | GitNexus code-graph integration |
 | `0009` | 1.7.0 → 1.8.0 | Vendor CLAUDE.md workflow block as `.claude/claude-md/workflow.md` |
+| `0010` | 1.8.0 → 1.9.0 | Post-process GSD section markers in CLAUDE.md |
 
 (IDs are not chronological — see "Application order" below for why
 `0004` runs before `0002` in the chain. Application order is by
