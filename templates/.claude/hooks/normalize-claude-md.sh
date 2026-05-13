@@ -2,14 +2,20 @@
 # Migration 0010 — Normalize GSD section markers in CLAUDE.md.
 #
 # Walks CLAUDE.md, finds `<!-- GSD:{slug}-start[ source:{path}] -->...<!-- GSD:{slug}-end -->`
-# blocks, and rewrites each into the self-closing reference form:
+# blocks where {slug} is one of the seven canonical sections (project,
+# stack, conventions, architecture, skills, workflow, profile), and
+# rewrites each into the self-closing reference form:
 #
 #     <!-- GSD:{slug} source:{path} /-->
 #     ## {Heading}
 #     See [`{linkPath}`](./{linkPath}) — auto-synced.
 #
 # Idempotent. Source-existence-safe (preserves block if source: file
-# resolves to a path that doesn't exist on disk). Targets bash 3.2+ and
+# resolves to a path that doesn't exist on disk). Markers inside fenced
+# markdown code blocks (``` … ```) are NEVER touched — fence-aware
+# parsing keeps documentation examples intact. Custom (non-canonical)
+# slugs are preserved unchanged with a stderr warning. Nested marker
+# blocks are rejected as malformed (exit 2). Targets bash 3.2+ and
 # POSIX `grep`/`sed`/`awk` so it runs unchanged on macOS and Linux.
 #
 # Usage:
@@ -18,35 +24,27 @@
 # Defaults to ./CLAUDE.md. Exit codes:
 #   0 — success (file modified OR unchanged)
 #   1 — input file not found / not readable / not an accepted path
-#   2 — malformed input (unclosed marker)
+#       (non-CLAUDE.md basename, symlink, binary, etc.)
+#   2 — malformed input (unclosed marker / nested marker)
 #   3 — input file too large (DoS guard)
 
 set -u
 set -o pipefail
 
 # Security: pin PATH to system locations. Defends against PATH-poisoning
-# attacks where a hostile project adds a malicious `awk` (or `cp`, `diff`,
-# `mktemp`, `rm`) earlier in PATH (CSO audit finding H2). The PostToolUse
-# hook runs every Edit/Write, so a shadowed binary would execute under
-# the user's auth on every tool call.
+# attacks where a hostile project adds a malicious `awk` (or `cp`, `mv`,
+# `diff`, `mktemp`, `rm`) earlier in PATH (CSO audit finding H2).
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 
 INPUT="${1:-./CLAUDE.md}"
 
-# Security: input-path validation (CSO findings H1 + M1).
-# H1 — refuse paths whose basename is not exactly CLAUDE.md. The hook
-# is registered to normalize a single well-known file; accepting any
-# `$1` would let a curious user (or a misconfigured hook) clobber
-# /etc/hosts, ~/.ssh/authorized_keys, etc. Hardening: basename match
-# against the canonical filename.
+# ─── Input validation ────────────────────────────────────────────────────────
+# CSO H1: refuse paths whose basename is not exactly CLAUDE.md.
 if [ "$(basename -- "$INPUT")" != "CLAUDE.md" ]; then
   echo "normalize-claude-md: refusing to operate on non-CLAUDE.md path: $INPUT" >&2
   exit 1
 fi
-# M1 — refuse symbolic links. `cp` would follow the link and rewrite
-# the target (e.g., a symlink CLAUDE.md → /etc/hosts would clobber the
-# system file). The hook is intended for regular files inside the
-# project tree.
+# CSO M1: refuse symbolic links; `cp`/`mv` would follow them.
 if [ -L "$INPUT" ]; then
   echo "normalize-claude-md: refusing to operate on symlink: $INPUT" >&2
   exit 1
@@ -59,18 +57,38 @@ if [ ! -r "$INPUT" ]; then
   echo "normalize-claude-md: input not readable: $INPUT" >&2
   exit 1
 fi
-# M2 — DoS guard. A 200k+ line CLAUDE.md exhausts the 5s PostToolUse
-# timeout; processing megabyte-scale markdown isn't this hook's job.
-# Early-exit at 5 MiB. (CSO audit finding M2.)
+# CSO M2: DoS guard. 5 MiB cap covers any plausible CLAUDE.md.
 INPUT_SIZE=$(wc -c <"$INPUT" 2>/dev/null | tr -d ' ')
 if [ -n "$INPUT_SIZE" ] && [ "$INPUT_SIZE" -gt 5242880 ]; then
   echo "normalize-claude-md: input exceeds 5 MiB DoS guard ($INPUT_SIZE bytes); skipping" >&2
   exit 3
 fi
+# Stage-2 BLOCK-1: refuse binary input (NUL bytes). Prevents the script
+# from silently truncating a non-text file to zero length when `read -r`
+# stops at the first NUL. Implementation note: `grep -q $'\x00' …`
+# DOES NOT WORK — shells truncate args at the first NUL, so grep
+# receives an empty pattern and matches every line. Use `tr -d` size
+# comparison instead (portable across BSD/GNU `tr`).
+TEXT_SIZE=$(LC_ALL=C tr -d '\000' <"$INPUT" 2>/dev/null | wc -c | tr -d ' ')
+if [ -n "$TEXT_SIZE" ] && [ -n "$INPUT_SIZE" ] && [ "$TEXT_SIZE" != "$INPUT_SIZE" ]; then
+  echo "normalize-claude-md: refusing to operate on binary (NUL-containing) input: $INPUT" >&2
+  exit 1
+fi
+
+# ─── Slug allowlist ──────────────────────────────────────────────────────────
+# Stage-2 BLOCK-5: only the seven canonical GSD slugs trigger
+# normalization. Custom user-authored slugs (e.g., a project adds
+# `<!-- GSD:wibble-start -->` to track its own stuff) are preserved
+# unchanged so we don't trample non-GSD use of the same comment shape.
+is_canonical_slug() {
+  case "$1" in
+    project|stack|conventions|architecture|skills|workflow|profile) return 0 ;;
+    *)                                                               return 1 ;;
+  esac
+}
 
 # Resolve `source:` label to its real file/directory path (relative to CWD).
-# Returns the resolved path on stdout; empty string if no mapping exists
-# (caller treats empty as "no link — heading only").
+# Returns the resolved path on stdout; empty string if no mapping exists.
 resolve_source_path() {
   local label="$1"
   case "$label" in
@@ -86,7 +104,6 @@ resolve_source_path() {
   esac
 }
 
-# Map slug → human heading. Mirrors gsd-tools' sectionHeadings constant.
 heading_for_slug() {
   case "$1" in
     project)      echo "## Project" ;;
@@ -104,27 +121,28 @@ heading_for_slug() {
 # Args: slug, source-label-or-empty.
 # Writes the replacement text to stdout.
 # Returns 0 if a replacement was generated; 1 if the caller should
-# preserve the original block (source file missing).
+# preserve the original block (source file missing, unmapped label,
+# or non-canonical slug).
 build_replacement() {
   local slug="$1" source_label="$2"
 
-  # Special case: workflow block becomes redundant once migration 0009
-  # has vendored the canonical workflow text into .claude/claude-md/
-  # workflow.md. Skip the block entirely.
+  # Stage-2 BLOCK-5: non-canonical slugs are preserved unchanged.
+  # Emit a stderr note so the user can audit what was kept.
+  if ! is_canonical_slug "$slug"; then
+    echo "normalize-claude-md: non-canonical slug '$slug'; preserving block" >&2
+    return 1
+  fi
+
   if [ "$slug" = "workflow" ]; then
     if [ -f ".claude/claude-md/workflow.md" ]; then
-      # No output — caller skips the block (deletes from CLAUDE.md).
-      return 0
+      return 0  # collapse entirely — 0009 has the canonical copy
     fi
-    # Fallback: keep heading + no-link reference.
     printf '<!-- GSD:workflow source:GSD defaults /-->\n'
     heading_for_slug workflow
     printf '> Workflow defaults. Migration 0009 not yet applied.\n'
     return 0
   fi
 
-  # Special case: profile has no `source:` attribute and no on-disk
-  # source file we can link to; emit a placeholder.
   if [ "$slug" = "profile" ]; then
     printf '<!-- GSD:profile /-->\n'
     heading_for_slug profile
@@ -132,19 +150,17 @@ build_replacement() {
     return 0
   fi
 
-  # Standard case: resolve source-label to a real path, verify it exists,
-  # emit self-closing form + heading + link.
   local link_path
   link_path="$(resolve_source_path "$source_label")"
 
-  # No mapping → preserve. (Caller signal: return 1.)
+  # Stage-2 FLAG-D: unmapped source labels also emit a warning (not just
+  # silent preserve). Makes the fixture README's "MUST warn" claim true
+  # in both branches (missing-file AND unmapped-label).
   if [ -z "$link_path" ]; then
+    echo "normalize-claude-md: unmapped source label '$source_label' for slug=$slug; preserving block" >&2
     return 1
   fi
 
-  # Source-existence safety: if the resolved path doesn't exist on disk,
-  # preserve the original block unchanged. Strip optional trailing slash
-  # for the existence check (directories check as "exists" via test -e).
   local check_path="${link_path%/}"
   if [ ! -e "$check_path" ]; then
     echo "normalize-claude-md: source missing for slug=$slug source=$source_label (resolved to $link_path); preserving block" >&2
@@ -160,49 +176,63 @@ build_replacement() {
 # Walk the file line by line, tracking marker-block state. Emit either
 # the original line (outside a block) or, on encountering a -start
 # marker, capture the entire block and emit the normalized replacement.
+#
+# Fence-aware: lines inside ``` fenced code blocks are passed through
+# verbatim (Stage-2 BLOCK-2). Nested marker blocks are rejected as
+# malformed (Stage-2 BLOCK-6). CRLF line endings are normalized to LF
+# at read time so the marker regex matches on either convention
+# (Stage-2 BLOCK-3).
 normalize() {
   local input="$1"
   local in_block=0
   local block_slug=""
   local block_source=""
   local block_buf=""
+  local in_fence=0  # 1 when inside a ```-fenced markdown code block
 
   while IFS= read -r line || [ -n "$line" ]; do
+    # BLOCK-3: strip trailing CR so CRLF-ended files behave identically.
+    line="${line%$'\r'}"
+
+    # BLOCK-2: toggle fence state on any line whose first non-whitespace
+    # chars are three or more backticks (CommonMark §4.5). Inside a
+    # fence, NEVER process markers — emit lines verbatim.
+    if [[ "$line" =~ ^[[:space:]]{0,3}\`\`\`+ ]]; then
+      printf '%s\n' "$line"
+      in_fence=$((1 - in_fence))
+      continue
+    fi
+    if [ "$in_fence" = "1" ]; then
+      printf '%s\n' "$line"
+      continue
+    fi
+
     if [ "$in_block" = "0" ]; then
-      # Detect start marker:
-      #   <!-- GSD:{slug}-start -->                    (no source)
-      #   <!-- GSD:{slug}-start source:{label} -->     (with source)
-      # Optional whitespace before/after attributes is tolerated.
-      # Source-label capture (.+?) is greedy in bash but the trailing
-      # anchor `[[:space:]]*--\>$` forces backtracking to leave the `-->`
-      # closing on its own — which means labels containing spaces
-      # (e.g., `source:GSD defaults`) match correctly.
       if [[ "$line" =~ ^\<!--[[:space:]]*GSD:([a-z]+)-start([[:space:]]+source:(.+))?[[:space:]]*--\>$ ]]; then
         in_block=1
         block_slug="${BASH_REMATCH[1]}"
-        # Trim trailing whitespace the greedy match may have included.
         block_source="${BASH_REMATCH[3]:-}"
+        # Trim trailing whitespace the greedy `.+` may have captured.
         block_source="${block_source%"${block_source##*[![:space:]]}"}"
         block_buf="$line"
         continue
       fi
-      # Pass through every other line, including already self-closing
-      # markers (idempotency case).
       printf '%s\n' "$line"
     else
-      # Inside a block — accumulate until the matching -end marker.
+      # BLOCK-6: nested -start markers are malformed. Bail out cleanly.
+      if [[ "$line" =~ ^\<!--[[:space:]]*GSD:[a-z]+-start ]]; then
+        printf '%s\n%s\n' "$block_buf" "$line" >&2
+        echo "normalize-claude-md: nested marker block (inner -start while inside slug=$block_slug); malformed input" >&2
+        return 2
+      fi
       block_buf="$block_buf"$'\n'"$line"
       if [[ "$line" =~ ^\<!--[[:space:]]*GSD:${block_slug}-end[[:space:]]*--\>$ ]]; then
-        # Block complete. Decide: normalize or preserve?
         local replacement
         if replacement="$(build_replacement "$block_slug" "$block_source")"; then
-          # build_replacement succeeded. Output replacement (may be
-          # empty — workflow special case strips the block entirely).
           if [ -n "$replacement" ]; then
             printf '%s\n' "$replacement"
           fi
         else
-          # Preserve original block byte-for-byte.
           printf '%s\n' "$block_buf"
         fi
         in_block=0
@@ -213,30 +243,35 @@ normalize() {
     fi
   done <"$input"
 
-  # Unclosed marker block? Treat as malformed input — emit what we had
-  # buffered and exit non-zero.
   if [ "$in_block" = "1" ]; then
     printf '%s\n' "$block_buf" >&2
     echo "normalize-claude-md: unclosed marker block for slug=$block_slug" >&2
     return 2
   fi
+  if [ "$in_fence" = "1" ]; then
+    echo "normalize-claude-md: warning — unterminated fenced code block at EOF" >&2
+    # Non-fatal; the input may be valid markdown with a missing closing fence.
+  fi
   return 0
 }
 
-# Collapse runs of 2+ consecutive blank lines down to a single blank
-# line. Removing a marker block (workflow special case) leaves the
-# blank lines that surrounded it adjacent to each other; this pass
-# tidies up. Mirrors `gsd-tools`' `/\n{3,}/g, '\n\n'` normalization.
+# Collapse runs of 2+ consecutive blank lines down to a single blank line.
 collapse_blank_runs() {
   awk 'BEGIN { blank=0 }
        /^[[:space:]]*$/ { if (blank == 0) print ""; blank=1; next }
        { print; blank=0 }'
 }
 
-# Write the normalized output to a temp file; if it differs from the
-# input, replace atomically. Skipping the write when content is unchanged
-# avoids retriggering PostToolUse-on-write loops.
-TMP_OUT="$(mktemp -t normalize-claude-md.XXXXXX)"
+# Stage-2 BLOCK-4: atomic write via mv, not cp. mv within the same
+# filesystem is atomic at the POSIX level. The temp file lives in the
+# same directory as the input so mv stays on one filesystem. Two
+# concurrent invocations now produce a final state that is "one or the
+# other's output," never a corrupt mid-write read.
+INPUT_DIR="$(dirname -- "$INPUT")"
+TMP_OUT="$(mktemp "$INPUT_DIR/.normalize-claude-md.XXXXXX")" || {
+  echo "normalize-claude-md: mktemp failed in $INPUT_DIR" >&2
+  exit 1
+}
 trap 'rm -f "$TMP_OUT"' EXIT
 
 if ! normalize "$INPUT" | collapse_blank_runs >"$TMP_OUT"; then
@@ -244,7 +279,10 @@ if ! normalize "$INPUT" | collapse_blank_runs >"$TMP_OUT"; then
 fi
 
 if ! diff -q "$INPUT" "$TMP_OUT" >/dev/null 2>&1; then
-  cp "$TMP_OUT" "$INPUT"
+  # mv is atomic when source and dest are on the same filesystem (POSIX
+  # rename(2) guarantee). Preserves permissions because mv-as-rename
+  # doesn't touch file mode of the existing entry being replaced.
+  mv -f "$TMP_OUT" "$INPUT"
 fi
 
 exit 0

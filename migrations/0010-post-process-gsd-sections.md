@@ -139,11 +139,15 @@ jq '.hooks.PostToolUse |= map(select(._hook != "Hook 6 — Normalize CLAUDE.md a
 ```
 Without jq: agent-driven removal anchored on the unique `_hook` label.
 
-The hook script's first action is to check whether the file path passed
-to it ends with `CLAUDE.md` (early exit otherwise). PostToolUse fires on
-every Edit/Write — without the early exit the 5ms cost would multiply.
-This filter lives in the script (not the matcher) because Claude Code
-matchers operate on tool names, not file-path arguments.
+The hook script's first action is to check whether the input file's
+basename is exactly `CLAUDE.md`. If not, the script **refuses** the
+invocation with exit code 1 (Stage-2 + CSO hardening: prevents the
+hook from clobbering arbitrary files). PostToolUse fires on every
+Edit/Write — even though the script exits cheaply on non-CLAUDE.md
+paths, the basename check is the security boundary, not just an
+optimization. This filter lives in the script (not the matcher)
+because Claude Code matchers operate on tool names, not file-path
+arguments.
 
 ### Step 3: One-shot normalize existing CLAUDE.md
 
@@ -159,10 +163,19 @@ HAS_MARKERS=0
 grep -qE "^<!--[[:space:]]*GSD:[a-z]+-start" CLAUDE.md && HAS_MARKERS=1
 
 if [ "$HAS_MARKERS" = "1" ]; then
-  # Dry-run: produce normalized output without modifying the file
-  cp CLAUDE.md "$TMPDIR/CLAUDE.md.preview"
-  .claude/hooks/normalize-claude-md.sh "$TMPDIR/CLAUDE.md.preview"
-  diff -u CLAUDE.md "$TMPDIR/CLAUDE.md.preview"
+  # Dry-run: produce normalized output without modifying the real file.
+  # Note: the post-processor refuses to operate on any path whose
+  # basename is not exactly `CLAUDE.md`. The preview lives in its own
+  # subdirectory so the basename stays canonical, and so the
+  # source-existence guard resolves `.planning/PROJECT.md` etc.
+  # relative to the preview-CWD's view of the project tree (achieved
+  # via `cd` plus symlinks back to `.planning/` and `.claude/`).
+  PREVIEW_DIR="$(mktemp -d)"
+  cp CLAUDE.md "$PREVIEW_DIR/CLAUDE.md"
+  ln -s "$(pwd)/.planning" "$PREVIEW_DIR/.planning"
+  ln -s "$(pwd)/.claude"   "$PREVIEW_DIR/.claude"
+  ( cd "$PREVIEW_DIR" && .claude/hooks/normalize-claude-md.sh "$PREVIEW_DIR/CLAUDE.md" )
+  diff -u CLAUDE.md "$PREVIEW_DIR/CLAUDE.md"
 fi
 ```
 
