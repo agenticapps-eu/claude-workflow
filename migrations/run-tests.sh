@@ -947,14 +947,10 @@ test_migration_0006() {
       fi
     fi
 
-    # Sandbox-escape post-check: make sure the install didn't touch the real $HOME
-    # (paranoid; the script targets $HOME so it should be safe by construction).
-    if [ -e "$HOME/.claude/plugins/llm-wiki-compiler-PHASE09-LEAK-CANARY" ]; then
-      echo "  ${RED}✗${RESET} $fixname — install leaked into real \$HOME"
-      FAIL=$((FAIL+1))
-      rm -rf "$tmp"
-      return
-    fi
+    # Stage 2 FLAG-D: the sandbox-escape post-check was structurally inert
+    # (no code writes a `-PHASE09-LEAK-CANARY` file). The real sandbox guard
+    # is the pre-grep on line ~879 (no hardcoded /Users/donald paths in the
+    # install script). Removed the theater check.
 
     echo "  ${GREEN}✓${RESET} $fixname (exit $actual_exit)"
     PASS=$((PASS+1))

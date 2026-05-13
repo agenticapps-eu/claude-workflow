@@ -1,36 +1,51 @@
 #!/usr/bin/env bash
 # Migration 0006 — Install LLM wiki compiler plugin + per-family scaffolding.
 #
-# Idempotent. Sandbox-friendly (all paths via $HOME). Documented in
-# migration 0006 + ADR 0019.
+# Idempotent — accepts both 1.9.1 (fresh apply) and 1.9.2 (already-applied)
+# baselines. Sandbox-friendly: all paths via $HOME (no CWD dependency).
 #
 # Exit codes:
 #   0  — success (fully applied or already-applied)
 #   1  — pre-flight or step failure
-#   2  — wrong-target symlink (codex B2: abort, do not repoint)
-#   3  — `.knowledge` exists as a regular file in some family (codex F4)
+#   2  — symlink-target collision (regular file at the path, or wrong-target symlink)
+#   3  — `.knowledge` exists as a regular file in some family
 #
 # Environment overrides (for testing):
 #   HOME                  — root for all ~-expansions (sandbox-friendly)
 #   WIKI_PLUGIN_SOURCE    — path to vendored plugin (default: $HOME/Sourcecode/agenticapps/wiki-builder/plugin)
 #   WIKI_SOURCECODE       — sourcecode root (default: $HOME/Sourcecode)
-#   WIKI_SKILL_MD         — path to SKILL.md for version bump (default: .claude/skills/agentic-apps-workflow/SKILL.md)
+#   WIKI_SKILL_MD         — path to SKILL.md (default: $HOME/.claude/skills/agentic-apps-workflow/SKILL.md)
 
 set -e
 
 PLUGIN_SOURCE="${WIKI_PLUGIN_SOURCE:-$HOME/Sourcecode/agenticapps/wiki-builder/plugin}"
 SOURCECODE_ROOT="${WIKI_SOURCECODE:-$HOME/Sourcecode}"
-SKILL_MD="${WIKI_SKILL_MD:-.claude/skills/agentic-apps-workflow/SKILL.md}"
+# Stage 2 NOTE-3: default to absolute path. Prevents the BLOCK-2 CWD-dependency
+# bug where a relative path would resolve to wherever the caller chdir'd to.
+SKILL_MD="${WIKI_SKILL_MD:-$HOME/.claude/skills/agentic-apps-workflow/SKILL.md}"
 PLUGIN_LINK="$HOME/.claude/plugins/llm-wiki-compiler"
 
 # ─── Pre-flight ──────────────────────────────────────────────────────────────
 
-# FLAG-E (phase 08 carry-over): trim whitespace on extracted version.
-INSTALLED=$(grep -E '^version:' "$SKILL_MD" 2>/dev/null | head -1 | sed 's/version: //' | tr -d '[:space:]' || true)
-if [ "$INSTALLED" != "1.9.1" ]; then
-  echo "ERROR: installed version is '$INSTALLED', this migration requires 1.9.1" >&2
+# Stage 2 FLAG-C: require jq up front. Otherwise jq-empty failures get
+# misattributed to "invalid JSON" downstream.
+if ! command -v jq >/dev/null 2>&1; then
+  echo "ERROR: jq is required for migration 0006 but is not installed" >&2
+  echo "       Install via: brew install jq  (macOS) or apt install jq (Debian/Ubuntu)" >&2
   exit 1
 fi
+
+# Trim whitespace on extracted version (phase 08 FLAG-E carry-over).
+INSTALLED=$(grep -E '^version:' "$SKILL_MD" 2>/dev/null | head -1 | sed 's/version: //' | tr -d '[:space:]' || true)
+# Stage 2 BLOCK-1: accept 1.9.1 (apply path) OR 1.9.2 (re-apply, already-applied).
+# All downstream steps are individually idempotent.
+case "$INSTALLED" in
+  1.9.1|1.9.2) : ;;
+  *)
+    echo "ERROR: installed version is '$INSTALLED', this migration requires 1.9.1 (or 1.9.2 for re-apply)" >&2
+    exit 1
+    ;;
+esac
 
 if [ ! -f "$PLUGIN_SOURCE/.claude-plugin/plugin.json" ]; then
   echo "ERROR: vendored plugin missing at $PLUGIN_SOURCE/.claude-plugin/plugin.json" >&2
@@ -65,19 +80,25 @@ fi
 # ─── Step 2: detect families ────────────────────────────────────────────────
 # A "family" is a directory under $SOURCECODE_ROOT that:
 #   (a) is a directory (not a file/symlink to elsewhere),
-#   (b) is not in the skip-list (personal/shared/archive/dotfiles),
-#   (c) contains at least one immediate child that's a git repo (has .git dir).
-# codex F2: the child-.git heuristic prevents scaffolding unrelated buckets.
+#   (b) is not in the skip-list (case-insensitive: personal/shared/archive/dotfiles),
+#   (c) contains at least one immediate child whose `.git` exists as
+#       either a directory (regular repo) or a regular file (git worktree).
+# codex F2: child-`.git` heuristic prevents scaffolding unrelated buckets.
+# Stage 2 FLAG-B: accept worktrees by allowing `.git` to be a file.
+# CSO L1: case-insensitive skip-list.
 
 is_family() {
   local dir="$1"
   [ -d "$dir" ] || return 1
-  case "$(basename "$dir")" in
+  local base_lc
+  base_lc=$(basename "$dir" | tr '[:upper:]' '[:lower:]')
+  case "$base_lc" in
     personal|shared|archive|.*) return 1 ;;
   esac
-  if find "$dir"/*/.git -maxdepth 1 -type d -print -quit 2>/dev/null | grep -q .; then
-    return 0
-  fi
+  # FLAG-B: match `.git` as directory OR file (worktree).
+  for c in "$dir"/*/.git; do
+    [ -e "$c" ] && return 0
+  done
   return 1
 }
 
@@ -91,8 +112,6 @@ if [ -d "$SOURCECODE_ROOT" ]; then
 fi
 
 # ─── Step 3: per-family .knowledge/{raw,wiki}/ dirs ─────────────────────────
-# Idempotency check: directories exist.
-# codex F4: abort if .knowledge exists as a regular file.
 
 for fam in ${FAMILIES[@]+"${FAMILIES[@]}"}; do
   knowledge="$fam/.knowledge"
@@ -101,7 +120,6 @@ for fam in ${FAMILIES[@]+"${FAMILIES[@]}"}; do
     exit 3
   fi
   mkdir -p "$knowledge/raw" "$knowledge/wiki"
-  # .gitignore for the wiki (regenerable derived artifact)
   if [ ! -f "$knowledge/.gitignore" ]; then
     cat > "$knowledge/.gitignore" <<'EOF'
 # Wiki output is a derived artifact, regenerable via `/wiki-compile`.
@@ -111,8 +129,9 @@ EOF
 done
 
 # ─── Step 4: per-family .wiki-compiler.json ─────────────────────────────────
-# Idempotency check: file exists (preserve user customisation per RESEARCH §5).
-# codex F4: detect malformed pre-existing config, warn and preserve.
+# Idempotency: preserve any existing file (even if malformed; warn).
+# CSO M1: JSON-escape the family-name field. Family directories named like
+# `foo"bar` would otherwise produce invalid JSON via raw heredoc interpolation.
 
 for fam in ${FAMILIES[@]+"${FAMILIES[@]}"}; do
   fam_name=$(basename "$fam")
@@ -125,27 +144,25 @@ for fam in ${FAMILIES[@]+"${FAMILIES[@]}"}; do
     else
       echo "warn: $config exists but is not valid JSON; skipping (user must fix manually)" >&2
     fi
-  else
-    cat > "$config" <<EOF
-{
-  "version": 2,
-  "name": "$fam_name_titlecase Knowledge",
-  "mode": "knowledge",
-  "sources": [
-    {"path": "*/docs/decisions", "description": "ADRs across repos"},
-    {"path": "*/README.md", "description": "Repo overviews"},
-    {"path": "*/CLAUDE.md", "description": "Per-repo workflow docs"},
-    {"path": "*/.planning/phases", "description": "GSD planning artifacts"}
-  ],
-  "output": ".knowledge/wiki/"
-}
-EOF
+    continue
   fi
+
+  # Build via jq to guarantee valid JSON regardless of family-name content (CSO M1 fix).
+  jq -n --arg name "$fam_name_titlecase Knowledge" '{
+    version: 2,
+    name: $name,
+    mode: "knowledge",
+    sources: [
+      {path: "*/docs/decisions", description: "ADRs across repos"},
+      {path: "*/README.md", description: "Repo overviews"},
+      {path: "*/CLAUDE.md", description: "Per-repo workflow docs"},
+      {path: "*/.planning/phases", description: "GSD planning artifacts"}
+    ],
+    output: ".knowledge/wiki/"
+  }' > "$config"
 done
 
 # ─── Step 5: per-family CLAUDE.md section ───────────────────────────────────
-# Idempotency check: grep for `## Knowledge wiki` heading.
-# codex B3: skip-with-warning if family CLAUDE.md doesn't exist.
 
 KNOWLEDGE_SECTION='
 ## Knowledge wiki
@@ -173,12 +190,22 @@ for fam in ${FAMILIES[@]+"${FAMILIES[@]}"}; do
 done
 
 # ─── Step 6: bump skill version ─────────────────────────────────────────────
-# Idempotency check: version line reads 1.9.2.
+# CSO H1: do NOT use `sed && rm` — `set -e` aborts `&&` chains via the chain's
+# overall exit, but a read-only or otherwise unwritable SKILL.md silently
+# loses the `rm -f .bak` (sed creates the .bak file, then fails on the write
+# of the main file — leaving .bak behind without a chance to clean up).
+# Use explicit if/then/else so failures are loud.
 
 if grep -q '^version: 1.9.2$' "$SKILL_MD"; then
   : # already bumped — idempotent no-op
 else
-  sed -i.bak 's/^version: 1\.9\.1$/version: 1.9.2/' "$SKILL_MD" && rm -f "$SKILL_MD.bak"
+  if sed -i.bak 's/^version: 1\.9\.1$/version: 1.9.2/' "$SKILL_MD"; then
+    rm -f "${SKILL_MD}.bak"
+  else
+    rm -f "${SKILL_MD}.bak"
+    echo "ERROR: failed to bump version in $SKILL_MD (permission denied? read-only filesystem?)" >&2
+    exit 1
+  fi
 fi
 
 echo "Migration 0006 applied successfully (${#FAMILIES[@]} families processed)."

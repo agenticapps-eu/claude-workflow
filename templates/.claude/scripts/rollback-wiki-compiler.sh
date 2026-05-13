@@ -9,7 +9,8 @@
 set -e
 
 PLUGIN_LINK="$HOME/.claude/plugins/llm-wiki-compiler"
-SKILL_MD="${WIKI_SKILL_MD:-.claude/skills/agentic-apps-workflow/SKILL.md}"
+# Stage 2 NOTE-3: absolute default (same fix as install script).
+SKILL_MD="${WIKI_SKILL_MD:-$HOME/.claude/skills/agentic-apps-workflow/SKILL.md}"
 
 # Step 1: remove host-level symlink.
 if [ -L "$PLUGIN_LINK" ]; then
@@ -17,8 +18,16 @@ if [ -L "$PLUGIN_LINK" ]; then
 fi
 
 # Step 2: revert skill version.
+# CSO L3 (= H1 in install): explicit if/then/else, not `sed && rm` chain —
+# the chain swallows sed failures on unwritable SKILL.md.
 if grep -q '^version: 1.9.2$' "$SKILL_MD" 2>/dev/null; then
-  sed -i.bak 's/^version: 1\.9\.2$/version: 1.9.1/' "$SKILL_MD" && rm -f "$SKILL_MD.bak"
+  if sed -i.bak 's/^version: 1\.9\.2$/version: 1.9.1/' "$SKILL_MD"; then
+    rm -f "${SKILL_MD}.bak"
+  else
+    rm -f "${SKILL_MD}.bak"
+    echo "ERROR: failed to revert version in $SKILL_MD (permission denied? read-only filesystem?)" >&2
+    exit 1
+  fi
 fi
 
 # Note: family-level data preserved by design. To remove manually:

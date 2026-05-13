@@ -70,7 +70,7 @@ Migration 0006 is self-contained: it owns the host symlink, the per-family direc
 
 Recorded in migration 0006's PLAN.md `Threat model (STRIDE)` table. Summary:
 
-- **Symlink overwrites a real file** at `~/.claude/plugins/llm-wiki-compiler` → mitigated by ABORT-on-exists-as-regular-file in the install script (codex B2 lock).
+- **Symlink overwrites a real file** at `~/.claude/plugins/llm-wiki-compiler` → mitigated by ABORT-on-exists-as-regular-file in the install script (independent defensive check; codex F4-class collision detection).
 - **Wrong-target symlink overwrite** → ABORT (do not silently repoint a forked install).
 - **Cross-family `.wiki-compiler.json` leak** via misconfigured `sources[*].path` → low risk: migration writes only the default config; user customization is user-territory. T5b post-apply smoke test catches malformed globs.
 - **Family CLAUDE.md collision** via duplicate `## Knowledge wiki` heading → idempotency check.

@@ -15,6 +15,9 @@ requires:
   - plugin: ussumant/llm-wiki-compiler v2.1.0+ (vendored at ~/Sourcecode/agenticapps/wiki-builder/)
     install: "test -d ~/Sourcecode/agenticapps/wiki-builder/plugin || git clone --depth=1 https://github.com/ussumant/llm-wiki-compiler.git ~/Sourcecode/agenticapps/wiki-builder"
     verify: "test -f ~/Sourcecode/agenticapps/wiki-builder/plugin/.claude-plugin/plugin.json"
+  - tool: jq
+    install: "command -v jq >/dev/null 2>&1 || { echo 'jq is required for migration 0006. Install: brew install jq (macOS) / apt install jq (Linux)'; exit 1; }"
+    verify: "command -v jq >/dev/null"
 optional_for:
   - machines without a `~/Sourcecode/` layout (the family-detection step finds 0 families and the install is a host-only symlink)
 ---
@@ -84,10 +87,14 @@ jq empty ~/.claude/plugins/llm-wiki-compiler/.claude-plugin/plugin.json || exit 
 FAMILY_COUNT=$(ls ~/Sourcecode/*/.wiki-compiler.json 2>/dev/null | wc -l | tr -d ' ')
 echo "Families with .wiki-compiler.json: $FAMILY_COUNT"
 
-# Each family config parses
+# Each family config parses (Stage 2 FLAG-A fix: handle no-match + preserved-malformed cases)
+shopt -s nullglob 2>/dev/null || true
 for c in ~/Sourcecode/*/.wiki-compiler.json; do
-  test -f "$c" && jq empty "$c" || { echo "ERROR: $c does not parse"; exit 1; }
+  if [ -f "$c" ] && ! jq empty "$c" 2>/dev/null; then
+    echo "warn: $c does not parse (likely preserved-malformed from a prior install; user must fix)" >&2
+  fi
 done
+shopt -u nullglob 2>/dev/null || true
 
 # Version bumped
 grep -q '^version: 1.9.2$' .claude/skills/agentic-apps-workflow/SKILL.md || exit 1
