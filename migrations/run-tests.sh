@@ -398,6 +398,319 @@ test_migration_0009() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Migration 0010 — post-process GSD section markers in CLAUDE.md
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Unlike 0001 and 0009 (which exercise idempotency checks only), 0010 ships
+# an actual executable script — `templates/.claude/hooks/normalize-claude-md.sh`.
+# The harness can therefore run the script directly and diff its output
+# against expected goldens. Fixtures are pair-shaped: <input>/CLAUDE.md plus
+# <input>/expected/CLAUDE.md. See migrations/test-fixtures/0010/README.md.
+
+test_migration_0010() {
+  echo ""
+  echo "${YELLOW}━━━ Migration 0010 — Post-process GSD section markers ━━━${RESET}"
+
+  local fixtures="$REPO_ROOT/migrations/test-fixtures/0010"
+  local script="$REPO_ROOT/templates/.claude/hooks/normalize-claude-md.sh"
+
+  if [ ! -d "$fixtures" ]; then
+    echo "  ${RED}SKIP${RESET}: fixtures directory missing at $fixtures"
+    SKIP=$((SKIP+1))
+    return
+  fi
+  # Missing script is a FAIL (the script IS the migration artifact under
+  # test; absent it the migration cannot deliver its contract). Diverges
+  # from 0001's and 0009's SKIP-on-missing-fixtures because those tests
+  # only verify idempotency-check correctness, not an executable artifact.
+  if [ ! -x "$script" ]; then
+    echo "  ${RED}✗${RESET} script missing or non-executable at $script — RED state, awaiting GREEN implementation"
+    FAIL=$((FAIL+1))
+    return
+  fi
+
+  # Each scenario gets its own temp dir; the script is invoked with CWD set
+  # to that temp dir so source-existence checks resolve relative to the fixture.
+  run_normalize() {
+    local scenario="$1"
+    local tmp="$(mktemp -d -t "migration-0010-${scenario}-XXXXXX")"
+    cp -R "$fixtures/$scenario/." "$tmp/"
+    rm -rf "$tmp/expected"
+    ( cd "$tmp" && "$script" "$tmp/CLAUDE.md" >/dev/null 2>&1 )
+    echo "$tmp"
+  }
+
+  assert_diff() {
+    local label="$1" actual="$2" expected="$3"
+    if diff -u "$expected" "$actual" >/dev/null 2>&1; then
+      echo "  ${GREEN}✓${RESET} $label"
+      PASS=$((PASS+1))
+    else
+      echo "  ${RED}✗${RESET} $label — diff against expected:"
+      diff -u "$expected" "$actual" 2>&1 | head -40 | sed 's/^/      /'
+      FAIL=$((FAIL+1))
+    fi
+  }
+
+  assert_line_count_le() {
+    local label="$1" file="$2" max="$3"
+    local count="$(wc -l < "$file" | tr -d ' ')"
+    if [ "$count" -le "$max" ]; then
+      echo "  ${GREEN}✓${RESET} $label (got $count, max $max)"
+      PASS=$((PASS+1))
+    else
+      echo "  ${RED}✗${RESET} $label (got $count, max $max)"
+      FAIL=$((FAIL+1))
+    fi
+  }
+
+  # ── Scenario: fresh ──────────────────────────────────────────────────────
+  # No markers; script must be a no-op (output == input).
+  local fresh_tmp="$(run_normalize fresh)"
+  assert_diff "fresh: no-op preserves content byte-for-byte" \
+    "$fresh_tmp/CLAUDE.md" "$fixtures/fresh/expected/CLAUDE.md"
+
+  # ── Scenario: inlined-7-sections ─────────────────────────────────────────
+  # All 7 markers inlined with valid sources. Script must normalize each to
+  # the self-closing form with reference link.
+  local inlined7_tmp="$(run_normalize inlined-7-sections)"
+  assert_diff "inlined-7-sections: 7-block normalization matches golden" \
+    "$inlined7_tmp/CLAUDE.md" "$fixtures/inlined-7-sections/expected/CLAUDE.md"
+
+  # ── Scenario: inlined-source-missing ─────────────────────────────────────
+  # `project` block points to NONEXISTENT.md; must be preserved. `stack` has
+  # a valid source; must be normalized.
+  local missing_tmp="$(run_normalize inlined-source-missing)"
+  assert_diff "inlined-source-missing: preserves block with missing source; normalizes others" \
+    "$missing_tmp/CLAUDE.md" "$fixtures/inlined-source-missing/expected/CLAUDE.md"
+
+  # ── Scenario: with-0009-vendored ─────────────────────────────────────────
+  # 0009's 5-line workflow reference must be UNTOUCHED (no GSD markers).
+  # One inlined `project` block must be normalized.
+  local vendored_tmp="$(run_normalize with-0009-vendored)"
+  assert_diff "with-0009-vendored: 0009 reference untouched; project block normalized" \
+    "$vendored_tmp/CLAUDE.md" "$fixtures/with-0009-vendored/expected/CLAUDE.md"
+
+  # ── Scenario: cparx-shape ────────────────────────────────────────────────
+  # Representative-scale fixture (~339L input). Expected output ≤ 200L per
+  # PLAN.md Decision F. Documented as the integration test for line-count
+  # math. The real cparx end-to-end verification (0009 + 0010 applied to a
+  # copy of cparx CLAUDE.md) runs in the phase's VERIFICATION.md step.
+  local cparx_tmp="$(run_normalize cparx-shape)"
+  assert_line_count_le "cparx-shape: normalized output ≤ 200 lines" \
+    "$cparx_tmp/CLAUDE.md" 200
+
+  # ── Idempotency: second run of the script is a no-op ─────────────────────
+  # Re-run script against already-normalized output; result must equal the
+  # first-pass output byte-for-byte. Proves the self-closing form is stable.
+  local idem_tmp="$(mktemp -d -t migration-0010-idem-XXXXXX)"
+  cp -R "$fixtures/inlined-7-sections/." "$idem_tmp/"
+  rm -rf "$idem_tmp/expected"
+  ( cd "$idem_tmp" && "$script" "$idem_tmp/CLAUDE.md" >/dev/null 2>&1 )
+  cp "$idem_tmp/CLAUDE.md" "$idem_tmp/CLAUDE.md.pass1"
+  ( cd "$idem_tmp" && "$script" "$idem_tmp/CLAUDE.md" >/dev/null 2>&1 )
+  if diff -u "$idem_tmp/CLAUDE.md.pass1" "$idem_tmp/CLAUDE.md" >/dev/null 2>&1; then
+    echo "  ${GREEN}✓${RESET} idempotency: second run produces identical output"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} idempotency: second run differs from first"
+    diff -u "$idem_tmp/CLAUDE.md.pass1" "$idem_tmp/CLAUDE.md" 2>&1 | head -20 | sed 's/^/      /'
+    FAIL=$((FAIL+1))
+  fi
+
+  # ── Script exits cleanly on a non-existent CLAUDE.md ─────────────────────
+  local missing_input="$(mktemp -d -t migration-0010-noinput-XXXXXX)"
+  if "$script" "$missing_input/NONEXISTENT.md" >/dev/null 2>&1; then
+    echo "  ${RED}✗${RESET} non-existent input: script exited 0 (expected non-zero)"
+    FAIL=$((FAIL+1))
+  else
+    echo "  ${GREEN}✓${RESET} non-existent input: script exits non-zero"
+    PASS=$((PASS+1))
+  fi
+
+  # ── CSO H1: refuse non-CLAUDE.md basename ────────────────────────────────
+  # Phase-07 CSO audit (SECURITY.md finding H1): the script must refuse to
+  # write to paths whose basename is not exactly CLAUDE.md. Otherwise a
+  # curious user or misconfigured hook could clobber /etc/hosts or similar.
+  local h1_tmp="$(mktemp -d -t migration-0010-h1-XXXXXX)"
+  cp "$fixtures/inlined-7-sections/CLAUDE.md" "$h1_tmp/NOTCLAUDE.md"
+  if "$script" "$h1_tmp/NOTCLAUDE.md" >/dev/null 2>&1; then
+    echo "  ${RED}✗${RESET} CSO H1: script accepted non-CLAUDE.md basename"
+    FAIL=$((FAIL+1))
+  else
+    echo "  ${GREEN}✓${RESET} CSO H1: script refuses non-CLAUDE.md basename"
+    PASS=$((PASS+1))
+  fi
+
+  # ── CSO M1: refuse symlink ───────────────────────────────────────────────
+  # SECURITY.md M1: `cp` would follow a symlink and rewrite the target.
+  # A symlink CLAUDE.md → /etc/hosts would clobber the system file.
+  local m1_tmp="$(mktemp -d -t migration-0010-m1-XXXXXX)"
+  echo "stub target" > "$m1_tmp/real-target.md"
+  ln -s "$m1_tmp/real-target.md" "$m1_tmp/CLAUDE.md"
+  if "$script" "$m1_tmp/CLAUDE.md" >/dev/null 2>&1; then
+    echo "  ${RED}✗${RESET} CSO M1: script accepted symlink input"
+    FAIL=$((FAIL+1))
+  else
+    echo "  ${GREEN}✓${RESET} CSO M1: script refuses symlink input"
+    PASS=$((PASS+1))
+  fi
+
+  # ── CSO M2: DoS guard on 5 MiB+ inputs ───────────────────────────────────
+  # SECURITY.md M2: a 200k+ line CLAUDE.md exhausts the 5s PostToolUse
+  # timeout. Early-exit at 5 MiB.
+  local m2_tmp="$(mktemp -d -t migration-0010-m2-XXXXXX)"
+  # Generate a >5 MiB file cheaply (no markers, just bulk content).
+  yes "X" 2>/dev/null | head -n 5500000 > "$m2_tmp/CLAUDE.md"
+  if "$script" "$m2_tmp/CLAUDE.md" >/dev/null 2>&1; then
+    echo "  ${RED}✗${RESET} CSO M2: script processed >5 MiB input (should refuse)"
+    FAIL=$((FAIL+1))
+  else
+    echo "  ${GREEN}✓${RESET} CSO M2: script refuses >5 MiB input"
+    PASS=$((PASS+1))
+  fi
+
+  # ── Stage-2 BLOCK-1: binary (NUL-containing) input ───────────────────────
+  # REVIEW.md Stage 2 finding BLOCK-1: pre-fix, binary input caused
+  # `read -r` to stop at the first NUL and the temp output to be empty;
+  # `cp` then truncated the original. Fix: refuse NUL-containing input.
+  local b1_tmp="$(mktemp -d -t migration-0010-block1-XXXXXX)"
+  printf '<!-- GSD:project-start source:PROJECT.md -->\n\x00binary\n<!-- GSD:project-end -->\n' \
+    >"$b1_tmp/CLAUDE.md"
+  cp "$b1_tmp/CLAUDE.md" "$b1_tmp/CLAUDE.md.original"
+  if "$script" "$b1_tmp/CLAUDE.md" >/dev/null 2>&1; then
+    echo "  ${RED}✗${RESET} Stage-2 BLOCK-1: script accepted binary input"
+    FAIL=$((FAIL+1))
+  else
+    if diff -q "$b1_tmp/CLAUDE.md" "$b1_tmp/CLAUDE.md.original" >/dev/null 2>&1; then
+      echo "  ${GREEN}✓${RESET} Stage-2 BLOCK-1: script refuses binary; original preserved"
+      PASS=$((PASS+1))
+    else
+      echo "  ${RED}✗${RESET} Stage-2 BLOCK-1: script refused but ALSO mutated the file"
+      FAIL=$((FAIL+1))
+    fi
+  fi
+
+  # ── Stage-2 BLOCK-2: markers inside fenced code blocks ───────────────────
+  # Documentation examples inside ``` fences must NOT be normalized.
+  local b2_tmp="$(mktemp -d -t migration-0010-block2-XXXXXX)"
+  cat >"$b2_tmp/CLAUDE.md" <<'EOF'
+# Project docs
+
+Below is an example marker syntax — do NOT rewrite:
+
+```markdown
+<!-- GSD:project-start source:PROJECT.md -->
+## Project
+This is example content inside a code fence.
+<!-- GSD:project-end -->
+```
+
+End of docs.
+EOF
+  cp "$b2_tmp/CLAUDE.md" "$b2_tmp/CLAUDE.md.original"
+  "$script" "$b2_tmp/CLAUDE.md" >/dev/null 2>&1
+  if diff -q "$b2_tmp/CLAUDE.md" "$b2_tmp/CLAUDE.md.original" >/dev/null 2>&1; then
+    echo "  ${GREEN}✓${RESET} Stage-2 BLOCK-2: markers inside fenced code block preserved verbatim"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} Stage-2 BLOCK-2: markers inside fenced code block were normalized"
+    FAIL=$((FAIL+1))
+  fi
+
+  # ── Stage-2 BLOCK-3: CRLF line endings ───────────────────────────────────
+  # Pre-fix: regex didn't match `\r` before `$`, so marker detection
+  # silently failed but collapse_blank_runs still mutated the file →
+  # partial mutation. Post-fix: CR stripped at read time; full
+  # normalization happens.
+  local b3_tmp="$(mktemp -d -t migration-0010-block3-XXXXXX)"
+  printf '# Test\r\n\r\n<!-- GSD:project-start source:PROJECT.md -->\r\n## Project\r\n\r\nInline content.\r\n<!-- GSD:project-end -->\r\n' \
+    >"$b3_tmp/CLAUDE.md"
+  mkdir -p "$b3_tmp/.planning"
+  touch "$b3_tmp/.planning/PROJECT.md"
+  ( cd "$b3_tmp" && "$script" "$b3_tmp/CLAUDE.md" >/dev/null 2>&1 )
+  if grep -q '<!-- GSD:project source:PROJECT.md /-->' "$b3_tmp/CLAUDE.md"; then
+    echo "  ${GREEN}✓${RESET} Stage-2 BLOCK-3: CRLF input normalized to self-closing form"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} Stage-2 BLOCK-3: CRLF input did NOT normalize (regex still doesn't match)"
+    FAIL=$((FAIL+1))
+  fi
+
+  # ── Stage-2 BLOCK-5: non-canonical slug preserved ────────────────────────
+  # `<!-- GSD:wibble-start -->` is custom user-authored; script must
+  # preserve, not normalize.
+  local b5_tmp="$(mktemp -d -t migration-0010-block5-XXXXXX)"
+  cat >"$b5_tmp/CLAUDE.md" <<'EOF'
+# Project
+
+<!-- GSD:wibble-start source:PROJECT.md -->
+## Custom Wibble Section
+
+User-authored block; not GSD-canonical. Should be left alone.
+<!-- GSD:wibble-end -->
+
+End.
+EOF
+  cp "$b5_tmp/CLAUDE.md" "$b5_tmp/CLAUDE.md.original"
+  mkdir -p "$b5_tmp/.planning"
+  touch "$b5_tmp/.planning/PROJECT.md"
+  ( cd "$b5_tmp" && "$script" "$b5_tmp/CLAUDE.md" >/dev/null 2>&1 )
+  if diff -q "$b5_tmp/CLAUDE.md" "$b5_tmp/CLAUDE.md.original" >/dev/null 2>&1; then
+    echo "  ${GREEN}✓${RESET} Stage-2 BLOCK-5: non-canonical slug 'wibble' preserved"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} Stage-2 BLOCK-5: non-canonical slug was modified"
+    FAIL=$((FAIL+1))
+  fi
+
+  # ── Stage-2 BLOCK-6: nested -start markers rejected ──────────────────────
+  local b6_tmp="$(mktemp -d -t migration-0010-block6-XXXXXX)"
+  cat >"$b6_tmp/CLAUDE.md" <<'EOF'
+<!-- GSD:project-start source:PROJECT.md -->
+## Project
+Outer content.
+<!-- GSD:stack-start source:codebase/STACK.md -->
+Inner content that should NOT be consumed silently.
+<!-- GSD:stack-end -->
+More outer content.
+<!-- GSD:project-end -->
+EOF
+  mkdir -p "$b6_tmp/.planning/codebase"
+  touch "$b6_tmp/.planning/PROJECT.md" "$b6_tmp/.planning/codebase/STACK.md"
+  if ( cd "$b6_tmp" && "$script" "$b6_tmp/CLAUDE.md" >/dev/null 2>&1 ); then
+    echo "  ${RED}✗${RESET} Stage-2 BLOCK-6: nested markers accepted (should exit 2 malformed)"
+    FAIL=$((FAIL+1))
+  else
+    echo "  ${GREEN}✓${RESET} Stage-2 BLOCK-6: nested markers rejected as malformed"
+    PASS=$((PASS+1))
+  fi
+
+  # ── Stage-2 BLOCK-4 (documented-risk): atomicity smoke test ──────────────
+  # mv-based atomicity means two concurrent invocations land on a single
+  # final state, never a mid-write read. Full concurrency proof would
+  # need parallel goroutines + race detection; here we just confirm one
+  # invocation leaves the file in a CONSISTENT (non-empty, non-partial)
+  # state. The migration markdown documents the residual risk.
+  local b4_tmp="$(mktemp -d -t migration-0010-block4-XXXXXX)"
+  cp -R "$fixtures/inlined-7-sections/." "$b4_tmp/"
+  rm -rf "$b4_tmp/expected"
+  ( cd "$b4_tmp" && "$script" "$b4_tmp/CLAUDE.md" >/dev/null 2>&1 )
+  if [ -s "$b4_tmp/CLAUDE.md" ] && diff -q "$b4_tmp/CLAUDE.md" "$fixtures/inlined-7-sections/expected/CLAUDE.md" >/dev/null 2>&1; then
+    echo "  ${GREEN}✓${RESET} Stage-2 BLOCK-4: atomic mv leaves file in fully-formed state"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} Stage-2 BLOCK-4: file was partial-written or mismatched"
+    FAIL=$((FAIL+1))
+  fi
+
+  # Cleanup
+  rm -rf "$fresh_tmp" "$inlined7_tmp" "$missing_tmp" "$vendored_tmp" "$cparx_tmp" \
+         "$idem_tmp" "$missing_input" "$h1_tmp" "$m1_tmp" "$m2_tmp" \
+         "$b1_tmp" "$b2_tmp" "$b3_tmp" "$b4_tmp" "$b5_tmp" "$b6_tmp"
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Dispatcher
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -407,6 +720,10 @@ fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "0009" ]; then
   test_migration_0009
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "0010" ]; then
+  test_migration_0010
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
