@@ -1,10 +1,10 @@
 # ADR 0019 — LLM wiki compiler integration
 
 **Status:** Accepted
-**Date:** 2026-05-12
+**Date:** 2026-05-12 (rev 2026-05-13)
 **Supersedes:** —
 **Superseded by:** —
-**Related:** Migration 0005 (knowledge substrate scaffold), Migration 0006 (wiki-builder integration)
+**Related:** Migration 0006 (wiki-builder integration, self-contained)
 
 ## Context
 
@@ -42,11 +42,11 @@ Family-level placement also aligns with the access boundary enforced by the fami
 
 The upstream `.git/` is preserved in the vendored copy so we can `git pull` to refresh without recloning.
 
-## Why .wiki-compiler.json instead of sources.yaml
+## Why .wiki-compiler.json
 
-Migration 0005 originally created `<family>/.knowledge/sources.yaml` with glob patterns + per-source type/template metadata. Migration 0006 supersedes those with the plugin's native `.wiki-compiler.json` format (directory paths, classification at compile time via the LLM rather than by manifest pre-declaration). The `sources.yaml` files are renamed `sources.yaml.legacy` and kept as a design-intent reference; the compiler reads only `.wiki-compiler.json`.
+The plugin's native config format. Directory paths + classification at compile time via the LLM rather than by manifest pre-declaration. Migration 0006 writes a default config per family if absent; user customisation is preserved on re-apply.
 
-This trade is worth it: glob-typed manifests were over-engineering for a compiler that does its own classification well. The LLM-driven classification surfaces concepts and cross-cutting topics the manifest typing would have hidden.
+Why not a glob-typed manifest (the alternative considered): glob-typed manifests would be over-engineering for a compiler that does its own classification well. The LLM-driven classification surfaces concepts and cross-cutting topics the manifest typing would have hidden.
 
 ## Consequences
 
@@ -62,11 +62,24 @@ This trade is worth it: glob-typed manifests were over-engineering for a compile
 - Compile time scales with family size. Neuroflash with 32 repos will be the slowest first-compile.
 - The compiled wiki is a derived artifact, not authoritative — bugs in the compile prompt could mis-classify topics. Lint + provenance-citation in each wiki page mitigate this.
 
-## Relationship to migration 0005
+## Self-containment (rev 2026-05-13)
 
-Migration 0005 created the `.knowledge/{raw,wiki}/` directory structure and the `.gitignore` and stub `INDEX.md`. Migration 0006 layers the actual compiler on top of that scaffolding. Either can be rolled back independently — rolling back 0006 leaves the empty scaffolding in place, rolling back 0005 removes the directories (but the compiler can recreate them on next compile).
+Migration 0006 is self-contained: it owns the host symlink, the per-family directory scaffolding, the default `.wiki-compiler.json`, AND the family-level `CLAUDE.md` section update. Earlier drafts of this ADR assumed a separate prior migration (an old draft of 0005) handled the directory scaffolding. The shipped migration 0005 is multi-AI plan review enforcement, unrelated — so 0006 folds the scaffolding step in. Rollback is preserve-data: removes only the host symlink and version bump.
+
+## Threat model
+
+Recorded in migration 0006's PLAN.md `Threat model (STRIDE)` table. Summary:
+
+- **Symlink overwrites a real file** at `~/.claude/plugins/llm-wiki-compiler` → mitigated by ABORT-on-exists-as-regular-file in the install script (codex B2 lock).
+- **Wrong-target symlink overwrite** → ABORT (do not silently repoint a forked install).
+- **Cross-family `.wiki-compiler.json` leak** via misconfigured `sources[*].path` → low risk: migration writes only the default config; user customization is user-territory. T5b post-apply smoke test catches malformed globs.
+- **Family CLAUDE.md collision** via duplicate `## Knowledge wiki` heading → idempotency check.
+- **Plugin supply-chain compromise** via upstream `ussumant/llm-wiki-compiler` → vendored-clone trust assumption; future hardening: pin to a release tag + SHA-256 (deferred follow-up).
+- **Vendored plugin contains session hooks** that run in every Claude session after symlink → known trade-off; users who don't want host-level hooks skip migration 0006 entirely (it's in `optional_for`).
+- **Rollback leaves orphan files** → by design (preserve-data); clean-uninstall commands documented.
 
 ## Open follow-ups
 
 - GitNexus integration (migration 0007) — code-structure graph complementing the doc wiki.
 - Dashboard coverage matrix (migration 0008) — show per-repo wiki freshness and GitNexus index status.
+- Pin vendored plugin to a release tag + SHA-256 (same approach as Phase 08 CSO M2 deferred item).
