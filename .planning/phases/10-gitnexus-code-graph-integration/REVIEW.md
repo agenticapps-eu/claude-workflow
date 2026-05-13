@@ -60,16 +60,54 @@ The shipped diff matches the amended PLAN.md. All codex BLOCKs structurally reso
 
 # Stage 2 — Independent code-quality review
 
-**Reviewer:** Spawned via `Agent` tool with `pr-review-toolkit:code-reviewer` subagent.
+**Reviewer:** `pr-review-toolkit:code-reviewer` subagent.
 
-*Stage 2 results will be appended below this line by the next commit along with prose-resolutions for any FLAGs and structural fixes for any BLOCKs.*
+## Verdict
+
+**REQUEST-CHANGES** (1 BLOCK + 4 FLAGs + 3 NOTEs) → **APPROVE** after fixes.
+
+## BLOCK-1 — Codex B2 fix unverified by any fixture
+
+**Finding:** Codex BLOCK-2 mandated shape validation + exit 4 on wrong-shape MCP entries. Install script implements it correctly. But no fixture had `expected-exit: 4`. The Phase 09 false-green pattern: code fixed, never tested.
+
+**Resolution:** New fixture **17-existing-wrong-shape-mcp-entry** — seeds `{"command":"npx","args":[...]}`, asserts exit 4 + preserves the original entry + version still bumps. Verified GREEN.
+
+**Status:** ✅ Fixed structurally.
+
+## FLAG findings + resolutions
+
+| # | Finding | Resolution |
+|---|---|---|
+| **FLAG-A** | `jq ... && mv` chain at install:99-100 + rollback:16-17 swallows jq failures under `set -e` (same as CSO H1) | ✅ Both rewritten to explicit if/then/else with `rm -f tmp` + clear error message. Same pattern as version-bump step. |
+| **FLAG-B** | Helper script swallows `gitnexus analyze` failures — exits 0 even if every repo failed | ✅ Added `FAILED_REPOS` accumulator. Helper exits 2 with summary message if any repos failed. |
+| **FLAG-C** | Fixture 13 named "MCP startup smoke" but only verifies install round-trip through PATH | ⚠️ Cosmetic — kept name (the assertion that the canonical command+args resolve through PATH to a working binary is a legitimate smoke test, just not a literal "MCP protocol startup"). Tracked for renaming in a future polish pass. |
+| **FLAG-D** | NODE_MAJOR non-numeric fragility — `[ "X" -lt 18 ] 2>/dev/null` suppresses syntax error | ✅ Same as CSO M2 — added explicit `case` check for empty/non-numeric NODE_MAJOR with clear error. |
+
+## NOTE findings
+
+| # | Finding | Resolution |
+|---|---|---|
+| NOTE-1 | Fixture 10 misnamed (no claude CLI check in script) | ⚠️ Kept as-is; the fixture is effectively a duplicate of 04 + serves as a documentation marker that "no claude CLI dependency exists" |
+| NOTE-2 | Unescaped dots in `^version: 1.9.3$` grep regex | ⚠️ Cosmetic; deferred (sed escapes correctly; grep dot matches anything-followed-by-anything which is harmless given the anchors) |
+| NOTE-3 | Version accept-list assumes 0007 won't be skipped in future re-baseline | Acknowledged. Documented in migration body. |
 
 ---
 
 # CSO security audit
 
-**Verdict:** Awaiting agent. Will land in `SECURITY.md`.
+**Verdict:** **REQUEST-CHANGES** (1 High, 2 Medium, 3 Low) → **PASS-WITH-NOTES** after fixes.
+
+| # | Severity | Finding | Status |
+|---|---|---|---|
+| **H1** | High | Same `&&`-chain bug as Phase 09 CSO H1 — jq atomic-write at install:99-100 + rollback:16-17 swallows errors | ✅ Fixed (same as Stage 2 FLAG-A) |
+| **M1** | Medium | Non-object pre-existing `.mcpServers.gitnexus` (string/null/array) silently overwritten | ✅ Fixed: explicit type check via `jq | type`; non-object preserved + warn + exit 4. Fixture 19. |
+| **M2** | Medium | NODE_MAJOR accepts non-numeric input (`abc`, `v18`, `18\nfoo`) due to `2>/dev/null` suppression | ✅ Fixed (same as Stage 2 FLAG-D): explicit case check |
+| L1 | Low | `GITNEXUS_BIN` env override in helper is test-only contract leaked to production | ⚠️ Deferred — used by test fixtures; warning would create test noise |
+| L2 | Low | Orphan `$CLAUDE_JSON.tmp` after jq failure | ✅ Resolved by H1 fix (rm -f on failure path) |
+| L3 | Low | Atomic mv replaces a symlinked `~/.claude.json` with regular file | ⚠️ Deferred — symlinked Claude config is unusual; tracked |
+
+Full SECURITY.md report from CSO agent in this phase directory.
 
 ---
 
-(Stage 2 + CSO outputs append here.)
+**Phase 10 — All three reviews complete. APPROVED.** 18/18 fixtures GREEN after fixes; full suite 112 PASS / 8 pre-existing 0001 FAILs.

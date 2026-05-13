@@ -59,6 +59,8 @@ is_family() {
   return 1
 }
 
+FAILED_REPOS=0
+
 index_repo() {
   local repo="$1"
   if [ ! -d "$repo/.git" ] && [ ! -f "$repo/.git" ]; then
@@ -66,7 +68,11 @@ index_repo() {
     return 0
   fi
   echo "==> gitnexus analyze $repo" >&2
-  (cd "$repo" && "$GN_BIN" analyze) || echo "warn: gitnexus analyze failed for $repo" >&2
+  # Stage 2 FLAG-B: track failures so the script exits non-zero if all repos fail.
+  if ! (cd "$repo" && "$GN_BIN" analyze); then
+    echo "warn: gitnexus analyze failed for $repo" >&2
+    FAILED_REPOS=$((FAILED_REPOS+1))
+  fi
 }
 
 index_family() {
@@ -122,5 +128,9 @@ case "$1" in
     ;;
 esac
 
+if [ "$FAILED_REPOS" -gt 0 ]; then
+  echo "Done — $FAILED_REPOS repo(s) failed to index (see warnings above)." >&2
+  exit 2
+fi
 echo "Done."
 exit 0

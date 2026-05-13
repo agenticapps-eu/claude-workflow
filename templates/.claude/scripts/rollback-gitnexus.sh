@@ -11,10 +11,16 @@ SKILL_MD="${WIKI_SKILL_MD:-$HOME/.claude/skills/agentic-apps-workflow/SKILL.md}"
 CLAUDE_JSON="$HOME/.claude.json"
 
 # Step 1: remove MCP entry.
+# CSO H1/L3: explicit if/then/else, no `jq ... && mv` chain.
 if [ -f "$CLAUDE_JSON" ] && jq empty "$CLAUDE_JSON" 2>/dev/null; then
   if jq -e '.mcpServers.gitnexus // empty' "$CLAUDE_JSON" >/dev/null 2>&1; then
-    jq 'del(.mcpServers.gitnexus)' "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp" \
-      && mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
+    if jq 'del(.mcpServers.gitnexus)' "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp"; then
+      mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
+    else
+      rm -f "$CLAUDE_JSON.tmp"
+      echo "ERROR: failed to remove MCP entry from $CLAUDE_JSON (jq error)" >&2
+      exit 1
+    fi
   fi
 fi
 

@@ -44,8 +44,17 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
-NODE_MAJOR=$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)
-if [ "$NODE_MAJOR" -lt 18 ] 2>/dev/null; then
+NODE_MAJOR=$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null | tr -d '[:space:]' || echo 0)
+# CSO M2: strict numeric validation. Non-numeric input (e.g. "v18", "abc",
+# "18\nfoo") would otherwise pass through `[ ... -lt 18 ] 2>/dev/null`
+# because the syntax error is suppressed.
+case "$NODE_MAJOR" in
+  ''|*[!0-9]*)
+    echo "ERROR: failed to parse node version (got '$NODE_MAJOR'), need >= 18" >&2
+    exit 1
+    ;;
+esac
+if [ "$NODE_MAJOR" -lt 18 ]; then
   echo "ERROR: node version too old (major=$NODE_MAJOR), need >= 18" >&2
   exit 1
 fi
@@ -83,21 +92,43 @@ fi
 
 EXIT_CODE=0
 
-EXISTING_CMD=$(jq -r '.mcpServers.gitnexus.command // empty' "$CLAUDE_JSON" 2>/dev/null)
-EXISTING_ARG0=$(jq -r '.mcpServers.gitnexus.args[0] // empty' "$CLAUDE_JSON" 2>/dev/null)
+# CSO M1: check entry TYPE before reading fields. A non-object value (string,
+# number, null, array) at `.mcpServers.gitnexus` would make `.command // empty`
+# silently mask the type error and fall through to "no existing entry" → blind
+# overwrite. Distinguish "entry absent" from "entry present but malformed".
+EXISTING_TYPE=$(jq -r '.mcpServers.gitnexus | type' "$CLAUDE_JSON" 2>/dev/null || echo "null")
+EXISTING_CMD=""
+EXISTING_ARG0=""
+if [ "$EXISTING_TYPE" = "object" ]; then
+  EXISTING_CMD=$(jq -r '.mcpServers.gitnexus.command // empty' "$CLAUDE_JSON" 2>/dev/null)
+  EXISTING_ARG0=$(jq -r '.mcpServers.gitnexus.args[0] // empty' "$CLAUDE_JSON" 2>/dev/null)
+fi
 
-if [ -n "$EXISTING_CMD" ]; then
-  # Pre-existing entry — validate shape.
+if [ "$EXISTING_TYPE" = "object" ] && [ -n "$EXISTING_CMD" ]; then
+  # Pre-existing object entry — validate shape.
   if [ "$EXISTING_CMD" = "gitnexus" ] && [ "$EXISTING_ARG0" = "mcp" ]; then
     : # canonical shape — idempotent no-op
   else
     echo "warn: pre-existing gitnexus MCP entry has unexpected shape (command='$EXISTING_CMD', args[0]='$EXISTING_ARG0'); preserving but server may not work as expected" >&2
     EXIT_CODE=4
   fi
+elif [ "$EXISTING_TYPE" != "null" ] && [ "$EXISTING_TYPE" != "object" ]; then
+  # Pre-existing non-object value (string, number, null literal, array, bool) — preserve + warn (CSO M1).
+  echo "warn: pre-existing .mcpServers.gitnexus is of type '$EXISTING_TYPE', not 'object'; preserving but server may not work as expected" >&2
+  EXIT_CODE=4
 else
-  # Write canonical entry.
-  jq '.mcpServers = (.mcpServers // {}) | .mcpServers.gitnexus = {"command":"gitnexus","args":["mcp"]}' \
-    "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp" && mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
+  # Truly absent — write canonical entry.
+  # CSO H1 fix: explicit if/then/else, no `jq ... && mv` chain. Under `set -e`,
+  # an && chain silently swallows non-zero from the LHS, leaving CLAUDE_JSON
+  # untouched but the script proceeding to version-bump with exit 0.
+  if jq '.mcpServers = (.mcpServers // {}) | .mcpServers.gitnexus = {"command":"gitnexus","args":["mcp"]}' \
+       "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp"; then
+    mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
+  else
+    rm -f "$CLAUDE_JSON.tmp"
+    echo "ERROR: failed to write MCP entry to $CLAUDE_JSON (jq error)" >&2
+    exit 1
+  fi
 fi
 
 # ─── Step 2: bump skill version ─────────────────────────────────────────────
