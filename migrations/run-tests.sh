@@ -528,8 +528,50 @@ test_migration_0010() {
     PASS=$((PASS+1))
   fi
 
+  # ── CSO H1: refuse non-CLAUDE.md basename ────────────────────────────────
+  # Phase-07 CSO audit (SECURITY.md finding H1): the script must refuse to
+  # write to paths whose basename is not exactly CLAUDE.md. Otherwise a
+  # curious user or misconfigured hook could clobber /etc/hosts or similar.
+  local h1_tmp="$(mktemp -d -t migration-0010-h1-XXXXXX)"
+  cp "$fixtures/inlined-7-sections/CLAUDE.md" "$h1_tmp/NOTCLAUDE.md"
+  if "$script" "$h1_tmp/NOTCLAUDE.md" >/dev/null 2>&1; then
+    echo "  ${RED}✗${RESET} CSO H1: script accepted non-CLAUDE.md basename"
+    FAIL=$((FAIL+1))
+  else
+    echo "  ${GREEN}✓${RESET} CSO H1: script refuses non-CLAUDE.md basename"
+    PASS=$((PASS+1))
+  fi
+
+  # ── CSO M1: refuse symlink ───────────────────────────────────────────────
+  # SECURITY.md M1: `cp` would follow a symlink and rewrite the target.
+  # A symlink CLAUDE.md → /etc/hosts would clobber the system file.
+  local m1_tmp="$(mktemp -d -t migration-0010-m1-XXXXXX)"
+  echo "stub target" > "$m1_tmp/real-target.md"
+  ln -s "$m1_tmp/real-target.md" "$m1_tmp/CLAUDE.md"
+  if "$script" "$m1_tmp/CLAUDE.md" >/dev/null 2>&1; then
+    echo "  ${RED}✗${RESET} CSO M1: script accepted symlink input"
+    FAIL=$((FAIL+1))
+  else
+    echo "  ${GREEN}✓${RESET} CSO M1: script refuses symlink input"
+    PASS=$((PASS+1))
+  fi
+
+  # ── CSO M2: DoS guard on 5 MiB+ inputs ───────────────────────────────────
+  # SECURITY.md M2: a 200k+ line CLAUDE.md exhausts the 5s PostToolUse
+  # timeout. Early-exit at 5 MiB.
+  local m2_tmp="$(mktemp -d -t migration-0010-m2-XXXXXX)"
+  # Generate a >5 MiB file cheaply (no markers, just bulk content).
+  yes "X" 2>/dev/null | head -n 5500000 > "$m2_tmp/CLAUDE.md"
+  if "$script" "$m2_tmp/CLAUDE.md" >/dev/null 2>&1; then
+    echo "  ${RED}✗${RESET} CSO M2: script processed >5 MiB input (should refuse)"
+    FAIL=$((FAIL+1))
+  else
+    echo "  ${GREEN}✓${RESET} CSO M2: script refuses >5 MiB input"
+    PASS=$((PASS+1))
+  fi
+
   # Cleanup
-  rm -rf "$fresh_tmp" "$inlined7_tmp" "$missing_tmp" "$vendored_tmp" "$cparx_tmp" "$idem_tmp" "$missing_input"
+  rm -rf "$fresh_tmp" "$inlined7_tmp" "$missing_tmp" "$vendored_tmp" "$cparx_tmp" "$idem_tmp" "$missing_input" "$h1_tmp" "$m1_tmp" "$m2_tmp"
 }
 
 # ─────────────────────────────────────────────────────────────────────────────

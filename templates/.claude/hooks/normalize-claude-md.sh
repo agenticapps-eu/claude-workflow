@@ -17,14 +17,40 @@
 #
 # Defaults to ./CLAUDE.md. Exit codes:
 #   0 — success (file modified OR unchanged)
-#   1 — input file not found / not readable
+#   1 — input file not found / not readable / not an accepted path
 #   2 — malformed input (unclosed marker)
+#   3 — input file too large (DoS guard)
 
 set -u
 set -o pipefail
 
+# Security: pin PATH to system locations. Defends against PATH-poisoning
+# attacks where a hostile project adds a malicious `awk` (or `cp`, `diff`,
+# `mktemp`, `rm`) earlier in PATH (CSO audit finding H2). The PostToolUse
+# hook runs every Edit/Write, so a shadowed binary would execute under
+# the user's auth on every tool call.
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+
 INPUT="${1:-./CLAUDE.md}"
 
+# Security: input-path validation (CSO findings H1 + M1).
+# H1 — refuse paths whose basename is not exactly CLAUDE.md. The hook
+# is registered to normalize a single well-known file; accepting any
+# `$1` would let a curious user (or a misconfigured hook) clobber
+# /etc/hosts, ~/.ssh/authorized_keys, etc. Hardening: basename match
+# against the canonical filename.
+if [ "$(basename -- "$INPUT")" != "CLAUDE.md" ]; then
+  echo "normalize-claude-md: refusing to operate on non-CLAUDE.md path: $INPUT" >&2
+  exit 1
+fi
+# M1 — refuse symbolic links. `cp` would follow the link and rewrite
+# the target (e.g., a symlink CLAUDE.md → /etc/hosts would clobber the
+# system file). The hook is intended for regular files inside the
+# project tree.
+if [ -L "$INPUT" ]; then
+  echo "normalize-claude-md: refusing to operate on symlink: $INPUT" >&2
+  exit 1
+fi
 if [ ! -f "$INPUT" ]; then
   echo "normalize-claude-md: input not found: $INPUT" >&2
   exit 1
@@ -32,6 +58,14 @@ fi
 if [ ! -r "$INPUT" ]; then
   echo "normalize-claude-md: input not readable: $INPUT" >&2
   exit 1
+fi
+# M2 — DoS guard. A 200k+ line CLAUDE.md exhausts the 5s PostToolUse
+# timeout; processing megabyte-scale markdown isn't this hook's job.
+# Early-exit at 5 MiB. (CSO audit finding M2.)
+INPUT_SIZE=$(wc -c <"$INPUT" 2>/dev/null | tr -d ' ')
+if [ -n "$INPUT_SIZE" ] && [ "$INPUT_SIZE" -gt 5242880 ]; then
+  echo "normalize-claude-md: input exceeds 5 MiB DoS guard ($INPUT_SIZE bytes); skipping" >&2
+  exit 3
 fi
 
 # Resolve `source:` label to its real file/directory path (relative to CWD).
