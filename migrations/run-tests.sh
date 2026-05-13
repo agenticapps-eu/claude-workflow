@@ -570,8 +570,144 @@ test_migration_0010() {
     PASS=$((PASS+1))
   fi
 
+  # ── Stage-2 BLOCK-1: binary (NUL-containing) input ───────────────────────
+  # REVIEW.md Stage 2 finding BLOCK-1: pre-fix, binary input caused
+  # `read -r` to stop at the first NUL and the temp output to be empty;
+  # `cp` then truncated the original. Fix: refuse NUL-containing input.
+  local b1_tmp="$(mktemp -d -t migration-0010-block1-XXXXXX)"
+  printf '<!-- GSD:project-start source:PROJECT.md -->\n\x00binary\n<!-- GSD:project-end -->\n' \
+    >"$b1_tmp/CLAUDE.md"
+  cp "$b1_tmp/CLAUDE.md" "$b1_tmp/CLAUDE.md.original"
+  if "$script" "$b1_tmp/CLAUDE.md" >/dev/null 2>&1; then
+    echo "  ${RED}✗${RESET} Stage-2 BLOCK-1: script accepted binary input"
+    FAIL=$((FAIL+1))
+  else
+    if diff -q "$b1_tmp/CLAUDE.md" "$b1_tmp/CLAUDE.md.original" >/dev/null 2>&1; then
+      echo "  ${GREEN}✓${RESET} Stage-2 BLOCK-1: script refuses binary; original preserved"
+      PASS=$((PASS+1))
+    else
+      echo "  ${RED}✗${RESET} Stage-2 BLOCK-1: script refused but ALSO mutated the file"
+      FAIL=$((FAIL+1))
+    fi
+  fi
+
+  # ── Stage-2 BLOCK-2: markers inside fenced code blocks ───────────────────
+  # Documentation examples inside ``` fences must NOT be normalized.
+  local b2_tmp="$(mktemp -d -t migration-0010-block2-XXXXXX)"
+  cat >"$b2_tmp/CLAUDE.md" <<'EOF'
+# Project docs
+
+Below is an example marker syntax — do NOT rewrite:
+
+```markdown
+<!-- GSD:project-start source:PROJECT.md -->
+## Project
+This is example content inside a code fence.
+<!-- GSD:project-end -->
+```
+
+End of docs.
+EOF
+  cp "$b2_tmp/CLAUDE.md" "$b2_tmp/CLAUDE.md.original"
+  "$script" "$b2_tmp/CLAUDE.md" >/dev/null 2>&1
+  if diff -q "$b2_tmp/CLAUDE.md" "$b2_tmp/CLAUDE.md.original" >/dev/null 2>&1; then
+    echo "  ${GREEN}✓${RESET} Stage-2 BLOCK-2: markers inside fenced code block preserved verbatim"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} Stage-2 BLOCK-2: markers inside fenced code block were normalized"
+    FAIL=$((FAIL+1))
+  fi
+
+  # ── Stage-2 BLOCK-3: CRLF line endings ───────────────────────────────────
+  # Pre-fix: regex didn't match `\r` before `$`, so marker detection
+  # silently failed but collapse_blank_runs still mutated the file →
+  # partial mutation. Post-fix: CR stripped at read time; full
+  # normalization happens.
+  local b3_tmp="$(mktemp -d -t migration-0010-block3-XXXXXX)"
+  printf '# Test\r\n\r\n<!-- GSD:project-start source:PROJECT.md -->\r\n## Project\r\n\r\nInline content.\r\n<!-- GSD:project-end -->\r\n' \
+    >"$b3_tmp/CLAUDE.md"
+  mkdir -p "$b3_tmp/.planning"
+  touch "$b3_tmp/.planning/PROJECT.md"
+  ( cd "$b3_tmp" && "$script" "$b3_tmp/CLAUDE.md" >/dev/null 2>&1 )
+  if grep -q '<!-- GSD:project source:PROJECT.md /-->' "$b3_tmp/CLAUDE.md"; then
+    echo "  ${GREEN}✓${RESET} Stage-2 BLOCK-3: CRLF input normalized to self-closing form"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} Stage-2 BLOCK-3: CRLF input did NOT normalize (regex still doesn't match)"
+    FAIL=$((FAIL+1))
+  fi
+
+  # ── Stage-2 BLOCK-5: non-canonical slug preserved ────────────────────────
+  # `<!-- GSD:wibble-start -->` is custom user-authored; script must
+  # preserve, not normalize.
+  local b5_tmp="$(mktemp -d -t migration-0010-block5-XXXXXX)"
+  cat >"$b5_tmp/CLAUDE.md" <<'EOF'
+# Project
+
+<!-- GSD:wibble-start source:PROJECT.md -->
+## Custom Wibble Section
+
+User-authored block; not GSD-canonical. Should be left alone.
+<!-- GSD:wibble-end -->
+
+End.
+EOF
+  cp "$b5_tmp/CLAUDE.md" "$b5_tmp/CLAUDE.md.original"
+  mkdir -p "$b5_tmp/.planning"
+  touch "$b5_tmp/.planning/PROJECT.md"
+  ( cd "$b5_tmp" && "$script" "$b5_tmp/CLAUDE.md" >/dev/null 2>&1 )
+  if diff -q "$b5_tmp/CLAUDE.md" "$b5_tmp/CLAUDE.md.original" >/dev/null 2>&1; then
+    echo "  ${GREEN}✓${RESET} Stage-2 BLOCK-5: non-canonical slug 'wibble' preserved"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} Stage-2 BLOCK-5: non-canonical slug was modified"
+    FAIL=$((FAIL+1))
+  fi
+
+  # ── Stage-2 BLOCK-6: nested -start markers rejected ──────────────────────
+  local b6_tmp="$(mktemp -d -t migration-0010-block6-XXXXXX)"
+  cat >"$b6_tmp/CLAUDE.md" <<'EOF'
+<!-- GSD:project-start source:PROJECT.md -->
+## Project
+Outer content.
+<!-- GSD:stack-start source:codebase/STACK.md -->
+Inner content that should NOT be consumed silently.
+<!-- GSD:stack-end -->
+More outer content.
+<!-- GSD:project-end -->
+EOF
+  mkdir -p "$b6_tmp/.planning/codebase"
+  touch "$b6_tmp/.planning/PROJECT.md" "$b6_tmp/.planning/codebase/STACK.md"
+  if ( cd "$b6_tmp" && "$script" "$b6_tmp/CLAUDE.md" >/dev/null 2>&1 ); then
+    echo "  ${RED}✗${RESET} Stage-2 BLOCK-6: nested markers accepted (should exit 2 malformed)"
+    FAIL=$((FAIL+1))
+  else
+    echo "  ${GREEN}✓${RESET} Stage-2 BLOCK-6: nested markers rejected as malformed"
+    PASS=$((PASS+1))
+  fi
+
+  # ── Stage-2 BLOCK-4 (documented-risk): atomicity smoke test ──────────────
+  # mv-based atomicity means two concurrent invocations land on a single
+  # final state, never a mid-write read. Full concurrency proof would
+  # need parallel goroutines + race detection; here we just confirm one
+  # invocation leaves the file in a CONSISTENT (non-empty, non-partial)
+  # state. The migration markdown documents the residual risk.
+  local b4_tmp="$(mktemp -d -t migration-0010-block4-XXXXXX)"
+  cp -R "$fixtures/inlined-7-sections/." "$b4_tmp/"
+  rm -rf "$b4_tmp/expected"
+  ( cd "$b4_tmp" && "$script" "$b4_tmp/CLAUDE.md" >/dev/null 2>&1 )
+  if [ -s "$b4_tmp/CLAUDE.md" ] && diff -q "$b4_tmp/CLAUDE.md" "$fixtures/inlined-7-sections/expected/CLAUDE.md" >/dev/null 2>&1; then
+    echo "  ${GREEN}✓${RESET} Stage-2 BLOCK-4: atomic mv leaves file in fully-formed state"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} Stage-2 BLOCK-4: file was partial-written or mismatched"
+    FAIL=$((FAIL+1))
+  fi
+
   # Cleanup
-  rm -rf "$fresh_tmp" "$inlined7_tmp" "$missing_tmp" "$vendored_tmp" "$cparx_tmp" "$idem_tmp" "$missing_input" "$h1_tmp" "$m1_tmp" "$m2_tmp"
+  rm -rf "$fresh_tmp" "$inlined7_tmp" "$missing_tmp" "$vendored_tmp" "$cparx_tmp" \
+         "$idem_tmp" "$missing_input" "$h1_tmp" "$m1_tmp" "$m2_tmp" \
+         "$b1_tmp" "$b2_tmp" "$b3_tmp" "$b4_tmp" "$b5_tmp" "$b6_tmp"
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
