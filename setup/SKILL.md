@@ -161,7 +161,8 @@ Files created / modified:
   - .claude/skills/agentic-apps-workflow/SKILL.md  (workflow skill)
   - .claude/workflow-config.md                     (project config)
   - .planning/config.json                          (hooks)
-  - CLAUDE.md                                      (workflow rules appended)
+  - .claude/claude-md/workflow.md                  (vendored workflow block — Superpowers/GSD/gstack hooks; CLAUDE.md links here)
+  - CLAUDE.md                                      (one short ## Workflow section linking to the vendored file above)
   - templates/adr-db-security-acceptance.md        (ADR template, from 0001)
   {if scope was global or both:}
   - ~/.claude/CLAUDE.md                            (global additions appended)
@@ -198,11 +199,21 @@ The migration sequence applied by setup is:
 
 | ID | from → to | Title |
 |---|---|---|
-| 0000 | unknown → 1.2.0 | Baseline (workflow files, hooks, CLAUDE.md sections) |
+| 0000 | unknown → 1.2.0 | Baseline (workflow files, hooks, vendored CLAUDE.md workflow block) |
 | 0001 | 1.2.0 → 1.3.0 | Wire Go skill packs + impeccable + database-sentinel |
+| 0002 | 1.4.0 → 1.5.0 | Observability spec v0.2.1 |
+| 0004 | 1.3.0 → 1.4.0 | Programmatic hooks + architecture audit |
+| 0005 | 1.5.0 → 1.5.1 | Multi-AI plan review enforcement |
+| 0006 | 1.5.1 → 1.6.0 | LLM wiki builder integration |
+| 0007 | 1.6.0 → 1.7.0 | GitNexus code-graph integration |
+| 0009 | 1.7.0 → 1.8.0 | Vendor CLAUDE.md workflow block as `.claude/claude-md/workflow.md` |
 | ... | | (future migrations land here as they ship) |
 
-A new project freshly setup gets ALL of these in sequence.
+A new project freshly setup gets ALL of these in sequence. Note: 0000 was
+patched in v1.8.0 to write a **vendored** workflow block instead of
+inlining ~150 lines into CLAUDE.md. Fresh installs go straight to
+vendored state; 0009 handles upgrade-path projects that were originally
+set up under v1.2.0–v1.7.0 and inherited the inlined block. See ADR 0021.
 
 ## Reference: related skills
 

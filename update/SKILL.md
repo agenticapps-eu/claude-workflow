@@ -157,7 +157,11 @@ For each step (parsed from `### Step N:` headings):
 3. **Show the diff** the step would apply. For markdown insertions, format
    as a unified diff against the current file. For JSON modifications,
    format as `jq` output before/after. For file creation, show the file's
-   intended content.
+   intended content. **For vendored-file replacement** (e.g. migration
+   0009 Step 1 / Step 2 re-syncing `.claude/claude-md/workflow.md`),
+   detect divergence by byte-comparing the existing project copy against
+   the canonical source in the workflow scaffolder. If they differ, treat
+   this as a divergence event (see "Divergence detection" below).
 
 4. If `--dry-run`: log `step {N}: would apply (dry-run, no write)`. Continue.
 
@@ -167,6 +171,24 @@ For each step (parsed from `### Step N:` headings):
    > B) Skip with warning
    > C) Abort migration (rollback applied steps)
    > D) Show full migration step text again
+
+   **Divergence variant** (when Step 3 detected a customised local copy
+   of a vendored file): present a 3-way pick instead of the standard A/B/C/D:
+   > Local copy of `<path>` differs from the v{TO_VERSION} canonical template:
+   > A) Replace with canonical (overwrites local edits) [Recommended only if
+   >    you know the local edits were not intentional]
+   > B) Keep local copy (skip this step; re-sync manually if a future
+   >    migration substantively changes the canonical) [Recommended for
+   >    intentionally customised vendored files]
+   > C) Vendor the local (customised) copy as the canonical going forward
+   >    (treats your edits as authoritative; the canonical from the
+   >    scaffolder is overwritten in the project's local copy) [advanced]
+   > D) Show full diff again
+   > E) Abort migration (rollback applied steps)
+
+   The diff is `diff -u <scaffolder-source> <project-local-copy>`. The
+   default selection on this prompt is **B (Keep local copy)** — diverging
+   is usually intentional, and the safe action is to leave it alone.
 
 6. On Apply: write the patch. The actual mechanism depends on step type:
    - Markdown insertion: Edit the target file.
@@ -225,6 +247,8 @@ Next steps:
 | Pre-flight fails (e.g. skill missing) | Pause for user input; do not auto-install; resume on retry |
 | Step pre-condition fails | Stop migration mid-flight; user chooses fix-and-retry, skip, or abort |
 | Step apply fails (e.g. file is read-only) | Stop migration; user chooses retry, skip, or abort (rollback applied steps) |
+| Vendored-file divergence (local copy differs from canonical) | Step 3 detects via byte-compare; present 3-way pick (Replace / Keep / Vendor-local). Default to Keep. Migration proceeds based on user choice; outcome reflected in summary. |
+| Inlined-block extraction ambiguous (migration 0009 Step 4) | Step prompts user with the extraction range and a "skip" option. If user skips, migration completes with partial outcome; CLAUDE.md keeps the inline duplication; vendored file is still in place. Re-runnable. |
 | Post-check fails | Migration marked partial; version field NOT bumped; user warned; commit still happens with the qualifier "partial" in the message |
 
 ## Idempotency guarantee

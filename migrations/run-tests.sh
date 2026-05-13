@@ -206,11 +206,207 @@ test_migration_0001() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Migration 0009 — Vendor CLAUDE.md workflow block
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Unlike 0001, 0009's fixtures are HAND-BUILT (not extracted from git refs).
+# The "pre-existing inlined block" state is what consumer projects look like
+# *as of today*, not what claude-workflow itself ever shipped.
+# See migrations/test-fixtures/0009/README.md for scenario semantics.
+
+test_migration_0009() {
+  echo ""
+  echo "${YELLOW}━━━ Migration 0009 — Vendor CLAUDE.md workflow block ━━━${RESET}"
+
+  local fixtures="$REPO_ROOT/migrations/test-fixtures/0009"
+  if [ ! -d "$fixtures" ]; then
+    echo "  ${RED}SKIP${RESET}: fixtures directory missing at $fixtures"
+    SKIP=$((SKIP+1))
+    return
+  fi
+
+  # Copy each scenario into a temp dir (the harness's run_check evals the
+  # check inside the fixture; using temp copies keeps the source fixtures
+  # read-only and matches 0001's pattern of mutable working dirs.)
+  local fresh_dir="$(mktemp -d -t migration-0009-fresh-XXXXXX)"
+  local inlined_pristine_dir="$(mktemp -d -t migration-0009-inlpr-XXXXXX)"
+  local inlined_customised_dir="$(mktemp -d -t migration-0009-inlcu-XXXXXX)"
+  local vendored_dir="$(mktemp -d -t migration-0009-vend-XXXXXX)"
+  local idempotent_dir="$(mktemp -d -t migration-0009-idem-XXXXXX)"
+  trap "rm -rf '$fresh_dir' '$inlined_pristine_dir' '$inlined_customised_dir' '$vendored_dir' '$idempotent_dir'" RETURN
+
+  cp -R "$fixtures/before-fresh/." "$fresh_dir/"
+  cp -R "$fixtures/before-inlined-pristine/." "$inlined_pristine_dir/"
+  cp -R "$fixtures/before-inlined-customised/." "$inlined_customised_dir/"
+  cp -R "$fixtures/after-vendored/." "$vendored_dir/"
+  cp -R "$fixtures/after-idempotent/." "$idempotent_dir/"
+
+  echo "  fresh:                $fresh_dir"
+  echo "  inlined-pristine:     $inlined_pristine_dir"
+  echo "  inlined-customised:   $inlined_customised_dir"
+  echo "  vendored (after):     $vendored_dir"
+  echo "  idempotent (after2):  $idempotent_dir"
+
+  # ── Step 1: vendored file exists ──────────────────────────────────────────
+  # Idempotency check from migration 0009: `test -f .claude/claude-md/workflow.md`
+  assert_check "Step 1 idempotency: needs apply on before-fresh" \
+    'test -f .claude/claude-md/workflow.md' "$fresh_dir" not-applied
+  assert_check "Step 1 idempotency: needs apply on before-inlined-pristine" \
+    'test -f .claude/claude-md/workflow.md' "$inlined_pristine_dir" not-applied
+  assert_check "Step 1 idempotency: needs apply on before-inlined-customised" \
+    'test -f .claude/claude-md/workflow.md' "$inlined_customised_dir" not-applied
+  assert_check "Step 1 idempotency: skip on after-vendored" \
+    'test -f .claude/claude-md/workflow.md' "$vendored_dir" applied
+  assert_check "Step 1 idempotency: skip on after-idempotent" \
+    'test -f .claude/claude-md/workflow.md' "$idempotent_dir" applied
+
+  # ── Step 2: vendored content current (canonical marker present) ──────────
+  # Idempotency check: `grep -q "Superpowers Integration Hooks (MANDATORY" .claude/claude-md/workflow.md`
+  # Note: when the file doesn't exist, grep returns non-zero — same outcome
+  # as "content not current". The migration runtime distinguishes via Step 1
+  # ordering (Step 2 only runs after Step 1 succeeds).
+  assert_check "Step 2 idempotency: needs apply on before-fresh (no file)" \
+    'grep -q "Superpowers Integration Hooks (MANDATORY" .claude/claude-md/workflow.md 2>/dev/null' "$fresh_dir" not-applied
+  assert_check "Step 2 idempotency: needs apply on before-inlined-pristine (no file)" \
+    'grep -q "Superpowers Integration Hooks (MANDATORY" .claude/claude-md/workflow.md 2>/dev/null' "$inlined_pristine_dir" not-applied
+  assert_check "Step 2 idempotency: needs apply on before-inlined-customised (no file)" \
+    'grep -q "Superpowers Integration Hooks (MANDATORY" .claude/claude-md/workflow.md 2>/dev/null' "$inlined_customised_dir" not-applied
+  assert_check "Step 2 idempotency: skip on after-vendored" \
+    'grep -q "Superpowers Integration Hooks (MANDATORY" .claude/claude-md/workflow.md' "$vendored_dir" applied
+  assert_check "Step 2 idempotency: skip on after-idempotent" \
+    'grep -q "Superpowers Integration Hooks (MANDATORY" .claude/claude-md/workflow.md' "$idempotent_dir" applied
+
+  # ── Step 3: CLAUDE.md links to vendored file ──────────────────────────────
+  # Idempotency check: `grep -q "claude-md/workflow.md" CLAUDE.md`
+  assert_check "Step 3 idempotency: needs apply on before-fresh" \
+    'grep -q "claude-md/workflow.md" CLAUDE.md' "$fresh_dir" not-applied
+  assert_check "Step 3 idempotency: needs apply on before-inlined-pristine" \
+    'grep -q "claude-md/workflow.md" CLAUDE.md' "$inlined_pristine_dir" not-applied
+  assert_check "Step 3 idempotency: needs apply on before-inlined-customised" \
+    'grep -q "claude-md/workflow.md" CLAUDE.md' "$inlined_customised_dir" not-applied
+  assert_check "Step 3 idempotency: skip on after-vendored" \
+    'grep -q "claude-md/workflow.md" CLAUDE.md' "$vendored_dir" applied
+  assert_check "Step 3 idempotency: skip on after-idempotent" \
+    'grep -q "claude-md/workflow.md" CLAUDE.md' "$idempotent_dir" applied
+
+  # ── Step 4: inlined block absent (extraction complete) ────────────────────
+  # Idempotency check: `! grep -q "^## Superpowers Integration Hooks (MANDATORY" CLAUDE.md`
+  # "applied" here means the inlined block is GONE from CLAUDE.md (or was
+  # never there) — so the step doesn't need to run.
+  assert_check "Step 4 idempotency: skip on before-fresh (nothing to extract)" \
+    '! grep -qE "^#{2,4} Superpowers Integration Hooks \(MANDATORY" CLAUDE.md' "$fresh_dir" applied
+  assert_check "Step 4 idempotency: needs apply on before-inlined-pristine (block present)" \
+    '! grep -qE "^#{2,4} Superpowers Integration Hooks \(MANDATORY" CLAUDE.md' "$inlined_pristine_dir" not-applied
+  assert_check "Step 4 idempotency: needs apply on before-inlined-customised (block present)" \
+    '! grep -qE "^#{2,4} Superpowers Integration Hooks \(MANDATORY" CLAUDE.md' "$inlined_customised_dir" not-applied
+  assert_check "Step 4 idempotency: skip on after-vendored" \
+    '! grep -qE "^#{2,4} Superpowers Integration Hooks \(MANDATORY" CLAUDE.md' "$vendored_dir" applied
+  assert_check "Step 4 idempotency: skip on after-idempotent" \
+    '! grep -qE "^#{2,4} Superpowers Integration Hooks \(MANDATORY" CLAUDE.md' "$idempotent_dir" applied
+
+  # ── Step 4 detection signature (paste-verbatim smoking gun) ───────────────
+  # The verbatim H1 line proves the block was pasted from the deprecated
+  # template (vs. inlined some other way). Only before-inlined-pristine has
+  # it (modeling fx-signal-agent's case); the customised fixture omits the
+  # H1 (modeling cparx, which dropped the H1 during a manual cleanup pass).
+  assert_check "Step 4 detection: paste-verbatim absent on before-fresh" \
+    '! grep -q "^# CLAUDE.md Sections — paste into your project" CLAUDE.md' "$fresh_dir" applied
+  assert_check "Step 4 detection: paste-verbatim PRESENT on before-inlined-pristine" \
+    'grep -q "^# CLAUDE.md Sections — paste into your project" CLAUDE.md' "$inlined_pristine_dir" applied
+  assert_check "Step 4 detection: paste-verbatim absent on before-inlined-customised" \
+    '! grep -q "^# CLAUDE.md Sections — paste into your project" CLAUDE.md' "$inlined_customised_dir" applied
+  assert_check "Step 4 detection: paste-verbatim absent on after-vendored" \
+    '! grep -q "^# CLAUDE.md Sections — paste into your project" CLAUDE.md' "$vendored_dir" applied
+
+  # ── Step 4 detection (apply-step bash): INLINED variable lands correctly ──
+  # FLAG-5 follow-up: exercises the actual detection bash from Step 4's apply
+  # block, not just the idempotency check. This catches the heading-level
+  # mismatch that BLOCK-1 surfaced — if the regex were wrong, INLINED would
+  # not flip to 1 against the legacy-H3 fixtures, and these assertions would
+  # fail loudly.
+  detect_inlined() {
+    local fixture="$1"
+    ( cd "$fixture" && \
+      INLINED=0 && \
+      grep -qE "^#{2,4} Superpowers Integration Hooks \(MANDATORY" CLAUDE.md && INLINED=1
+      PASTED_VERBATIM=0
+      grep -qE "^# CLAUDE.md Sections [—-] paste into your project's CLAUDE.md" CLAUDE.md \
+        && PASTED_VERBATIM=1 \
+        && INLINED=1
+      echo "$INLINED" )
+  }
+  local inlined_fresh="$(detect_inlined "$fresh_dir")"
+  local inlined_pristine="$(detect_inlined "$inlined_pristine_dir")"
+  local inlined_customised="$(detect_inlined "$inlined_customised_dir")"
+  local inlined_vendored="$(detect_inlined "$vendored_dir")"
+  if [ "$inlined_fresh" = "0" ]; then
+    echo "  ${GREEN}✓${RESET} Step 4 apply-bash: INLINED=0 on before-fresh"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} Step 4 apply-bash: INLINED=$inlined_fresh on before-fresh (expected 0)"
+    FAIL=$((FAIL+1))
+  fi
+  if [ "$inlined_pristine" = "1" ]; then
+    echo "  ${GREEN}✓${RESET} Step 4 apply-bash: INLINED=1 on before-inlined-pristine (H3 marker + smoking-gun H1)"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} Step 4 apply-bash: INLINED=$inlined_pristine on before-inlined-pristine (expected 1) — REGRESSION OF BLOCK-1"
+    FAIL=$((FAIL+1))
+  fi
+  if [ "$inlined_customised" = "1" ]; then
+    echo "  ${GREEN}✓${RESET} Step 4 apply-bash: INLINED=1 on before-inlined-customised (H3 marker only, no smoking-gun H1)"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} Step 4 apply-bash: INLINED=$inlined_customised on before-inlined-customised (expected 1) — REGRESSION OF BLOCK-1"
+    FAIL=$((FAIL+1))
+  fi
+  if [ "$inlined_vendored" = "0" ]; then
+    echo "  ${GREEN}✓${RESET} Step 4 apply-bash: INLINED=0 on after-vendored"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} Step 4 apply-bash: INLINED=$inlined_vendored on after-vendored (expected 0)"
+    FAIL=$((FAIL+1))
+  fi
+
+  # ── Step 4 detection: GSD Workflow Enforcement section presence ───────────
+  # BLOCK-2 verification: the inlined block extends through ## GSD Workflow
+  # Enforcement and ## Skill routing in legacy projects. The before-* fixtures
+  # MUST carry these sections so the extraction-range fix is exercised.
+  assert_check "BLOCK-2: inlined-pristine has trailing ## GSD Workflow Enforcement section" \
+    'grep -q "^## GSD Workflow Enforcement" CLAUDE.md' "$inlined_pristine_dir" applied
+  assert_check "BLOCK-2: inlined-pristine has trailing ## Skill routing section" \
+    'grep -q "^## Skill routing" CLAUDE.md' "$inlined_pristine_dir" applied
+  assert_check "BLOCK-2: inlined-customised has trailing ## GSD Workflow Enforcement section" \
+    'grep -q "^## GSD Workflow Enforcement" CLAUDE.md' "$inlined_customised_dir" applied
+  assert_check "BLOCK-2: inlined-customised has trailing ## Skill routing section" \
+    'grep -q "^## Skill routing" CLAUDE.md' "$inlined_customised_dir" applied
+  assert_check "BLOCK-2: after-vendored has NO trailing ## Skill routing inline (only the reference link)" \
+    '! grep -q "^## Skill routing" CLAUDE.md' "$vendored_dir" applied
+
+  # ── Step 5: version bump ──────────────────────────────────────────────────
+  # Idempotency check: `grep -q '^version: 1.8.0' .claude/skills/agentic-apps-workflow/SKILL.md`
+  assert_check "Step 5 idempotency: needs apply on before-fresh (still 1.7.0)" \
+    "grep -q '^version: 1.8.0' .claude/skills/agentic-apps-workflow/SKILL.md" "$fresh_dir" not-applied
+  assert_check "Step 5 idempotency: needs apply on before-inlined-pristine (still 1.7.0)" \
+    "grep -q '^version: 1.8.0' .claude/skills/agentic-apps-workflow/SKILL.md" "$inlined_pristine_dir" not-applied
+  assert_check "Step 5 idempotency: needs apply on before-inlined-customised (still 1.7.0)" \
+    "grep -q '^version: 1.8.0' .claude/skills/agentic-apps-workflow/SKILL.md" "$inlined_customised_dir" not-applied
+  assert_check "Step 5 idempotency: skip on after-vendored" \
+    "grep -q '^version: 1.8.0' .claude/skills/agentic-apps-workflow/SKILL.md" "$vendored_dir" applied
+  assert_check "Step 5 idempotency: skip on after-idempotent" \
+    "grep -q '^version: 1.8.0' .claude/skills/agentic-apps-workflow/SKILL.md" "$idempotent_dir" applied
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Dispatcher
 # ─────────────────────────────────────────────────────────────────────────────
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "0001" ]; then
   test_migration_0001
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "0009" ]; then
+  test_migration_0009
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
