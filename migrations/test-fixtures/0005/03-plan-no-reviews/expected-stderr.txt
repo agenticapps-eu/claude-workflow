@@ -1,0 +1,4 @@
+❌ Multi-AI Plan Review Gate: blocked edit during execution
+Missing:
+01-REVIEWS.md
+Run /gsd-review before continuing with execution.
