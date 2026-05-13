@@ -1,104 +1,105 @@
-# Session Handoff — 2026-05-13 (phase 07)
+# Session Handoff — 2026-05-13 (phase 08)
 
 ## Accomplished
 
-Shipped migration 0010 (workflow scaffolder 1.8.0 → 1.9.0) end-to-end:
-post-processor hook that collapses inlined `<!-- GSD:{slug}-start
-source:{label} -->...` blocks in CLAUDE.md into 3-line self-closing
-references. Full GSD pipeline + three independent post-phase reviews
-(Stage 1 spec, Stage 2 code-quality, CSO security) completed.
+Shipped migration 0005 (workflow scaffolder 1.9.0 → 1.9.1) end-to-end via
+the full GSD pipeline as **Phase 08**. Multi-AI plan review enforcement
+gate: a PreToolUse hook (`templates/.claude/hooks/multi-ai-review-gate.sh`)
+that blocks Edit/Write/MultiEdit during a phase if `*-PLAN.md` exists but
+`*-REVIEWS.md` doesn't. Promotes `/gsd-review` from optional gsd-patch to
+structurally enforced contract gate.
 
-Branch: `feat/post-process-gsd-sections-0010` (local, not pushed).
-Six commits off `feat/vendor-claude-md-sections-0009`:
+Also pushed and merged: PR #10 (0009, vendor CLAUDE.md), PR #13 (0008+0010,
+Coverage Matrix + post-process GSD markers), PR #9 (settings.json bootstrap
+fix). Carry-over drafts (0005/0006/0007 from old branch) were rebased onto
+1.9.x in PR #12; 0005 then promoted into PR #14 (this phase's output).
 
-- `f22f2af` test(RED) — fixtures + 7 harness assertions, no script
-- `3bf6727` feat(GREEN) — initial bash post-processor, 7/7 PASS
-- `8606387` feat(workflow) — migration 0010 + ADR 0022 + v1.9.0 bump
-- `0ac39bd` fix(security) — CSO hardening (H1 basename, H2 PATH pin, M1 symlink, M2 5MiB DoS) +3 assertions
-- `8f35efc` docs(phase-07) — Stage 1 REVIEW + VERIFICATION committed
-- `d89f99f` fix(stage-2) — 6 BLOCKs (binary refuse, fence-aware, CRLF strip, atomic mv, slug allowlist, nested-marker reject) +6 regression assertions
+Branch: `feat/phase-08-migration-0005-multi-ai-review` (pushed). 5 commits:
 
-Final harness: 16/16 PASS on test_migration_0010. Full suite: 66 PASS /
-8 pre-existing 0001 FAILs (carry-over from before this phase).
+- `fd0990c` docs(phase-08) — CONTEXT + RESEARCH + PLAN + multi-AI REVIEWS
+- `840d32d` test(RED) — 11 fixtures + harness
+- `bf3a407` feat(GREEN) — MultiEdit closure + harness leak fix
+- `7fbda90` feat(phase-08) — wire 1.9.1 + verification (T6b/T7/T-dogfood/T8)
+- `6a8854b` fix(stage-2,cso) — address Stage 2 BLOCK + 5 FLAGs, CSO M1/L1
 
-End-to-end on real cparx CLAUDE.md (in tmp): 647L → 521L (0009 step) →
-278L (0010 step). 0010 alone removes 243 lines (47% of post-0009 size).
+Harness: 13/13 PASS on test_migration_0005. Full suite: 79 PASS / 8 pre-
+existing 0001 FAILs (carry-over from main).
 
 ## Decisions
 
-- **Source identified upstream**: `gsd-tools generate-claude-md` at
-  `~/.claude/get-shit-done/bin/lib/profile-output.cjs:911` (owned by
-  pi-agentic-apps-workflow family, cross-repo). On-demand only — not
-  auto-invoked. `--auto` flag preserves manual edits, which is what
-  makes the post-processor stable across gsd-tools re-runs.
-- **Downstream hook chosen over upstream patch** (ADR 0022). Cross-repo
-  coordination too slow for cparx relief; post-processor delivers in
-  hours; upstream PR queued as TODO.
-- **Allowlist-based slug detection** (Stage-2 BLOCK-5 fix). Only the
-  seven canonical slugs trigger normalization; custom slugs (e.g.,
-  `<!-- GSD:wibble-start -->` for project-local tracking) are preserved
-  with a stderr warning.
-- **Atomic write via `mv`** (Stage-2 BLOCK-4 fix). Temp file lives in
-  same dir as input → mv is a same-filesystem rename(2), POSIX-atomic.
-  Two concurrent invocations now land on one final state, not corrupt.
-- **AC-7 ≤200L target MISSED**: 278L actual on real cparx. 78L gap is
-  non-GSD content (gstack skill table, anti-patterns, repo-structure
-  diagram). Documented openly in VERIFICATION.md + CHANGELOG + ADR 0022
-  with Phase 08+ follow-up path.
-- **Three-stage review preserved.** Stage 1 (APPROVE-WITH-FLAGS, 0 BLOCKs)
-  + Stage 2 (REQUEST-CHANGES with 6 BLOCKs, all addressed) + CSO
-  (PASS-WITH-NOTES, 3 must-fix items, all addressed). Workflow skill
-  Red Flag #8 prohibits collapsing — kept them as independent agents.
+- **Dogfood properly enforced.** The plan review for THIS phase was run
+  via codex + gemini direct invocation, captured as `08-REVIEWS.md`.
+  Codex returned REQUEST-CHANGES with 4 BLOCKs — all addressed by PLAN.md
+  amendments **before** T1 execution. The gate fires on its own creation
+  phase (T-dogfood: block→allow cycle verified for Edit + MultiEdit).
+- **MultiEdit added to matcher** (codex B3). Was originally Edit|Write
+  only with documented residual risk. Closing the gap promoted "structural
+  enforcement" from aspirational to literal.
+- **Path-prefix gating on bypass** (Stage 2 FLAG-A). Original basename-only
+  bypass would have matched `docs/IMPLEMENTATION-PLAN.md`. Now requires
+  `.planning/`-prefix AND GSD-canonical basename.
+- **Idempotency guard on Step 2 jq** (Stage 2 BLOCK-1). Original
+  unconditional `+=` would silently duplicate the hook entry on re-apply,
+  breaking the migration framework contract. Now wrapped in `any()` check.
+- **Fail-open on malformed JSON** (Stage 2 FLAG-B / CSO M1). `jq empty`
+  guard with stderr warning + `exit 0`. Better than exit 5 with raw jq
+  parse error spam.
+- **FIFO-safe** (CSO L1). `[ -f "$REVIEWS" ]` guard prevents `wc -l` hang.
+- **M2 + L2 deferred to 1.9.2** (curl integrity pin, Verify-step
+  active-phase smoke test). Documented in REVIEW.md and PR #14 body.
 
 ## Files modified
 
-- `migrations/0010-post-process-gsd-sections.md` (new)
-- `templates/.claude/hooks/normalize-claude-md.sh` (new, ~260 LOC)
-- `templates/claude-settings.json` (Hook 6 entry added)
-- `migrations/run-tests.sh` (test_migration_0010 stanza, 16 assertions)
-- `migrations/test-fixtures/0010/` (5 fixtures + expected goldens)
-- `migrations/README.md` (Migration index row)
-- `docs/decisions/0022-post-process-gsd-section-markers.md` (new ADR)
-- `skill/SKILL.md` (version 1.8.0 → 1.9.0)
-- `CHANGELOG.md` (new [1.9.0] section)
-- `.planning/phases/07-post-process-gsd-sections/` (CONTEXT, RESEARCH,
-  PLAN, REVIEW with both Stage 1 + Stage 2, SECURITY, VERIFICATION)
+- `templates/.claude/hooks/multi-ai-review-gate.sh` (rewritten — bypass
+  tightening, malformed-JSON fail-open, FIFO-safe)
+- `migrations/0005-multi-ai-plan-review-enforcement.md` (BLOCK-1 fix,
+  Idempotency markers, sed-bak cleanup, whitespace trim, audit cmd fix)
+- `migrations/run-tests.sh` (new test_migration_0005 stanza + HOSTILE_MARKER
+  cleanup)
+- `migrations/test-fixtures/0005/01-13/` (13 fixtures)
+- `migrations/README.md` (index updated)
+- `templates/config-hooks.json` (pre_execute_gates.multi_ai_plan_review)
+- `docs/ENFORCEMENT-PLAN.md` (planning-gates row)
+- `docs/decisions/0018-multi-ai-plan-review-enforcement.md` (version drift)
+- `skill/SKILL.md` (1.9.0 → 1.9.1)
+- `CHANGELOG.md` ([1.9.1] section)
+- `.planning/phases/08-multi-ai-review-enforcement/` (CONTEXT, RESEARCH,
+  PLAN, 08-REVIEWS, REVIEW, SECURITY, VERIFICATION, latency-bench,
+  dogfood-evidence)
 
 ## Next session: start here
 
-Branch is local-only on `feat/post-process-gsd-sections-0010`, six
-commits. All reviewers signed off after fixes; ready to ship:
+PR #14 is open, CLEAN/MERGEABLE, all reviews signed off. Recommended
+pressure test before merge:
 
 ```bash
-git push -u origin feat/post-process-gsd-sections-0010
-gh pr create --title "feat: post-process GSD section markers (migration 0010, v1.9.0)" \
-  --body-file .planning/phases/07-post-process-gsd-sections/VERIFICATION.md
+claude "/update-agenticapps-workflow --dry-run --migration 0005"  # inside ~/Sourcecode/factiv/cparx
 ```
 
-Recommended pressure test before opening the PR: apply 0010 to a real
-consumer project end-to-end via `claude "/update-agenticapps-workflow
---dry-run --migration 0010"` inside `~/Sourcecode/factiv/cparx`. The
-harness covers script behavior in isolation; the migration runtime's
-apply-step prose (Step 2 jq insert, Step 3 user-confirmed diff
-preview) is agent-driven and only verified via dry-run.
+The harness covers script behaviour in isolation; the migration runtime's
+apply-step prose (Step 2 jq merge, Step 3 sed bump) is agent-driven and
+only verified via dry-run in a real consumer.
+
+After PR #14 merges, the carry-over PR #12 is reduced to just 0006 + 0007.
+Each needs its own GSD phase (Phase 09 + Phase 10) following the same
+discipline applied here.
 
 ## Open questions
 
-- **Per-phase commit history vs bundle.** Carry-over uncommitted
-  changes from phases 0005/0006/0007 still in working tree (`??` in
-  git status: ADRs 0018-0020, migrations 0005-0007, test-fixtures/0005/).
-  Same situation as 0009's session-handoff noted. Decide whether to
-  ship 0005-0007 as separate phases or fold into a single follow-up.
-- **Upstream PR to pi-agentic-apps-workflow.** Add `--reference-mode`
-  flag to `gsd-tools generate-claude-md` for native self-closing
-  emission. TODO in ADR 0022. After upstream lands, 0010's
-  post-processor becomes defense-in-depth.
-- **Phase 08 scope.** Closing the 78L gap to ≤200L requires trimming
-  non-GSD content: vendor the gstack `Available skills` enumeration
-  the way 0009 vendored the Superpowers block, and collapse the repo-
-  structure ASCII diagram to a 3-line `tree -L 2` reference. Worth
-  bundling into 0011 / Phase 08?
-- **Pre-existing 0001 harness FAILs (8 of them).** Pre-date this
-  phase — caused by `git merge-base HEAD main` resolving to a
-  post-0001-merge commit instead of v1.2.0 baseline. Tracked in
-  session-handoff 06; still unfixed. Worth a small dedicated phase.
+- **Phase 09 (migration 0006 — LLM wiki builder)**. Already drafted in
+  PR #12 with rebased 1.9.1 → 1.9.2 versions. Needs CONTEXT/RESEARCH/PLAN
+  through GSD, plus the internal-reference inconsistencies (0006 references
+  steps that 0005 doesn't actually contain) need to be either resolved by
+  rewriting 0006's setup steps OR by adding the referenced steps to 0005
+  via a 0005.1 patch.
+- **CSO M2 follow-up (curl integrity).** Pin the hook-fetch URL to
+  `/refs/tags/v1.9.1/...` and ship a SHA-256 alongside migration markdown.
+  Verify with `shasum -a 256 -c` after download. Plan as 1.9.2 patch.
+- **CSO L2 follow-up (Verify smoke test).** Wrap migration's Verify step's
+  smoke test in `GSD_SKIP_REVIEWS=1` or run it from `/tmp` so it doesn't
+  read the consumer's active-phase state. Same 1.9.2 patch.
+- **FLAG-D stub-threshold revisit.** If real bad-faith 5-line REVIEWS.md
+  stubs surface in audits, raise the floor to 20 lines or require reviewer-
+  CLI section headers. Tracked but not actioned yet.
+- **Pre-existing 0001 harness FAILs (8).** Still pre-dating this phase.
+  Worth a small dedicated phase to investigate / fix.
