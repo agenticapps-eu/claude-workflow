@@ -1,0 +1,1 @@
+malformed JSON on stdin, allowing edit (fail-open)

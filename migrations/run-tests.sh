@@ -811,11 +811,17 @@ test_migration_0005() {
     # Fixture 09 — hostile-filename safety check (codex B4).
     # The hostile string contains $(rm -rf /tmp/HOSTILE_MARKER). If command
     # substitution happens, the marker is gone.
-    if [ "$fixname" = "09-hostile-filename-edit" ] && [ ! -f /tmp/HOSTILE_MARKER ]; then
-      echo "  ${RED}✗${RESET} $fixname — /tmp/HOSTILE_MARKER was deleted (command-substitution executed!)"
-      FAIL=$((FAIL+1))
-      rm -rf "$tmp"
-      return
+    # NOTE-5 fix: cleanup the marker file after the check so it doesn't
+    # accumulate on disk across harness runs (the fixture's setup.sh
+    # unconditionally touches /tmp/HOSTILE_MARKER per run).
+    if [ "$fixname" = "09-hostile-filename-edit" ]; then
+      if [ ! -f /tmp/HOSTILE_MARKER ]; then
+        echo "  ${RED}✗${RESET} $fixname — /tmp/HOSTILE_MARKER was deleted (command-substitution executed!)"
+        FAIL=$((FAIL+1))
+        rm -rf "$tmp"
+        return
+      fi
+      rm -f /tmp/HOSTILE_MARKER
     fi
 
     echo "  ${GREEN}✓${RESET} $fixname (exit $actual_exit)"
@@ -823,7 +829,7 @@ test_migration_0005() {
     rm -rf "$tmp"
   }
 
-  # Run all 11 fixtures, sorted.
+  # Run all 13 fixtures, sorted.
   for fix in "$fixtures"/[0-9]*-*/; do
     local name
     name="$(basename "${fix%/}")"

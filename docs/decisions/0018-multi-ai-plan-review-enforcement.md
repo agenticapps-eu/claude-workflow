@@ -57,7 +57,7 @@ Promote the multi-AI plan review from a gsd-patch slash command to an enforced c
 
 ## Migration
 
-Migration `0005-multi-ai-plan-review-enforcement.md` installs the hook, updates the JSON contract, edits ENFORCEMENT-PLAN.md and SKILL.md, bumps workflow version 1.5.0 → 1.5.1. Idempotent. Test fixtures at `migrations/test-fixtures/0005/`.
+Migration `0005-multi-ai-plan-review-enforcement.md` installs the hook, updates the JSON contract, edits ENFORCEMENT-PLAN.md and SKILL.md, bumps workflow version 1.9.0 → 1.9.1 (rebased from the original 1.5.0 → 1.5.1 target — see PR #12 for the rebase context). Idempotent re-apply is a no-op (Step 2's jq merge guards on existing matcher presence). Test fixtures at `migrations/test-fixtures/0005/` (13 scenarios covering every decision branch, including malformed-JSON fail-open and non-`.planning/` PLAN.md non-bypass).
 
 ## Related
 
