@@ -8,6 +8,7 @@ applies_to:
   - .claude/skills/agentic-apps-workflow/SKILL.md
   - .claude/workflow-config.md
   - .planning/config.json
+  - .claude/claude-md/workflow.md
   - CLAUDE.md
 requires: []
 optional_for: []
@@ -85,23 +86,48 @@ cp ~/.claude/skills/agenticapps-workflow/templates/config-hooks.json .planning/c
 ```
 **Rollback:** `rm -f .planning/config.json && rmdir .planning 2>/dev/null || true`
 
-### Step 4: Append CLAUDE.md sections from template
+### Step 4: Vendor CLAUDE.md workflow block + add reference to CLAUDE.md
 
-**Idempotency check:** `grep -q "Superpowers Integration Hooks (MANDATORY" CLAUDE.md`
-**Pre-condition:** template exists at `~/.claude/skills/agenticapps-workflow/templates/claude-md-sections.md`
+**Idempotency check:** `test -f .claude/claude-md/workflow.md && grep -q "claude-md/workflow.md" CLAUDE.md`
+**Pre-condition:** vendored template exists at `~/.claude/skills/agenticapps-workflow/templates/.claude/claude-md/workflow.md`
 **Apply:**
 ```bash
 # Create CLAUDE.md if missing
 touch CLAUDE.md
 
-# Append sections (idempotency check above prevents double-append)
-echo "" >> CLAUDE.md
-cat ~/.claude/skills/agenticapps-workflow/templates/claude-md-sections.md >> CLAUDE.md
+# 4a — Vendor the workflow block as a project-local file
+mkdir -p .claude/claude-md
+cp ~/.claude/skills/agenticapps-workflow/templates/.claude/claude-md/workflow.md \
+   .claude/claude-md/workflow.md
+
+# 4b — Append a short reference block to CLAUDE.md (idempotency check above
+# prevents double-append). The full content lives in the vendored file
+# above; CLAUDE.md just links to it. This keeps CLAUDE.md inside the
+# 200-line always-loaded budget.
+cat >> CLAUDE.md <<'EOF'
+
+## Workflow
+
+This project follows the AgenticApps Superpowers + GSD + gstack workflow.
+See [`.claude/claude-md/workflow.md`](.claude/claude-md/workflow.md) for the
+full hooks, rituals, and red-flag tables. That file is **vendored** by
+`claude-workflow` migrations — re-run `/update-agenticapps-workflow` to
+re-sync; do not edit it directly. Project-specific overrides go in this
+CLAUDE.md.
+EOF
 ```
+
+> **Why vendor instead of inline?** Earlier baseline behavior `cat`ed the
+> entire ~150-line workflow template into CLAUDE.md, which blew the
+> always-loaded context budget for any non-trivial project (cparx hit 646
+> lines, fx-signal-agent 372). Vendoring as a separate file with a
+> reference link keeps CLAUDE.md project-specific and inside budget while
+> still making the workflow discoverable. ADR 0021 captures the rationale.
+
 **Rollback:** Restore CLAUDE.md from git: `git checkout CLAUDE.md` if it
-existed pre-step, else `rm -f CLAUDE.md`. The unique anchor for manual
-removal: delete from line `## Development Workflow` (added by this step) to
-end of file, OR delete only the `Superpowers Integration Hooks (MANDATORY` block.
+existed pre-step, else `rm -f CLAUDE.md`. Then
+`rm -rf .claude/claude-md/`. Manual anchor for removal: delete the
+`## Workflow` section appended by this step.
 
 ### Step 5: Append global CLAUDE.md additions (Option A install only)
 
@@ -135,7 +161,9 @@ field, insert `version: 1.2.0` as the second frontmatter line (after `name:`).
 - `test -f .claude/skills/agentic-apps-workflow/SKILL.md` — installed
 - `test -f .claude/workflow-config.md && grep -v '{{' .claude/workflow-config.md | head -1` — placeholders substituted
 - `jq -e '.hooks.pre_phase.brainstorm_ui' .planning/config.json` — config valid
-- `grep -q "Superpowers Integration Hooks (MANDATORY" CLAUDE.md` — CLAUDE.md updated
+- `test -f .claude/claude-md/workflow.md` — workflow block vendored
+- `grep -q "claude-md/workflow.md" CLAUDE.md` — CLAUDE.md links to vendored block
+- `grep -q "Superpowers Integration Hooks (MANDATORY" .claude/claude-md/workflow.md` — vendored content sane
 - `grep -q '^version: 1.2.0' .claude/skills/agentic-apps-workflow/SKILL.md` — version recorded
 
 ## Skip cases

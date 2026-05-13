@@ -33,6 +33,23 @@ NNNN-{kebab-slug}.md
 `0000-baseline.md` is special: it codifies the starting state of a fresh
 project (currently the v1.2.0 default). Every other migration is incremental.
 
+### Migration index (current chain)
+
+| ID | from → to | Title |
+|---|---|---|
+| `0000` | unknown → 1.2.0 | Baseline (workflow files, hooks, **vendored** CLAUDE.md workflow block since v1.8.0) |
+| `0001` | 1.2.0 → 1.3.0 | Wire Go skill packs + impeccable + database-sentinel |
+| `0004` | 1.3.0 → 1.4.0 | Programmatic hooks + architecture audit + scheduling |
+| `0002` | 1.4.0 → 1.5.0 | Observability spec v0.2.1 |
+| `0005` | 1.5.0 → 1.5.1 | Multi-AI plan review enforcement |
+| `0006` | 1.5.1 → 1.6.0 | LLM wiki builder integration |
+| `0007` | 1.6.0 → 1.7.0 | GitNexus code-graph integration |
+| `0009` | 1.7.0 → 1.8.0 | Vendor CLAUDE.md workflow block as `.claude/claude-md/workflow.md` |
+
+(IDs are not chronological — see "Application order" below for why
+`0004` runs before `0002` in the chain. Application order is by
+`from_version` matching, not by ID.)
+
 ---
 
 ## Application order

@@ -1,6 +1,6 @@
 ---
 name: agentic-apps-workflow
-version: 1.5.0
+version: 1.8.0
 description: |
   Enforces the spec-first development workflow using Superpowers + GSD + gstack
   for any AgenticApps project. This skill MUST activate whenever Claude is asked
@@ -148,11 +148,12 @@ design, UX direction) get an ADR at `docs/decisions/NNNN-short-title.md`:
 | "Skill is obvious, no need to announce it" | The announcement IS the commitment. Announcement → consistency pressure → compliance. |
 | "TDD is impractical for frontend" | Snapshot tests, `/browse` screenshot diffs, visual regression count as TDD. Write the test first. |
 | "I've already thought about alternatives" | If you didn't write them down, you didn't consider them. List ≥2 in RESEARCH.md. |
+| "`/gsd-review` is excessive — just one model's plan is fine" | Different LLMs catch different blind spots. A plan that survives review from 2–3 independent reviewers is more robust. Run it. (cparx phases 04.9 → 05 silently dropped this for 8 phases — that's the failure mode ADR 0018 closes.) |
 | "Two-stage review is excessive" | Stage 1 catches spec drift, Stage 2 catches code-quality drift. Different failures, different agents. |
 | "Dev server isn't worth booting for this change" | If you touched JSX/TSX, boot it. 30 seconds. |
 | "The user explicitly said ship fast" | Acknowledge urgency, explain risk in one sentence, offer minimum discipline that protects the critical path. |
 
-## 13 Red Flags — STOP → DELETE → RESTART
+## 14 Red Flags — STOP → DELETE → RESTART
 
 1. Code written before the test (for TDD tasks)
 2. Test added after implementation
@@ -161,12 +162,13 @@ design, UX direction) get an ADR at `docs/decisions/NNNN-short-title.md`:
 5. Tests marked for "later" addition
 6. "Just this once" reasoning
 7. Manual testing claimed as verification evidence
-8. Two-stage review collapsed into one
-9. Framing discipline as "ritual" or "ceremony"
-10. Keeping pre-written code as "reference" while writing tests
-11. Sunk-cost reasoning about deleting unverified code
-12. Describing discipline as "dogmatic"
-13. "This case is different because..."
+8. `/gsd-review` skipped — no `{phase}-REVIEWS.md` artifact
+9. Two-stage review collapsed into one
+10. Framing discipline as "ritual" or "ceremony"
+11. Keeping pre-written code as "reference" while writing tests
+12. Sunk-cost reasoning about deleting unverified code
+13. Describing discipline as "dogmatic"
+14. "This case is different because..."
 
 ## Pressure-Test Scenarios — Self-Check
 
@@ -188,7 +190,11 @@ grep -rn "## Workflow commitment" .planning/phases/{padded_phase}-*/ 2>/dev/null
 # TDD tasks produced RED + GREEN commits
 git log --oneline {phase_base}..HEAD | grep -cE "^[a-f0-9]+ (test|feat)\("
 
-# Two-stage review evidence
+# Multi-AI plan review evidence (pre-execution)
+test -f .planning/phases/{padded_phase}-*/{padded_phase}-REVIEWS.md \
+  && wc -l .planning/phases/{padded_phase}-*/{padded_phase}-REVIEWS.md
+
+# Two-stage review evidence (post-execution)
 grep -l "Stage 2" .planning/phases/{padded_phase}-*/REVIEW.md
 
 # Evidence per must_have in VERIFICATION.md
