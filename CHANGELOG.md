@@ -4,6 +4,23 @@ All notable changes to the AgenticApps Claude Workflow scaffolder are
 documented here. The format follows [Keep a Changelog](https://keepachangelog.com/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.9.0] — Unreleased
+
+### Added
+
+- **Post-processor for inlined GSD section markers** — new POSIX bash 3.2+ script `templates/.claude/hooks/normalize-claude-md.sh` walks CLAUDE.md and rewrites every `<!-- GSD:{slug}-start source:{label} -->...<!-- GSD:{slug}-end -->` block into a 3-line self-closing reference (`<!-- GSD:{slug} source:{label} /-->` + `## {Heading}` + `See [`{path}`](./{path}) — auto-synced.`). Resolves `source:` labels to actual `.planning/`-rooted file paths. Idempotent. Source-existence-safe (preserves blocks with missing sources). Special-cases the `workflow` block (removed entirely once 0009's `.claude/claude-md/workflow.md` exists) and the `profile` block (no `source:` attr; emits `/gsd-profile-user` placeholder). Collapses 2+ consecutive blanks to 1 (mirrors gsd-tools' own normalization).
+- **PostToolUse hook registration** — `templates/claude-settings.json` gains "Hook 6 — Normalize CLAUDE.md after Edit/Write (migration 0010)" matching `Edit|Write|MultiEdit`. Defends against future `gsd-tools generate-claude-md` invocations that would re-inflate the marker blocks.
+- **Migration `0010-post-process-gsd-sections.md`** — promotes 1.8.0 → 1.9.0 by vendoring the post-processor into consumer projects, registering the PostToolUse hook in `.claude/settings.json` (jq-based insert with hand-edit fallback), and one-shot normalizing existing CLAUDE.md with user-confirmed diff preview. 4 steps; each ships with idempotency check + rollback.
+- **ADR 0022** — Post-process GSD section markers via downstream hook (not upstream patch). Documents the source-identification finding (`gsd-tools generate-claude-md` from `~/.claude/get-shit-done/`, owned by upstream `pi-agentic-apps-workflow` family), the post-processor-vs-upstream-patch trade-off, the 0009/0010 boundary (disjoint marker shapes — no regex overlap), and the `--auto` recommendation for users running `gsd-tools` directly.
+- **Hand-built test fixtures for migration 0010** — `migrations/test-fixtures/0010/` with 5 pair-shaped scenarios (`fresh` no-op, `inlined-7-sections` full normalization, `inlined-source-missing` safety preservation, `with-0009-vendored` 0009 coexistence, `cparx-shape` ≤200L line-count target). Unlike 0009's fixtures (idempotency-check-only), 0010's harness actually runs the script and diffs against expected goldens.
+- **`test_migration_0010()` stanza** added to `migrations/run-tests.sh` — 7 assertions covering all 5 fixtures plus idempotency double-run and missing-input exit code. Diverges from 0001/0009's SKIP-on-missing pattern: 0010 FAILs the harness when the script is absent, because the script IS the migration's artifact under test.
+
+### Notes
+
+- **cparx-shape fixture** (~339L representative input) normalizes to 147L — well under the ≤200L target.
+- **Real cparx (647L)** end-to-end projection: 647 → 0009 → ~496L → 0010 → ~270L. The remaining ~70L gap to the user's stated ~165L target is non-GSD content (gstack skill table, anti-patterns list, repo-structure ASCII diagram, project-specific notes — ~232L of non-marker content). Closing the gap requires a follow-up phase trimming non-GSD content; out of scope for 0010.
+- **Upstream patch recommended as follow-up** — ADR 0022 captures the rationale for shipping the downstream post-processor first while leaving a TODO for an upstream PR to `pi-agentic-apps-workflow` adding a `--reference-mode` flag to `gsd-tools generate-claude-md`. After upstream lands, 0010's post-processor becomes defense-in-depth.
+
 ## [1.8.0] — Unreleased
 
 ### Added
