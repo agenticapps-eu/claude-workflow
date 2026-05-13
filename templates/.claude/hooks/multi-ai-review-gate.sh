@@ -9,7 +9,7 @@
 # This hook detects the drift pattern observed in cparx phases 04.9 →
 # 05 where /gsd-review was silently skipped.
 #
-# Fires on PreToolUse matcher: Edit|Write
+# Fires on PreToolUse matcher: Edit|Write|MultiEdit
 # Exit 2 = BLOCK; Exit 0 = ALLOW.
 # Latency budget: sub-100ms.
 #
@@ -26,8 +26,8 @@ INPUT=$(cat)
 TOOL=$(echo "$INPUT" | jq -r '.tool_name // empty')
 FILE=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
 
-# Only Edit/Write are subject to this gate.
-[ "$TOOL" = "Edit" ] || [ "$TOOL" = "Write" ] || exit 0
+# Only Edit/Write/MultiEdit are subject to this gate.
+[ "$TOOL" = "Edit" ] || [ "$TOOL" = "Write" ] || [ "$TOOL" = "MultiEdit" ] || exit 0
 [ -n "$FILE" ] || exit 0
 
 # Emergency override.

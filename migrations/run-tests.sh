@@ -762,12 +762,14 @@ test_migration_0005() {
     fi
 
     # Run the hook.
+    # The `${env_args[@]+"${env_args[@]}"}` form is safe under `set -u` for empty arrays.
+    # NOTE: parent harness uses `set -uo pipefail` (not `set -e`), so we do NOT
+    # toggle `-e` here — doing so would leak `set -e` into later test_migration_*
+    # functions and break them on the first non-zero exit (observed crashing 0009).
     local stderr_capture="$tmp/.stderr"
     local actual_exit
-    set +e
-    ( cd "$tmp" && env "${env_args[@]}" bash "$script" < "$fixdir/stdin.json" 2> "$stderr_capture" >/dev/null )
+    ( cd "$tmp" && env ${env_args[@]+"${env_args[@]}"} bash "$script" < "$fixdir/stdin.json" 2> "$stderr_capture" >/dev/null )
     actual_exit=$?
-    set -e
 
     # Compare exit.
     local expected_exit

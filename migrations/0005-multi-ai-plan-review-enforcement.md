@@ -64,7 +64,7 @@ Append to the PreToolUse hooks array (use `jq` for idempotency):
 
 ```bash
 jq '.hooks.PreToolUse += [{
-  "matcher": "Edit|Write",
+  "matcher": "Edit|Write|MultiEdit",
   "hooks": [{
     "type": "command",
     "command": "bash .claude/hooks/multi-ai-review-gate.sh"
