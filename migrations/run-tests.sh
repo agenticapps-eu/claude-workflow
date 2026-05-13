@@ -398,6 +398,141 @@ test_migration_0009() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Migration 0010 — post-process GSD section markers in CLAUDE.md
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Unlike 0001 and 0009 (which exercise idempotency checks only), 0010 ships
+# an actual executable script — `templates/.claude/hooks/normalize-claude-md.sh`.
+# The harness can therefore run the script directly and diff its output
+# against expected goldens. Fixtures are pair-shaped: <input>/CLAUDE.md plus
+# <input>/expected/CLAUDE.md. See migrations/test-fixtures/0010/README.md.
+
+test_migration_0010() {
+  echo ""
+  echo "${YELLOW}━━━ Migration 0010 — Post-process GSD section markers ━━━${RESET}"
+
+  local fixtures="$REPO_ROOT/migrations/test-fixtures/0010"
+  local script="$REPO_ROOT/templates/.claude/hooks/normalize-claude-md.sh"
+
+  if [ ! -d "$fixtures" ]; then
+    echo "  ${RED}SKIP${RESET}: fixtures directory missing at $fixtures"
+    SKIP=$((SKIP+1))
+    return
+  fi
+  # Missing script is a FAIL (the script IS the migration artifact under
+  # test; absent it the migration cannot deliver its contract). Diverges
+  # from 0001's and 0009's SKIP-on-missing-fixtures because those tests
+  # only verify idempotency-check correctness, not an executable artifact.
+  if [ ! -x "$script" ]; then
+    echo "  ${RED}✗${RESET} script missing or non-executable at $script — RED state, awaiting GREEN implementation"
+    FAIL=$((FAIL+1))
+    return
+  fi
+
+  # Each scenario gets its own temp dir; the script is invoked with CWD set
+  # to that temp dir so source-existence checks resolve relative to the fixture.
+  run_normalize() {
+    local scenario="$1"
+    local tmp="$(mktemp -d -t "migration-0010-${scenario}-XXXXXX")"
+    cp -R "$fixtures/$scenario/." "$tmp/"
+    rm -rf "$tmp/expected"
+    ( cd "$tmp" && "$script" "$tmp/CLAUDE.md" >/dev/null 2>&1 )
+    echo "$tmp"
+  }
+
+  assert_diff() {
+    local label="$1" actual="$2" expected="$3"
+    if diff -u "$expected" "$actual" >/dev/null 2>&1; then
+      echo "  ${GREEN}✓${RESET} $label"
+      PASS=$((PASS+1))
+    else
+      echo "  ${RED}✗${RESET} $label — diff against expected:"
+      diff -u "$expected" "$actual" 2>&1 | head -40 | sed 's/^/      /'
+      FAIL=$((FAIL+1))
+    fi
+  }
+
+  assert_line_count_le() {
+    local label="$1" file="$2" max="$3"
+    local count="$(wc -l < "$file" | tr -d ' ')"
+    if [ "$count" -le "$max" ]; then
+      echo "  ${GREEN}✓${RESET} $label (got $count, max $max)"
+      PASS=$((PASS+1))
+    else
+      echo "  ${RED}✗${RESET} $label (got $count, max $max)"
+      FAIL=$((FAIL+1))
+    fi
+  }
+
+  # ── Scenario: fresh ──────────────────────────────────────────────────────
+  # No markers; script must be a no-op (output == input).
+  local fresh_tmp="$(run_normalize fresh)"
+  assert_diff "fresh: no-op preserves content byte-for-byte" \
+    "$fresh_tmp/CLAUDE.md" "$fixtures/fresh/expected/CLAUDE.md"
+
+  # ── Scenario: inlined-7-sections ─────────────────────────────────────────
+  # All 7 markers inlined with valid sources. Script must normalize each to
+  # the self-closing form with reference link.
+  local inlined7_tmp="$(run_normalize inlined-7-sections)"
+  assert_diff "inlined-7-sections: 7-block normalization matches golden" \
+    "$inlined7_tmp/CLAUDE.md" "$fixtures/inlined-7-sections/expected/CLAUDE.md"
+
+  # ── Scenario: inlined-source-missing ─────────────────────────────────────
+  # `project` block points to NONEXISTENT.md; must be preserved. `stack` has
+  # a valid source; must be normalized.
+  local missing_tmp="$(run_normalize inlined-source-missing)"
+  assert_diff "inlined-source-missing: preserves block with missing source; normalizes others" \
+    "$missing_tmp/CLAUDE.md" "$fixtures/inlined-source-missing/expected/CLAUDE.md"
+
+  # ── Scenario: with-0009-vendored ─────────────────────────────────────────
+  # 0009's 5-line workflow reference must be UNTOUCHED (no GSD markers).
+  # One inlined `project` block must be normalized.
+  local vendored_tmp="$(run_normalize with-0009-vendored)"
+  assert_diff "with-0009-vendored: 0009 reference untouched; project block normalized" \
+    "$vendored_tmp/CLAUDE.md" "$fixtures/with-0009-vendored/expected/CLAUDE.md"
+
+  # ── Scenario: cparx-shape ────────────────────────────────────────────────
+  # Representative-scale fixture (~339L input). Expected output ≤ 200L per
+  # PLAN.md Decision F. Documented as the integration test for line-count
+  # math. The real cparx end-to-end verification (0009 + 0010 applied to a
+  # copy of cparx CLAUDE.md) runs in the phase's VERIFICATION.md step.
+  local cparx_tmp="$(run_normalize cparx-shape)"
+  assert_line_count_le "cparx-shape: normalized output ≤ 200 lines" \
+    "$cparx_tmp/CLAUDE.md" 200
+
+  # ── Idempotency: second run of the script is a no-op ─────────────────────
+  # Re-run script against already-normalized output; result must equal the
+  # first-pass output byte-for-byte. Proves the self-closing form is stable.
+  local idem_tmp="$(mktemp -d -t migration-0010-idem-XXXXXX)"
+  cp -R "$fixtures/inlined-7-sections/." "$idem_tmp/"
+  rm -rf "$idem_tmp/expected"
+  ( cd "$idem_tmp" && "$script" "$idem_tmp/CLAUDE.md" >/dev/null 2>&1 )
+  cp "$idem_tmp/CLAUDE.md" "$idem_tmp/CLAUDE.md.pass1"
+  ( cd "$idem_tmp" && "$script" "$idem_tmp/CLAUDE.md" >/dev/null 2>&1 )
+  if diff -u "$idem_tmp/CLAUDE.md.pass1" "$idem_tmp/CLAUDE.md" >/dev/null 2>&1; then
+    echo "  ${GREEN}✓${RESET} idempotency: second run produces identical output"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} idempotency: second run differs from first"
+    diff -u "$idem_tmp/CLAUDE.md.pass1" "$idem_tmp/CLAUDE.md" 2>&1 | head -20 | sed 's/^/      /'
+    FAIL=$((FAIL+1))
+  fi
+
+  # ── Script exits cleanly on a non-existent CLAUDE.md ─────────────────────
+  local missing_input="$(mktemp -d -t migration-0010-noinput-XXXXXX)"
+  if "$script" "$missing_input/NONEXISTENT.md" >/dev/null 2>&1; then
+    echo "  ${RED}✗${RESET} non-existent input: script exited 0 (expected non-zero)"
+    FAIL=$((FAIL+1))
+  else
+    echo "  ${GREEN}✓${RESET} non-existent input: script exits non-zero"
+    PASS=$((PASS+1))
+  fi
+
+  # Cleanup
+  rm -rf "$fresh_tmp" "$inlined7_tmp" "$missing_tmp" "$vendored_tmp" "$cparx_tmp" "$idem_tmp" "$missing_input"
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Dispatcher
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -407,6 +542,10 @@ fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "0009" ]; then
   test_migration_0009
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "0010" ]; then
+  test_migration_0010
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
