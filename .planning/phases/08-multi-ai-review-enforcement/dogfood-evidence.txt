@@ -1,0 +1,54 @@
+# Phase 08 — Gate-fires-on-self dogfood evidence
+
+Captured: Wed May 13 17:34:30 CEST 2026
+Sandbox: $TMPDIR/dogfood/
+Hook: templates/.claude/hooks/multi-ai-review-gate.sh
+
+## State 1 — PLAN.md present, REVIEWS.md absent
+
+### Edit attempt
+stdin: {"tool_name":"Edit","tool_input":{"file_path":"src/something.go"}}
+exit:  2 (expected 2)
+stderr:
+  ❌ Multi-AI Plan Review Gate: blocked edit during execution
+  
+     Phase:     .planning/phases/08-multi-ai-review-enforcement
+     File:      src/something.go
+     Missing:   .planning/phases/08-multi-ai-review-enforcement/<padded>-REVIEWS.md
+  
+     The phase has *-PLAN.md files but no multi-AI plan review.
+     Run /gsd-review before continuing with execution.
+  
+     Override (emergency only): GSD_SKIP_REVIEWS=1 or touch
+     .planning/phases/08-multi-ai-review-enforcement/multi-ai-review-skipped
+
+### MultiEdit attempt
+stdin: {"tool_name":"MultiEdit","tool_input":{"file_path":"src/multi.go"}}
+exit:  2 (expected 2)
+stderr:
+  ❌ Multi-AI Plan Review Gate: blocked edit during execution
+  
+     Phase:     .planning/phases/08-multi-ai-review-enforcement
+     File:      src/multi.go
+     Missing:   .planning/phases/08-multi-ai-review-enforcement/<padded>-REVIEWS.md
+  
+     The phase has *-PLAN.md files but no multi-AI plan review.
+     Run /gsd-review before continuing with execution.
+  
+     Override (emergency only): GSD_SKIP_REVIEWS=1 or touch
+     .planning/phases/08-multi-ai-review-enforcement/multi-ai-review-skipped
+
+## State 2 — REVIEWS.md added
+
+### Edit attempt
+stdin: {"tool_name":"Edit","tool_input":{"file_path":"src/something.go"}}
+exit:  0 (expected 0)
+stderr: <empty>
+
+### MultiEdit attempt
+stdin: {"tool_name":"MultiEdit","tool_input":{"file_path":"src/multi.go"}}
+exit:  0 (expected 0)
+stderr: <empty>
+
+## Verdict
+PASS — block → allow cycle verified for both Edit and MultiEdit tool names.

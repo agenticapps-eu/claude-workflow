@@ -4,6 +4,23 @@ All notable changes to the AgenticApps Claude Workflow scaffolder are
 documented here. The format follows [Keep a Changelog](https://keepachangelog.com/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.9.1] — Unreleased
+
+### Added
+
+- **Multi-AI plan review enforcement gate** — new POSIX bash 3.2+ script `templates/.claude/hooks/multi-ai-review-gate.sh` (hook 6 in the programmatic-hooks taxonomy from ADR 0015). Fires as PreToolUse on `Edit|Write|MultiEdit`. Reads the active phase via `.planning/current-phase` symlink, looks for `*-PLAN.md` and `*-REVIEWS.md` with `find -maxdepth 2`, blocks (exit 2) when PLAN.md is present but REVIEWS.md is missing. Sub-100ms latency (measured: avg 22-48ms across all 11 fixture scenarios). Override surfaces are `GSD_SKIP_REVIEWS=1` (session-scoped escape) and `touch .planning/current-phase/multi-ai-review-skipped` (phase-scoped, committed audit trail). Edits to planning artifacts (`*PLAN.md`, `*REVIEWS.md`, `ROADMAP.md`, `PROJECT.md`, `REQUIREMENTS.md`, `*CONTEXT.md`, `*RESEARCH.md`) bypass the gate to avoid chicken-and-egg deadlock.
+- **Migration `0005-multi-ai-plan-review-enforcement.md`** — promotes 1.9.0 → 1.9.1 by installing hook 6, wiring it into `.claude/settings.json` PreToolUse hooks array (jq-based insert with idempotency guard), bumping `skill/SKILL.md` to `version: 1.9.1`, and recording the gate in `docs/workflow/ENFORCEMENT-PLAN.md` if vendored. Pre-flight checks for `/gsd-review` slash command installation and ≥2 reviewer CLIs from `gemini|codex|claude|coderabbit|opencode`. Three steps; each ships with idempotency check + rollback.
+- **ADR 0018** — Multi-AI plan review enforcement. Documents the drift pattern observed in `factiv/cparx/.planning/phases/` (eight consecutive phases 04.9 → 05-handover produced PLAN.md but no REVIEWS.md), the choice to promote `/gsd-review` from optional gsd-patch slash command to enforced contract gate, the dual-override-surface design (env var + sentinel), and the trust-boundary at "REVIEWS.md exists" (not at reviewer-content quality).
+- **Hand-built test fixtures for migration 0005** — `migrations/test-fixtures/0005/` with 11 pair-shaped scenarios covering every decision branch: no-active-phase, no-plans, plan-no-reviews (the canonical block), plan-with-reviews, stub-reviews (≤5 lines), env-override, sentinel-override, planning-artifact-edit, hostile-filename-edit (proves shell-injection inertness), non-Edit-tool, and MultiEdit-tool (proves matcher closure).
+- **`test_migration_0005()` stanza** added to `migrations/run-tests.sh` — 11 assertions, strict line-presence stderr matching, mktemp-per-fixture isolation. FAIL-not-SKIP if the hook script is missing (the script IS the migration's artifact under test). Fixture 09 additionally asserts `/tmp/HOSTILE_MARKER` survives the run as evidence that `$(rm -rf …)` in `tool_input.file_path` is never command-substituted.
+- **Contract entry** — `templates/config-hooks.json` gains a `pre_execute_gates.multi_ai_plan_review` block; `docs/ENFORCEMENT-PLAN.md` gains a row in the planning-gates table that references the gate's evidence requirement (`{padded_phase}-REVIEWS.md` exists and is non-stub).
+
+### Notes
+
+- **Phase 08 dogfood**: the gate was exercised on its own creation phase. Multi-AI plan review (`08-REVIEWS.md`) produced by **codex + gemini** — codex returned REQUEST-CHANGES with 4 BLOCKs and 3 FLAGs, all addressed in PLAN.md amendments before T1 execution (MultiEdit added to matcher per B3, fixture 09 redesigned to actually exercise the parsing branch per B4, T6b added for live apply/rollback verification per B1, T-dogfood added for self-test per B2).
+- **Subtractive TDD pattern**: hook script was drafted in the PR #12 carry-over and cherry-picked into phase 08. The RED→GREEN sequence proves the hook (existing) matches the fixture decision matrix (new). Same pattern as migration 0010.
+- **Bash 3.2 compatibility**: hook script + harness target macOS bash 3.2.57 explicitly. Empty-array expansion guarded with `${env_args[@]+"${env_args[@]}"}`. Latency benchmark uses python3 brackets around N=100 batches to amortize timing overhead.
+
 ## [1.9.0] — Unreleased
 
 ### Added

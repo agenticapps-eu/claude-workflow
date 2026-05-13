@@ -711,11 +711,142 @@ EOF
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# test_migration_0005 — Multi-AI plan review enforcement (PreToolUse hook)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Exercises every decision branch of templates/.claude/hooks/multi-ai-review-gate.sh
+# via 11 fixtures under migrations/test-fixtures/0005/. Per the phase 08
+# REVIEWS.md amendments: strict stderr line-presence matching (not substring
+# slop), MultiEdit-tool fixture proves matcher closure, hostile-filename
+# fixture asserts /tmp/HOSTILE_MARKER survives the run.
+#
+# Like 0010: FAIL if the script is missing (RED state, the script IS the
+# artifact under test). SKIP only if the fixtures dir is missing.
+
+test_migration_0005() {
+  echo ""
+  echo "${YELLOW}━━━ Migration 0005 — Multi-AI plan review enforcement gate ━━━${RESET}"
+
+  local fixtures="$REPO_ROOT/migrations/test-fixtures/0005"
+  local script="$REPO_ROOT/templates/.claude/hooks/multi-ai-review-gate.sh"
+
+  if [ ! -d "$fixtures" ]; then
+    echo "  ${RED}SKIP${RESET}: fixtures directory missing at $fixtures"
+    SKIP=$((SKIP+1))
+    return
+  fi
+  if [ ! -x "$script" ]; then
+    echo "  ${RED}✗${RESET} script missing or non-executable at $script — RED state, awaiting GREEN implementation"
+    FAIL=$((FAIL+1))
+    return
+  fi
+
+  # Driver: one fixture invocation.
+  run_0005_fixture() {
+    local fixname="$1"
+    local fixdir="$fixtures/$fixname"
+    local tmp; tmp="$(mktemp -d -t "migration-0005-${fixname}-XXXXXX")"
+
+    # Run setup.sh (if present) with $tmp as CWD.
+    if [ -x "$fixdir/setup.sh" ]; then
+      ( cd "$tmp" && "$fixdir/setup.sh" >/dev/null 2>&1 )
+    fi
+
+    # Build env-prefix from optional env file.
+    local env_args=()
+    if [ -f "$fixdir/env" ]; then
+      while IFS= read -r kv; do
+        [ -z "$kv" ] && continue
+        env_args+=("$kv")
+      done < "$fixdir/env"
+    fi
+
+    # Run the hook.
+    # The `${env_args[@]+"${env_args[@]}"}` form is safe under `set -u` for empty arrays.
+    # NOTE: parent harness uses `set -uo pipefail` (not `set -e`), so we do NOT
+    # toggle `-e` here — doing so would leak `set -e` into later test_migration_*
+    # functions and break them on the first non-zero exit (observed crashing 0009).
+    local stderr_capture="$tmp/.stderr"
+    local actual_exit
+    ( cd "$tmp" && env ${env_args[@]+"${env_args[@]}"} bash "$script" < "$fixdir/stdin.json" 2> "$stderr_capture" >/dev/null )
+    actual_exit=$?
+
+    # Compare exit.
+    local expected_exit
+    expected_exit=$(tr -d '\n' < "$fixdir/expected-exit")
+    if [ "$actual_exit" != "$expected_exit" ]; then
+      echo "  ${RED}✗${RESET} $fixname — exit $actual_exit, expected $expected_exit"
+      if [ -s "$stderr_capture" ]; then
+        echo "      actual stderr:"
+        sed 's/^/        /' "$stderr_capture" | head -10
+      fi
+      FAIL=$((FAIL+1))
+      rm -rf "$tmp"
+      return
+    fi
+
+    # Strict stderr line-presence check (codex F1).
+    # Each non-blank line of expected-stderr.txt must appear (substring match)
+    # somewhere in actual stderr.
+    if [ -s "$fixdir/expected-stderr.txt" ]; then
+      local missing_line=""
+      while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        if ! grep -F -q -- "$line" "$stderr_capture"; then
+          missing_line="$line"
+          break
+        fi
+      done < "$fixdir/expected-stderr.txt"
+
+      if [ -n "$missing_line" ]; then
+        echo "  ${RED}✗${RESET} $fixname — stderr missing line: $missing_line"
+        echo "      actual stderr:"
+        sed 's/^/        /' "$stderr_capture" | head -10
+        FAIL=$((FAIL+1))
+        rm -rf "$tmp"
+        return
+      fi
+    fi
+
+    # Fixture 09 — hostile-filename safety check (codex B4).
+    # The hostile string contains $(rm -rf /tmp/HOSTILE_MARKER). If command
+    # substitution happens, the marker is gone.
+    # NOTE-5 fix: cleanup the marker file after the check so it doesn't
+    # accumulate on disk across harness runs (the fixture's setup.sh
+    # unconditionally touches /tmp/HOSTILE_MARKER per run).
+    if [ "$fixname" = "09-hostile-filename-edit" ]; then
+      if [ ! -f /tmp/HOSTILE_MARKER ]; then
+        echo "  ${RED}✗${RESET} $fixname — /tmp/HOSTILE_MARKER was deleted (command-substitution executed!)"
+        FAIL=$((FAIL+1))
+        rm -rf "$tmp"
+        return
+      fi
+      rm -f /tmp/HOSTILE_MARKER
+    fi
+
+    echo "  ${GREEN}✓${RESET} $fixname (exit $actual_exit)"
+    PASS=$((PASS+1))
+    rm -rf "$tmp"
+  }
+
+  # Run all 13 fixtures, sorted.
+  for fix in "$fixtures"/[0-9]*-*/; do
+    local name
+    name="$(basename "${fix%/}")"
+    run_0005_fixture "$name"
+  done
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Dispatcher
 # ─────────────────────────────────────────────────────────────────────────────
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "0001" ]; then
   test_migration_0001
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "0005" ]; then
+  test_migration_0005
 fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "0009" ]; then

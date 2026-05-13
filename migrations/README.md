@@ -41,11 +41,12 @@ project (currently the v1.2.0 default). Every other migration is incremental.
 | `0001` | 1.2.0 → 1.3.0 | Wire Go skill packs + impeccable + database-sentinel |
 | `0004` | 1.3.0 → 1.4.0 | Programmatic hooks + architecture audit + scheduling |
 | `0002` | 1.4.0 → 1.5.0 | Observability spec v0.2.1 |
-| `0005` | 1.5.0 → 1.5.1 | Multi-AI plan review enforcement |
-| `0006` | 1.5.1 → 1.6.0 | LLM wiki builder integration |
-| `0007` | 1.6.0 → 1.7.0 | GitNexus code-graph integration |
+| `0008` | 1.7.0 → 1.8.0 | Coverage Matrix Page (per-repo presence + freshness dashboard) |
 | `0009` | 1.7.0 → 1.8.0 | Vendor CLAUDE.md workflow block as `.claude/claude-md/workflow.md` |
 | `0010` | 1.8.0 → 1.9.0 | Post-process GSD section markers in CLAUDE.md |
+| `0005` | 1.9.0 → 1.9.1 | Multi-AI plan review enforcement (hook 6, gates `/gsd-review`) |
+| `0006` | 1.9.1 → 1.9.2 | LLM wiki builder integration *(draft — PR #12)* |
+| `0007` | 1.9.2 → 1.9.3 | GitNexus code-graph integration *(draft — PR #12)* |
 
 (IDs are not chronological — see "Application order" below for why
 `0004` runs before `0002` in the chain. Application order is by

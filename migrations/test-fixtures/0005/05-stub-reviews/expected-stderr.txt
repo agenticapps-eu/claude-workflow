@@ -1,0 +1,2 @@
+⚠ Multi-AI Plan Review Gate: REVIEWS.md present but suspiciously empty
+Allowing edit, but verify the review actually ran.
