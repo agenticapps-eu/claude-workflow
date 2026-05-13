@@ -7,6 +7,7 @@ to_version: 1.2.0
 applies_to:
   - .claude/skills/agentic-apps-workflow/SKILL.md
   - .claude/workflow-config.md
+  - .claude/settings.json
   - .planning/config.json
   - .claude/claude-md/workflow.md
   - CLAUDE.md
@@ -142,7 +143,28 @@ cat ~/.claude/skills/agenticapps-workflow/templates/global-claude-additions.md >
 **Rollback:** Manual — open `~/.claude/CLAUDE.md` and delete the appended
 block (anchored by `## AgenticApps Workflow (Global)`).
 
-### Step 6: Bump installed version field to 1.2.0
+### Step 6: Bootstrap `.claude/settings.json` as empty JSON object
+
+**Idempotency check:** `test -f .claude/settings.json`
+**Pre-condition:** `.claude/` directory exists (created implicitly by Step 1)
+**Apply:**
+```bash
+test -f .claude/settings.json || echo '{}' > .claude/settings.json
+```
+**Rollback:** `rm -f .claude/settings.json` only if its contents are exactly
+`{}` (otherwise the user has customized it and we must not destroy that).
+
+This file is the merge target for later migrations that register hook
+entries (e.g. 0004's programmatic hooks layer reads it and merges
+`templates/claude-settings.json` into it via `jq`). The `jq` merge is
+defensively coded with `.hooks //= {}`, so it handles a missing `hooks`
+key — but it cannot create the input file. Installing it empty here keeps
+the contract simple: every later migration can assume the file exists.
+
+Coexists cleanly with `.claude/settings.local.json` (user-scoped overrides
+that Claude Code merges on top per its own settings hierarchy).
+
+### Step 7: Bump installed version field to 1.2.0
 
 **Idempotency check:** `grep -q '^version: 1.2.0' .claude/skills/agentic-apps-workflow/SKILL.md`
 **Pre-condition:** Step 1 succeeded (skill file exists)
@@ -157,6 +179,7 @@ field, insert `version: 1.2.0` as the second frontmatter line (after `name:`).
 
 - `test -f .claude/skills/agentic-apps-workflow/SKILL.md` — installed
 - `test -f .claude/workflow-config.md && grep -v '{{' .claude/workflow-config.md | head -1` — placeholders substituted
+- `test -f .claude/settings.json && jq empty .claude/settings.json` — settings.json bootstrapped as valid JSON
 - `jq -e '.hooks.pre_phase.brainstorm_ui' .planning/config.json` — config valid
 - `test -f .claude/claude-md/workflow.md` — workflow block vendored
 - `grep -q "claude-md/workflow.md" CLAUDE.md` — CLAUDE.md links to vendored block

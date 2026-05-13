@@ -37,7 +37,16 @@ test -f ~/.claude/skills/mattpocock-improve-architecture/SKILL.md \
 test -f ~/.claude/skills/mattpocock-grill-with-docs/SKILL.md \
   || { echo "ERROR: install mattpocock-grill-with-docs first (see requires)"; exit 1; }
 
-test -f .claude/settings.json || { echo "ERROR: .claude/settings.json missing — was 0000-baseline applied?"; exit 1; }
+# Bootstrap settings.json if missing — projects baselined before the file
+# became part of 0000 may not have it. The jq merge in Step 3 needs an
+# input file; `.hooks //= {}` handles a missing key, not a missing file.
+# Belt-and-braces with 0000-baseline Step 6 (which installs it on fresh
+# baselines from this fix forward).
+if [ ! -f .claude/settings.json ]; then
+  echo "Bootstrapping .claude/settings.json as {} (was missing — pre-fix baseline)"
+  echo '{}' > .claude/settings.json
+fi
+jq empty .claude/settings.json || { echo "ERROR: .claude/settings.json exists but does not parse as JSON"; exit 1; }
 ```
 
 ## Steps
@@ -150,8 +159,10 @@ disabling Hook 3 entirely).
   earlier migrations first.
 - **Required mattpocock skills not installed** — pre-flight blocks. User
   must install via the `requires` block commands.
-- **`.claude/settings.json` missing** — pre-flight blocks; suggests
-  re-running setup.
+- **`.claude/settings.json` missing** — pre-flight auto-bootstraps it as
+  `{}` and continues. Projects baselined before the fix in 0000-baseline
+  Step 6 hit this path; the merge in Step 3 is defensively coded so
+  empty-input is safe.
 - **Already at 1.4.0** — every step's idempotency check returns 0;
   migration short-circuits to "0 of 4 steps applied".
 
