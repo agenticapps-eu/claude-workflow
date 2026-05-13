@@ -2,8 +2,8 @@
 id: 0005
 slug: multi-ai-plan-review-enforcement
 title: Enforce multi-AI plan review (/gsd-review) as a contract gate
-from_version: 1.5.0
-to_version: 1.5.1
+from_version: 1.9.0
+to_version: 1.9.1
 applies_to:
   - .claude/hooks/multi-ai-review-gate.sh
   - .claude/settings.json
@@ -19,7 +19,7 @@ optional_for:
 
 # Migration 0005 — Multi-AI plan review enforcement
 
-Brings projects from workflow v1.5.0 to v1.5.1 by installing hook 6 (Multi-AI Plan Review Gate), wiring it into `.claude/settings.json`, and recording it in the enforcement contract. See ADR 0018 for rationale.
+Brings projects from workflow v1.9.0 to v1.9.1 by installing hook 6 (Multi-AI Plan Review Gate), wiring it into `.claude/settings.json`, and recording it in the enforcement contract. See ADR 0018 for rationale.
 
 ## Summary
 
@@ -29,7 +29,7 @@ The multi-AI plan review (`/gsd-review`, producing `{phase}-REVIEWS.md`) was a g
 
 ```bash
 INSTALLED=$(grep -E '^version:' .claude/skills/agentic-apps-workflow/SKILL.md | sed 's/version: //')
-test "$INSTALLED" = "1.5.0" || { echo "ERROR: installed version is $INSTALLED, this migration requires 1.5.0"; exit 1; }
+test "$INSTALLED" = "1.9.0" || { echo "ERROR: installed version is $INSTALLED, this migration requires 1.9.0"; exit 1; }
 
 test -f .claude/settings.json || { echo "ERROR: .claude/settings.json missing — was 0000-baseline applied?"; exit 1; }
 
@@ -78,7 +78,7 @@ If the matcher already exists with this hook, the apply step is a no-op.
 ### Step 3 — bump skill version
 
 ```bash
-sed -i.bak 's/^version: 1\.5\.0$/version: 1.5.1/' .claude/skills/agentic-apps-workflow/SKILL.md
+sed -i.bak 's/^version: 1\.9\.0$/version: 1.9.1/' .claude/skills/agentic-apps-workflow/SKILL.md
 ```
 
 ### Step 4 — record in ENFORCEMENT-PLAN (consumer projects with vendored copy)
@@ -95,7 +95,7 @@ test -x .claude/hooks/multi-ai-review-gate.sh || exit 1
 jq -e '.hooks.PreToolUse[] | select(.hooks[]?.command | test("multi-ai-review-gate"))' .claude/settings.json >/dev/null || exit 1
 
 # Version bumped
-grep -q '^version: 1.5.1$' .claude/skills/agentic-apps-workflow/SKILL.md || exit 1
+grep -q '^version: 1.9.1$' .claude/skills/agentic-apps-workflow/SKILL.md || exit 1
 
 # Smoke test — hook returns 0 when no active phase
 echo '{"tool_name":"Edit","tool_input":{"file_path":"/tmp/x.txt"}}' | bash .claude/hooks/multi-ai-review-gate.sh
@@ -111,7 +111,7 @@ rm -f .claude/hooks/multi-ai-review-gate.sh
 jq '.hooks.PreToolUse |= map(select(.hooks[]?.command | test("multi-ai-review-gate") | not))' \
   .claude/settings.json > .claude/settings.json.tmp \
   && mv .claude/settings.json.tmp .claude/settings.json
-sed -i.bak 's/^version: 1\.5\.1$/version: 1.5.0/' .claude/skills/agentic-apps-workflow/SKILL.md
+sed -i.bak 's/^version: 1\.9\.1$/version: 1.9.0/' .claude/skills/agentic-apps-workflow/SKILL.md
 ```
 
 ## Notes

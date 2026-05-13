@@ -2,8 +2,8 @@
 id: 0007
 slug: gitnexus-code-graph-integration
 title: GitNexus code-knowledge graph integration (MCP-native)
-from_version: 1.6.0
-to_version: 1.7.0
+from_version: 1.9.2
+to_version: 1.9.3
 applies_to:
   - ~/.gitnexus/registry.json (global, multi-repo)
   - ~/.claude.json (MCP server entry for gitnexus)
@@ -29,7 +29,7 @@ license_note: |
 
 # Migration 0007 — GitNexus code-knowledge graph integration
 
-Brings projects from workflow v1.6.0 to v1.7.0 by installing GitNexus globally, wiring it as an MCP server in Claude Code, and indexing the active family repos. Provides cross-repo code-structure awareness (impact analysis, call chains, dependency graph, symbol resolution) as a complement to the doc/decision wiki from migration 0006. See ADR 0020 for rationale.
+Brings projects from workflow v1.9.2 to v1.9.3 by installing GitNexus globally, wiring it as an MCP server in Claude Code, and indexing the active family repos. Provides cross-repo code-structure awareness (impact analysis, call chains, dependency graph, symbol resolution) as a complement to the doc/decision wiki from migration 0006. See ADR 0020 for rationale.
 
 ## Summary
 
@@ -39,7 +39,7 @@ After migration 0006 (LLM wiki for compounding decision/doc knowledge), agents s
 
 ```bash
 INSTALLED=$(grep -E '^version:' .claude/skills/agentic-apps-workflow/SKILL.md | sed 's/version: //')
-test "$INSTALLED" = "1.6.0" || { echo "ERROR: installed version is $INSTALLED, this migration requires 1.6.0"; exit 1; }
+test "$INSTALLED" = "1.9.2" || { echo "ERROR: installed version is $INSTALLED, this migration requires 1.9.2"; exit 1; }
 
 command -v node >/dev/null || { echo "ERROR: node not found. Install Node >= 18."; exit 1; }
 command -v npm  >/dev/null || { echo "ERROR: npm not found."; exit 1; }
@@ -88,7 +88,7 @@ For a 50k-LOC repo this typically takes 1–3 minutes. The script logs results p
 ### Step 4 — bump skill version
 
 ```bash
-sed -i.bak 's/^version: 1\.6\.0$/version: 1.7.0/' .claude/skills/agentic-apps-workflow/SKILL.md
+sed -i.bak 's/^version: 1\.9\.2$/version: 1.9.3/' .claude/skills/agentic-apps-workflow/SKILL.md
 ```
 
 ## Verify
@@ -110,7 +110,7 @@ test -f ~/Sourcecode/factiv/cparx/.claude/hooks/gitnexus-hook.js
 grep -q "gitnexus:start" ~/Sourcecode/factiv/cparx/CLAUDE.md
 
 # Version bumped
-grep -q '^version: 1.7.0$' .claude/skills/agentic-apps-workflow/SKILL.md
+grep -q '^version: 1.9.3$' .claude/skills/agentic-apps-workflow/SKILL.md
 
 echo "Migration 0007 applied successfully."
 ```
@@ -136,7 +136,7 @@ claude mcp remove gitnexus 2>/dev/null || true
 # rm -rf ~/.gitnexus
 
 # Revert version
-sed -i.bak 's/^version: 1\.7\.0$/version: 1.6.0/' .claude/skills/agentic-apps-workflow/SKILL.md
+sed -i.bak 's/^version: 1\.9\.3$/version: 1.9.2/' .claude/skills/agentic-apps-workflow/SKILL.md
 ```
 
 ## Notes
