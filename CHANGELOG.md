@@ -4,6 +4,27 @@ All notable changes to the AgenticApps Claude Workflow scaffolder are
 documented here. The format follows [Keep a Changelog](https://keepachangelog.com/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.9.3] — Unreleased
+
+### Added
+
+- **GitNexus code-graph MCP integration (setup-only)** — new install script `templates/.claude/scripts/install-gitnexus.sh` registers the `gitnexus` MCP server in `~/.claude.json` and bumps the workflow scaffolder. Migration does NOT install gitnexus itself (verify-only — user runs `npm install -g gitnexus`) and does NOT invoke `gitnexus analyze` on any repo (helper script for that). Pre-flight: jq + node ≥ 18 + global gitnexus + valid `~/.claude.json` (or bootstraps if absent). Idempotency validates entry SHAPE (`command=gitnexus`, `args[0]=mcp`) — a malformed pre-existing entry warns + exits 4 (applied-with-warnings) per codex review BLOCK-2.
+- **Companion rollback script** `templates/.claude/scripts/rollback-gitnexus.sh` — preserve-data: removes only MCP entry + version bump. Leaves `~/.gitnexus/`, the npm install, and per-repo skills/hooks/CLAUDE.md blocks untouched.
+- **Helper script for user-initiated per-repo indexing** — `templates/.claude/scripts/index-family-repos.sh` supports `--family <name>`, `--all`, `--default-set`, `--help`. Default no-args behavior prints usage + explicit warnings about LLM calls (repository content sent to configured LLM provider) and PolyForm Noncommercial license terms. Curated `--default-set` covers 7 active-development repos.
+- **Migration `0007-gitnexus-code-graph-integration.md`** — promotes 1.9.2 → 1.9.3 by running the install script. Setup-only scope: no `gitnexus analyze` runs during apply. ADR 0020 records the design rationale (multi-repo registry, MCP-native, license analysis).
+- **Hand-built test fixtures for migration 0007** — `migrations/test-fixtures/0007/` with 16 sandboxed scenarios covering: old-node pre-flight, missing-gitnexus pre-flight, fresh apply, idempotent re-apply, existing canonical entry preserved, rollback preserves data, helper script usage / --help, claude CLI absence (no dependency), malformed `~/.claude.json` aborts, canonical entry shape, behavioral MCP startup smoke (codex B3), helper family/default-set dispatch (codex B3), no-claude-json bootstrap (codex F1), version-pin mismatch warn-but-proceed (gemini F1).
+- **`test_migration_0007()` stanza** in `migrations/run-tests.sh` — 16 fixtures, each sandboxed via `HOME=$TMP/home` with stubbed `node`/`npm`/`gitnexus` binaries in `$HOME/bin` (PATH-prepended). Behavioral fixtures use a recording stub that logs invocation args to `$HOME/.gn-record` so the harness can assert what was called.
+
+### License
+
+**GitNexus is PolyForm Noncommercial 1.0.** Using GitNexus to help develop a commercial product (factiv, neuroflash) is the permitted "internal use" path. Embedding the GitNexus runtime in a shipped commercial product, or hosting it as a service for third parties, requires an enterprise license from akonlabs.com. See ADR 0020 for the full analysis. Running `npm install -g gitnexus` constitutes license acceptance.
+
+### Notes
+
+- **Phase 10 dogfood**: PLAN.md ran through codex + gemini before T1. Codex returned REQUEST-CHANGES (3 BLOCKs + 3 FLAGs) — all addressed in PLAN.md amendments. B1: MCP command uses `gitnexus mcp` (global binary), not `npx -y gitnexus@... mcp` — makes verify-only actually load-bearing. B2: idempotency validates entry shape, not just presence. B3: behavioral fixtures added (MCP startup smoke, helper dispatch). Plus codex F1 (no-claude-json case), F2 (info-disclosure threat row in plan), F3 (preconditions drift fixed), and gemini F1 (version-pin mismatch warn-but-proceed).
+- **Scope reduction**: original draft of migration 0007 (in carry-over PR #12) ran `npm install -g gitnexus` + `gitnexus setup` + per-repo `gitnexus analyze` (30-90 min of LLM work) during apply. Phase 10 strips that to setup-only. Per-repo indexing becomes user-initiated.
+- **Fixture count**: 16 (originally 18 — dropped 01-no-node and 17-no-jq because the harness can't sandbox missing-binary-on-host scenarios cleanly; those pre-flight checks are simple `command -v` lines verified by inspection).
+
 ## [1.9.2] — Unreleased
 
 ### Added

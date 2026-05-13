@@ -965,6 +965,121 @@ test_migration_0006() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# test_migration_0007 — GitNexus code-graph integration (setup-only)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Exercises every decision branch of templates/.claude/scripts/install-gitnexus.sh
+# + index-family-repos.sh + rollback-gitnexus.sh via 18 fixtures under
+# migrations/test-fixtures/0007/. Each fixture builds a sandboxed $HOME with
+# stubbed node/npm/gitnexus binaries in $HOME/bin (PATH-prepended).
+
+test_migration_0007() {
+  echo ""
+  echo "${YELLOW}━━━ Migration 0007 — GitNexus code-graph integration ━━━${RESET}"
+
+  local fixtures="$REPO_ROOT/migrations/test-fixtures/0007"
+  local install_script="$REPO_ROOT/templates/.claude/scripts/install-gitnexus.sh"
+  local rollback_script="$REPO_ROOT/templates/.claude/scripts/rollback-gitnexus.sh"
+  local helper_script="$REPO_ROOT/templates/.claude/scripts/index-family-repos.sh"
+
+  if [ ! -d "$fixtures" ]; then
+    echo "  ${RED}SKIP${RESET}: fixtures directory missing"
+    SKIP=$((SKIP+1))
+    return
+  fi
+  for s in "$install_script" "$rollback_script" "$helper_script"; do
+    if [ ! -x "$s" ]; then
+      echo "  ${RED}✗${RESET} script missing: $s — RED state"
+      FAIL=$((FAIL+1))
+      return
+    fi
+  done
+
+  # Sandbox-escape guard
+  if grep -E '/(Users/donald|home/[a-z][a-z]*/)' "$install_script" >/dev/null 2>&1; then
+    echo "  ${RED}✗${RESET} install script contains hardcoded real-home paths"
+    FAIL=$((FAIL+1))
+    return
+  fi
+
+  run_0007_fixture() {
+    local fixname="$1"
+    local fixdir="$fixtures/$fixname"
+    local tmp; tmp="$(mktemp -d -t "migration-0007-${fixname}-XXXXXX")"
+    local fake_home="$tmp/home"
+    mkdir -p "$fake_home"
+
+    # setup.sh runs with HOME=fake_home + REPO_ROOT + FIXTURES_ROOT
+    if [ -x "$fixdir/setup.sh" ]; then
+      ( cd "$tmp" && HOME="$fake_home" REPO_ROOT="$REPO_ROOT" FIXTURES_ROOT="$fixtures" "$fixdir/setup.sh" >/dev/null 2>&1 )
+    fi
+
+    # Run install with PATH prepended for sandbox stubs
+    local stderr_capture="$tmp/.stderr"
+    local actual_exit
+    ( cd "$fake_home" && HOME="$fake_home" PATH="$fake_home/bin:$PATH" bash "$install_script" 2> "$stderr_capture" >/dev/null )
+    actual_exit=$?
+
+    # Compare exit
+    local expected_exit
+    expected_exit=$(tr -d '\n' < "$fixdir/expected-exit")
+    if [ "$actual_exit" != "$expected_exit" ]; then
+      echo "  ${RED}✗${RESET} $fixname — exit $actual_exit, expected $expected_exit"
+      if [ -s "$stderr_capture" ]; then
+        echo "      actual stderr:"
+        sed 's/^/        /' "$stderr_capture" | head -10
+      fi
+      FAIL=$((FAIL+1))
+      rm -rf "$tmp"
+      return
+    fi
+
+    # Strict stderr line-presence
+    if [ -f "$fixdir/expected-stderr.txt" ] && [ -s "$fixdir/expected-stderr.txt" ]; then
+      local missing_line=""
+      while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        if ! grep -F -q -- "$line" "$stderr_capture"; then
+          missing_line="$line"
+          break
+        fi
+      done < "$fixdir/expected-stderr.txt"
+      if [ -n "$missing_line" ]; then
+        echo "  ${RED}✗${RESET} $fixname — stderr missing line: $missing_line"
+        echo "      actual stderr:"
+        sed 's/^/        /' "$stderr_capture" | head -10
+        FAIL=$((FAIL+1))
+        rm -rf "$tmp"
+        return
+      fi
+    fi
+
+    # verify.sh
+    if [ -x "$fixdir/verify.sh" ]; then
+      local verify_out
+      verify_out=$( cd "$fake_home" && HOME="$fake_home" REPO_ROOT="$REPO_ROOT" PATH="$fake_home/bin:$PATH" bash "$fixdir/verify.sh" 2>&1 )
+      local verify_exit=$?
+      if [ "$verify_exit" != "0" ]; then
+        echo "  ${RED}✗${RESET} $fixname — verify.sh failed: $verify_out"
+        FAIL=$((FAIL+1))
+        rm -rf "$tmp"
+        return
+      fi
+    fi
+
+    echo "  ${GREEN}✓${RESET} $fixname (exit $actual_exit)"
+    PASS=$((PASS+1))
+    rm -rf "$tmp"
+  }
+
+  for fix in "$fixtures"/[0-9]*-*/; do
+    local name
+    name="$(basename "${fix%/}")"
+    run_0007_fixture "$name"
+  done
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Dispatcher
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -978,6 +1093,10 @@ fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "0006" ]; then
   test_migration_0006
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "0007" ]; then
+  test_migration_0007
 fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "0009" ]; then

@@ -46,7 +46,7 @@ project (currently the v1.2.0 default). Every other migration is incremental.
 | `0010` | 1.8.0 → 1.9.0 | Post-process GSD section markers in CLAUDE.md |
 | `0005` | 1.9.0 → 1.9.1 | Multi-AI plan review enforcement (hook 6, gates `/gsd-review`) |
 | `0006` | 1.9.1 → 1.9.2 | LLM wiki builder integration (plugin symlink + per-family scaffolding) |
-| `0007` | 1.9.2 → 1.9.3 | GitNexus code-graph integration *(draft — PR #12)* |
+| `0007` | 1.9.2 → 1.9.3 | GitNexus code-graph integration (MCP wire + helper script; user-initiated indexing) |
 
 (IDs are not chronological — see "Application order" below for why
 `0004` runs before `0002` in the chain. Application order is by
