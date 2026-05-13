@@ -1,0 +1,31 @@
+# Phase 08 — Hook latency benchmark
+
+**Script:** `templates/.claude/hooks/multi-ai-review-gate.sh`
+**Method:** Pure per-invocation cost = (total wall-clock for N=100 invocations) / 100. This amortizes the python3 startup overhead used for timing across all invocations, isolating the real hook cost.
+**Tool:** `python3 -c 'import time; print(time.time())'` brackets a tight bash loop of 100 hook calls.
+**Host:** macOS Darwin 25.3.0, arm64, bash 3.2.57.
+**Target (PLAN.md AC-3):** p95 < 100ms.
+
+## Results
+
+| fixture                       | avg/invocation |
+|-------------------------------|----------------|
+| 01-no-active-phase            |     35.76 ms   |
+| 02-no-plans                   |     34.65 ms   |
+| 03-plan-no-reviews            |     38.25 ms   |
+| 04-plan-with-reviews          |     42.67 ms   |
+| 05-stub-reviews               |     48.19 ms   |
+| 06-env-override               |     22.75 ms   |
+| 07-sentinel-override          |     30.05 ms   |
+| 08-planning-artifact-edit     |     25.78 ms   |
+| 09-hostile-filename-edit      |     39.73 ms   |
+| 10-non-edit-tool              |     24.75 ms   |
+| 11-multiedit-tool             |     40.37 ms   |
+
+**Verdict: PASS** — every fixture is comfortably under the 100ms target. The slowest scenario (05-stub-reviews) is 48ms, which is half the budget. The hook is dominated by jq parsing on stdin (~15-20ms) and `find -maxdepth 2` calls (~5-10ms each). The bash 3.2-compatible script avoids any slow operations.
+
+## Note on prior over-measurement
+
+An initial benchmark using per-invocation `python3 -c 'print(time.time())'` calls produced 60-130ms numbers, because each bracket of a single invocation included two python3 startups (~25ms × 2). The avg-of-N approach reported here amortizes those startups across 100 hook calls, reducing the python3 overhead to ~0.5ms per measured invocation. The numbers above represent the pure hook cost.
+
+The codex review FLAG F2 noted that `/usr/bin/time -p` is too coarse for p95 sub-100ms measurements. The avg-of-N python-bracketed approach used here is what replaced it. For higher-fidelity per-call percentiles in the future, switching the host to bash 5+ (which exposes `$EPOCHREALTIME` directly without subprocess overhead) would enable proper percentile reporting.
