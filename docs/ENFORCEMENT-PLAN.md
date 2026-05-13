@@ -44,6 +44,7 @@ GSD step, you MUST invoke the mapped skill.
 | `/gsd-plan-phase {N}` (new service/model) | `superpowers:brainstorming` | Phase introduces new backend service, data model, or integration | RESEARCH.md has "Alternatives considered" section with ≥2 options |
 | `/gsd-plan-phase {N}` (always) | `superpowers:writing-plans` | Always, once plans are drafted | PLAN.md frontmatter includes `written_via: superpowers:writing-plans` |
 | `/gsd-plan-phase {N}` (UI hint: yes), after `/design-shotgun` | `impeccable:critique` | Always when shotgun fires | UI-SPEC.md records impeccable score per variant + chosen variant ≥ quality bar |
+| After `/gsd-plan-phase {N}`, before any code execution | `/gsd-review` (multi-AI plan review) | Always (skipping requires explicit override per ADR 0018) | `{padded_phase}-REVIEWS.md` in phase directory with output from ≥2 independent reviewer CLIs |
 
 ### Phase execution gates
 

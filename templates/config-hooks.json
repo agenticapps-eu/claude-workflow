@@ -49,6 +49,17 @@
         "evidence": "grep/test/curl/screenshot output posted before status change"
       }
     },
+    "pre_execute_gates": {
+      "multi_ai_plan_review": {
+        "enabled": true,
+        "skill": "/gsd-review (slash command from templates/gsd-patches/patches/workflows/review.md)",
+        "trigger": "after /gsd-plan-phase, before any *-PLAN.md task execution",
+        "evidence": "{padded_phase}-REVIEWS.md in phase directory, output from \u22652 reviewer CLIs",
+        "programmatic_hook": ".claude/hooks/multi-ai-review-gate.sh",
+        "override": "GSD_SKIP_REVIEWS=1 env var OR .planning/current-phase/multi-ai-review-skipped sentinel",
+        "rationale": "ADR 0018 \u2014 closes drift observed in cparx phases 04.9\u201305"
+      }
+    },
     "post_phase": {
       "spec_review": {
         "enabled": true,
@@ -98,7 +109,7 @@
       "db_pre_launch_audit": {
         "enabled": true,
         "skill": "database-sentinel:audit",
-        "scope": "full — audit every supported backend in the project, not phase-scoped",
+        "scope": "full \u2014 audit every supported backend in the project, not phase-scoped",
         "trigger": "branch is main && app pre-launch checklist active",
         "evidence": "Pre-launch DB-AUDIT.md with zero Critical, zero High findings; otherwise BLOCKS launch"
       }
