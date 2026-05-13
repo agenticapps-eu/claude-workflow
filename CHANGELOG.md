@@ -6,6 +6,19 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [1.5.0] — Unreleased
 
+### Fixed
+
+- **`.claude/settings.json` is now installed at baseline.** Migration
+  `0000-baseline.md` gains a new Step 6 that bootstraps the file as
+  `{}` if missing. Previously, no migration in the chain ever created
+  it — `migrations/0004-programmatic-hooks-architecture-audit.md`
+  asserted its existence at pre-flight but baseline never installed
+  it, so any 1.3.0 project trying to update to 1.4.0 hit a hard fail.
+  Migration 0004's pre-flight now also self-heals (creates the file if
+  missing) as belt-and-braces for older projects baselined before this
+  fix. Reported in
+  [agenticapps-eu/claude-workflow#8](https://github.com/agenticapps-eu/claude-workflow/issues/8).
+
 ### Added
 
 - **`add-observability` skill** — Claude Code implementation of
