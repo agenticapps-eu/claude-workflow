@@ -108,12 +108,9 @@ cat >> CLAUDE.md <<'EOF'
 
 ## Workflow
 
-This project follows the AgenticApps Superpowers + GSD + gstack workflow.
-See [`.claude/claude-md/workflow.md`](.claude/claude-md/workflow.md) for the
-full hooks, rituals, and red-flag tables. That file is **vendored** by
-`claude-workflow` migrations — re-run `/update-agenticapps-workflow` to
-re-sync; do not edit it directly. Project-specific overrides go in this
-CLAUDE.md.
+This project uses the AgenticApps Superpowers + GSD + gstack workflow.
+Full hooks, rituals, and red-flag tables: [`.claude/claude-md/workflow.md`](.claude/claude-md/workflow.md).
+Vendored — re-sync via `/update-agenticapps-workflow`.
 EOF
 ```
 

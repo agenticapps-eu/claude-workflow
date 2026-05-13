@@ -12,7 +12,7 @@ user's prompt, what artifact proves the goal was achieved?
 
 ### 2. setup + update skills use vendor mode by default
 
-- **Evidence (setup)**: `migrations/0000-baseline.md` Step 4 patched in-place — apply block now writes `.claude/claude-md/workflow.md` and appends a 7-line `## Workflow` reference to CLAUDE.md (no longer `cat`s the template). `setup/SKILL.md` post-setup summary lists the vendored file as a created artifact. Migration history table updated.
+- **Evidence (setup)**: `migrations/0000-baseline.md` Step 4 patched in-place — apply block now writes `.claude/claude-md/workflow.md` and appends a 5-line `## Workflow` reference to CLAUDE.md (no longer `cat`s the template). `setup/SKILL.md` post-setup summary lists the vendored file as a created artifact. Migration history table updated.
 - **Evidence (update)**: `update/SKILL.md` Step 5 #5 has the new "divergence variant" prompt with 3-way pick (Replace / Keep / Vendor-local). Failure modes table extended with vendored-file divergence + inlined-block extraction-ambiguous outcomes.
 - **Result**: ✅ verified by reading the patched files.
 

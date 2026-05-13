@@ -26,7 +26,7 @@ Diff: `git diff --cached` on branch `feat/vendor-claude-md-sections-0009`.
 
 The phase goal: *fix the inline-paste root cause + ship migration 0009 to upgrade existing 1.7.0 projects to vendored mode*. Did the phase achieve it?
 
-- **Root cause fixed**: yes. `migrations/0000-baseline.md` Step 4 no longer `cat`s the template into CLAUDE.md. Fresh installs now write `.claude/claude-md/workflow.md` + a 7-line reference. Verified by reading the patched Step 4 apply block.
+- **Root cause fixed**: yes. `migrations/0000-baseline.md` Step 4 no longer `cat`s the template into CLAUDE.md. Fresh installs now write `.claude/claude-md/workflow.md` + a 5-line reference. Verified by reading the patched Step 4 apply block.
 - **Smoking-gun line removed**: yes. `templates/claude-md-sections.md` H1 was `# CLAUDE.md Sections — paste into your project's CLAUDE.md` (the line that proved fx-signal-agent's CLAUDE.md was a paste). Now `# DEPRECATED — vendored as .claude/claude-md/workflow.md since v1.8.0` with a "do not paste" banner. Future accidental concat cannot reproduce the bug-signature.
 - **Upgrade path for 1.7.0 → 1.8.0**: yes. Migration 0009 ships with 5 steps + pre-flight + post-checks. Detection logic uses the H2 marker; extraction is gated by user confirmation with diff preview.
 - **Test coverage**: yes. 5 hand-built fixtures cover fresh / inlined-pristine / inlined-customised / after-vendored / after-idempotent. 29 assertions across all 5 idempotency checks.
