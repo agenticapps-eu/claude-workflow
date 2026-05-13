@@ -4,6 +4,22 @@ All notable changes to the AgenticApps Claude Workflow scaffolder are
 documented here. The format follows [Keep a Changelog](https://keepachangelog.com/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.9.2] — Unreleased
+
+### Added
+
+- **LLM wiki compiler integration** — new install script `templates/.claude/scripts/install-wiki-compiler.sh` (POSIX bash, sandbox-friendly via `$HOME`) symlinks the vendored `ussumant/llm-wiki-compiler` plugin into `~/.claude/plugins/`, scaffolds per-family `.knowledge/{raw,wiki}/` dirs + default `.wiki-compiler.json` configs, and appends a `## Knowledge wiki` section to each family's `CLAUDE.md`. Companion rollback script `templates/.claude/scripts/rollback-wiki-compiler.sh` preserves family data (removes only the host symlink + version bump).
+- **Migration `0006-llm-wiki-builder-integration.md`** — promotes 1.9.1 → 1.9.2 by running the install script. Pre-flight verifies the vendored plugin exists at `~/Sourcecode/agenticapps/wiki-builder/plugin/` and SKILL.md is at 1.9.1. ABORT-on-wrong-target-symlink policy (won't silently repoint a forked install). Skip-when-CLAUDE.md-absent policy (won't create user files from scratch). Family heuristic: directory under `~/Sourcecode/` containing at least one immediate child git repo, excluding `personal|shared|archive`.
+- **ADR 0019** — LLM wiki compiler integration. Records Andrej Karpathy's LLM Knowledge Base pattern, the per-family vs per-repo decision, why vendor instead of npm-install, the `.wiki-compiler.json` schema choice, and the threat model (symlink overwrites, supply-chain trust, plugin session hooks, preserve-data rollback).
+- **Hand-built test fixtures for migration 0006** — `migrations/test-fixtures/0006/` with 15 sandboxed scenarios covering every decision branch: plugin-missing pre-flight, fresh install, idempotent re-apply, rollback, zero-families, existing-config-preserved, real-file collision (ABORT), correct-symlink idempotency, CLAUDE.md update idempotency, wrong-target symlink (ABORT, codex B2), missing-family-CLAUDE.md (skip-with-note, codex B3), non-family directory skipped via child-`.git` heuristic (codex F2), missing-plugins-parent (mkdir -p, codex F4), `.knowledge` exists as file (ABORT exit 3, codex F4), malformed existing config (preserve+warn, codex F4).
+- **`test_migration_0006()` stanza** added to `migrations/run-tests.sh` — 15 fixtures, each sandboxed via `HOME=$TMP/home`. Strict line-presence stderr matching. Codex F1 sandbox-escape guard rejects any install script containing hardcoded real-home paths.
+
+### Notes
+
+- **Phase 09 dogfood**: PLAN.md ran through codex + gemini before T1. Codex returned REQUEST-CHANGES (3 BLOCKs + 4 FLAGs) — all addressed in PLAN.md amendments before execution. B1 (goal-vs-verify gap) → new T5b smoke test verifies plugin manifest parses, declares canonical commands, family configs parse, source globs resolve. B2 (wrong-target symlink) → ABORT policy locked. B3 (missing family CLAUDE.md) → skip-with-warning. Fixture count grew 9 → 15.
+- **Scope reach**: migration 0006 touches three scope levels — host (`~/.claude/plugins/` symlink), family (`<family>/`-rooted scaffolding), per-project (SKILL.md version). This is intentional and follows the precedent of migration 0001 (global plugin installs).
+- **Self-contained**: earlier draft of this migration assumed an old draft of 0005 had scaffolded `.knowledge/{raw,wiki}/` first. The shipped 0005 (multi-AI review enforcement) is unrelated; migration 0006 now owns the entire scaffolding chain.
+
 ## [1.9.1] — Unreleased
 
 ### Added

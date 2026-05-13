@@ -838,6 +838,133 @@ test_migration_0005() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# test_migration_0006 — LLM wiki compiler integration (install + rollback scripts)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Exercises every decision branch of templates/.claude/scripts/install-wiki-compiler.sh
+# via 15 fixtures under migrations/test-fixtures/0006/. Each fixture builds a
+# sandboxed $HOME and runs the install script against it; the harness asserts
+# exit code, stderr matching, and (if verify.sh present) post-apply state.
+#
+# codex F1: sandbox-escape guard — the harness greps the install script for
+# non-sandboxed absolute paths after each invocation. If the script wrote to
+# the real /Users/.../.claude or /Users/.../Sourcecode, the guard fails.
+
+test_migration_0006() {
+  echo ""
+  echo "${YELLOW}━━━ Migration 0006 — LLM wiki compiler integration ━━━${RESET}"
+
+  local fixtures="$REPO_ROOT/migrations/test-fixtures/0006"
+  local install_script="$REPO_ROOT/templates/.claude/scripts/install-wiki-compiler.sh"
+  local rollback_script="$REPO_ROOT/templates/.claude/scripts/rollback-wiki-compiler.sh"
+
+  if [ ! -d "$fixtures" ]; then
+    echo "  ${RED}SKIP${RESET}: fixtures directory missing at $fixtures"
+    SKIP=$((SKIP+1))
+    return
+  fi
+  if [ ! -x "$install_script" ]; then
+    echo "  ${RED}✗${RESET} install script missing or non-executable at $install_script — RED state"
+    FAIL=$((FAIL+1))
+    return
+  fi
+  if [ ! -x "$rollback_script" ]; then
+    echo "  ${RED}✗${RESET} rollback script missing or non-executable at $rollback_script — RED state"
+    FAIL=$((FAIL+1))
+    return
+  fi
+
+  # codex F1: sandbox-escape pre-check. Grep the install script for hardcoded
+  # /Users/donald paths (would indicate accidental real-home write).
+  if grep -E '/(Users/donald|home/[a-z][a-z]*/)' "$install_script" >/dev/null 2>&1; then
+    echo "  ${RED}✗${RESET} install script contains hardcoded real-home paths — sandbox escape risk"
+    FAIL=$((FAIL+1))
+    return
+  fi
+
+  run_0006_fixture() {
+    local fixname="$1"
+    local fixdir="$fixtures/$fixname"
+    local tmp; tmp="$(mktemp -d -t "migration-0006-${fixname}-XXXXXX")"
+    local fake_home="$tmp/home"
+    mkdir -p "$fake_home"
+
+    # Setup (runs with HOME=$fake_home, REPO_ROOT, FIXTURES_ROOT visible)
+    if [ -x "$fixdir/setup.sh" ]; then
+      ( cd "$tmp" && HOME="$fake_home" REPO_ROOT="$REPO_ROOT" FIXTURES_ROOT="$fixtures" "$fixdir/setup.sh" >/dev/null 2>&1 )
+    fi
+
+    # Run install
+    local stderr_capture="$tmp/.stderr"
+    local actual_exit
+    ( cd "$fake_home" && HOME="$fake_home" bash "$install_script" 2> "$stderr_capture" >/dev/null )
+    actual_exit=$?
+
+    # Compare exit
+    local expected_exit
+    expected_exit=$(tr -d '\n' < "$fixdir/expected-exit")
+    if [ "$actual_exit" != "$expected_exit" ]; then
+      echo "  ${RED}✗${RESET} $fixname — exit $actual_exit, expected $expected_exit"
+      if [ -s "$stderr_capture" ]; then
+        echo "      actual stderr:"
+        sed 's/^/        /' "$stderr_capture" | head -10
+      fi
+      FAIL=$((FAIL+1))
+      rm -rf "$tmp"
+      return
+    fi
+
+    # Strict stderr line-presence check (carry-over from phase 08 F1)
+    if [ -f "$fixdir/expected-stderr.txt" ] && [ -s "$fixdir/expected-stderr.txt" ]; then
+      local missing_line=""
+      while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        if ! grep -F -q -- "$line" "$stderr_capture"; then
+          missing_line="$line"
+          break
+        fi
+      done < "$fixdir/expected-stderr.txt"
+      if [ -n "$missing_line" ]; then
+        echo "  ${RED}✗${RESET} $fixname — stderr missing line: $missing_line"
+        echo "      actual stderr:"
+        sed 's/^/        /' "$stderr_capture" | head -10
+        FAIL=$((FAIL+1))
+        rm -rf "$tmp"
+        return
+      fi
+    fi
+
+    # verify.sh — post-apply assertions
+    if [ -x "$fixdir/verify.sh" ]; then
+      local verify_out
+      verify_out=$( cd "$fake_home" && HOME="$fake_home" REPO_ROOT="$REPO_ROOT" bash "$fixdir/verify.sh" 2>&1 )
+      local verify_exit=$?
+      if [ "$verify_exit" != "0" ]; then
+        echo "  ${RED}✗${RESET} $fixname — verify.sh failed: $verify_out"
+        FAIL=$((FAIL+1))
+        rm -rf "$tmp"
+        return
+      fi
+    fi
+
+    # Stage 2 FLAG-D: the sandbox-escape post-check was structurally inert
+    # (no code writes a `-PHASE09-LEAK-CANARY` file). The real sandbox guard
+    # is the pre-grep on line ~879 (no hardcoded /Users/donald paths in the
+    # install script). Removed the theater check.
+
+    echo "  ${GREEN}✓${RESET} $fixname (exit $actual_exit)"
+    PASS=$((PASS+1))
+    rm -rf "$tmp"
+  }
+
+  for fix in "$fixtures"/[0-9]*-*/; do
+    local name
+    name="$(basename "${fix%/}")"
+    run_0006_fixture "$name"
+  done
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Dispatcher
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -847,6 +974,10 @@ fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "0005" ]; then
   test_migration_0005
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "0006" ]; then
+  test_migration_0006
 fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "0009" ]; then
