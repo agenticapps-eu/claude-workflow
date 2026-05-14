@@ -10,9 +10,9 @@ applies_to:
   - docs/workflow/ENFORCEMENT-PLAN.md (in consumer projects, if vendored)
   - templates/config-hooks.json (workflow repo only)
 requires:
-  - patch: templates/gsd-patches/patches/workflows/review.md
-    install: "test -f ~/.claude/get-shit-done/commands/gsd-review.md || (echo 'ERROR: /gsd-review slash command not installed. Run: bash ~/.config/gsd-patches/bin/sync' && exit 1)"
-    verify: "test -f ~/.claude/get-shit-done/commands/gsd-review.md"
+  - skill: gsd-review
+    install: "test -f ~/.claude/skills/gsd-review/SKILL.md || (echo 'ERROR: /gsd-review Claude Code skill not installed. The skill file must exist at ~/.claude/skills/gsd-review/SKILL.md. Sources vary by setup — see your get-shit-done install or dotfiles.' && exit 1)"
+    verify: "test -f ~/.claude/skills/gsd-review/SKILL.md"
 optional_for:
   - projects without GSD (no .planning/ directory)
 ---
@@ -36,9 +36,13 @@ test "$INSTALLED" = "1.9.0" || { echo "ERROR: installed version is $INSTALLED, t
 test -f .claude/settings.json || { echo "ERROR: .claude/settings.json missing — was 0000-baseline applied?"; exit 1; }
 jq empty .claude/settings.json 2>/dev/null || { echo "ERROR: .claude/settings.json exists but is not valid JSON"; exit 1; }
 
-# Verify gsd-review is installed (or installable).
-test -f ~/.claude/get-shit-done/commands/gsd-review.md \
-  || { echo "ERROR: /gsd-review not installed. Run: bash ~/.config/gsd-patches/bin/sync"; exit 1; }
+# Verify /gsd-review is installed as a Claude Code skill. The slash command
+# resolves through ~/.claude/skills/gsd-review/SKILL.md; that skill's
+# <execution_context> delegates to ~/.claude/get-shit-done/workflows/review.md.
+# The skill file is the load-bearing contract for slash-command discovery, so
+# we verify it specifically (not the delegated workflow body).
+test -f ~/.claude/skills/gsd-review/SKILL.md \
+  || { echo "ERROR: /gsd-review Claude Code skill not installed. The skill file must exist at ~/.claude/skills/gsd-review/SKILL.md. Sources vary by setup — see your get-shit-done install or dotfiles."; exit 1; }
 
 # Verify at least 2 reviewer CLIs are present (otherwise the hook would gate against an unreachable target).
 AVAILABLE=0
