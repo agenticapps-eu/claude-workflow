@@ -1,17 +1,21 @@
-# Session Handoff — 2026-05-14 (Phases 11 + 12 shipped; fx-signal-agent off v1.9.0)
+# Session Handoff — 2026-05-14 (Phases 11 + 12 + 13 shipped; fx-signal-agent off v1.9.0)
 
 ## Accomplished
 
-Two phases shipped, two consumer projects unblocked. Picked up from
-yesterday's chain-gap discovery handoff. The end-to-end story:
+Three phases shipped, two consumer projects unblocked, one bug class
+structurally closed. Picked up from yesterday's chain-gap discovery
+handoff. The end-to-end story:
 
 | PR | Title | Merge |
 |---|---|---|
 | #17 | fix: chain integrity — re-anchor 0008 (1.5→1.6) and 0009 (1.6→1.8) | `8906470` |
 | #19 | fix: migration 0005 preflight verify path (closes #18) | `7ad3498` |
+| #20 | docs(handoff): phases 11+12 shipped (handoff via PR, not direct-to-main) | `d8cd0b2` |
+| #21 | feat: per-migration preflight-correctness audit (run-tests.sh) | `65958f7` |
 
-Workflow scaffolder progression: `1.9.3` (head unchanged — both phases
-were path-to-head fixes, not new functionality).
+Workflow scaffolder progression: `1.9.3` (head unchanged — Phase 11/12
+were path-to-head fixes; Phase 13 is test-harness-only and ships no
+consumer-facing change).
 
 GitHub issue #18 (filed mid-session while merging Phase 11) — auto-closed
 on Phase 12 merge.
@@ -104,36 +108,47 @@ on Phase 12 merge.
 - `.planning/phases/12-fix-0005-verify-path/` — RESEARCH, VERIFICATION,
   REVIEW
 
+### Phase 13 (PR #21, merge `65958f7`)
+- `migrations/run-tests.sh` — new `test_preflight_verify_paths()`
+  function (~60 lines) + `RAN_AUDIT` flag + dispatcher hook for the
+  `preflight` filter alias. Net +85 lines.
+- `.planning/phases/13-preflight-correctness-audit/` — RESEARCH,
+  VERIFICATION, REVIEW.
+
 ## Next session: start here
 
-The workflow chain is clean. Pending choices for next session:
+The workflow chain is clean and the test harness now catches the
+issue-#18 bug class structurally. Pending choices for next session:
 
 1. **(Optional) Re-run live apply against cparx** to upgrade
    v1.5.0 → v1.9.3 the same way fx-signal-agent did. The dry-run
-   said clean (6 hops) and the preflight bug is now fixed, so this
-   should walk end-to-end without intervention. Branch the upgrade
-   work on cparx first (`git checkout -b chore/workflow-upgrade-v1.9.3`).
+   said clean (6 hops) and both bug fixes are now in place.
 
-2. **(Recommended) Phase 13 — per-migration preflight-correctness
-   test.** Add a runner stanza that asserts every `requires.verify`
-   shell command resolves on the actual installed environment. Would
-   have caught issue #18 pre-merge. Small phase, high leverage.
-
-3. **(Optional) Phase 14 — supply-chain pinning** for vendored
+2. **(Optional) Phase 14 — supply-chain pinning** for vendored
    `ussumant/llm-wiki-compiler` plugin + `gitnexus` MCP. Pin to
-   tag + SHA-256. Still open from yesterday's handoff.
+   tag + SHA-256. Open from prior session.
 
-4. **(Optional) Phase 15 — structural lint** for the `&&`-chain
+3. **(Optional) Phase 15 — structural lint** for the `&&`-chain
    under `set -e` pattern. CSO H1 has fired in three consecutive
    phases — worth a shell-lint hook.
 
-5. **(Optional) Phase 16 — fix the 8 pre-existing
+4. **(Optional) Phase 16 — fix 0008's `curl | jq` verify.** Phase 13
+   review surfaced that `curl ... | jq '.schemaVersion'` exits 0
+   even when curl fails (jq tolerates empty input). Either split
+   the pipeline with explicit error handling or require `pipefail`.
+   The Phase 13 audit reports `✓ 0008` misleadingly today.
+
+5. **(Optional) Phase 17 — fix the 8 pre-existing
    `test_migration_0001` failures** (`git merge-base` resolution).
 
 6. **(Optional environmental cleanup) `test_migration_0007` fixture
    `03-no-gitnexus`** — fnm-managed gitnexus binary leaks through
    the sandbox PATH on this machine, false-passing the
    no-gitnexus scenario. Make the fixture strip fnm paths.
+
+7. **(Optional) Phase 18 — `--strict-preflight` flag** to gate CI
+   on Phase 13 audit failures. Currently informational only;
+   useful once CI environments gain parity with author dev setups.
 
 ## Open questions (carried from prior session)
 
