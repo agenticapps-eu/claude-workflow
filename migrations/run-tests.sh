@@ -385,11 +385,11 @@ test_migration_0009() {
 
   # ── Step 5: version bump ──────────────────────────────────────────────────
   # Idempotency check: `grep -q '^version: 1.8.0' .claude/skills/agentic-apps-workflow/SKILL.md`
-  assert_check "Step 5 idempotency: needs apply on before-fresh (still 1.7.0)" \
+  assert_check "Step 5 idempotency: needs apply on before-fresh (still 1.6.0)" \
     "grep -q '^version: 1.8.0' .claude/skills/agentic-apps-workflow/SKILL.md" "$fresh_dir" not-applied
-  assert_check "Step 5 idempotency: needs apply on before-inlined-pristine (still 1.7.0)" \
+  assert_check "Step 5 idempotency: needs apply on before-inlined-pristine (still 1.6.0)" \
     "grep -q '^version: 1.8.0' .claude/skills/agentic-apps-workflow/SKILL.md" "$inlined_pristine_dir" not-applied
-  assert_check "Step 5 idempotency: needs apply on before-inlined-customised (still 1.7.0)" \
+  assert_check "Step 5 idempotency: needs apply on before-inlined-customised (still 1.6.0)" \
     "grep -q '^version: 1.8.0' .claude/skills/agentic-apps-workflow/SKILL.md" "$inlined_customised_dir" not-applied
   assert_check "Step 5 idempotency: skip on after-vendored" \
     "grep -q '^version: 1.8.0' .claude/skills/agentic-apps-workflow/SKILL.md" "$vendored_dir" applied

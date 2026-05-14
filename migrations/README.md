@@ -41,8 +41,8 @@ project (currently the v1.2.0 default). Every other migration is incremental.
 | `0001` | 1.2.0 → 1.3.0 | Wire Go skill packs + impeccable + database-sentinel |
 | `0004` | 1.3.0 → 1.4.0 | Programmatic hooks + architecture audit + scheduling |
 | `0002` | 1.4.0 → 1.5.0 | Observability spec v0.2.1 |
-| `0008` | 1.7.0 → 1.8.0 | Coverage Matrix Page (per-repo presence + freshness dashboard) |
-| `0009` | 1.7.0 → 1.8.0 | Vendor CLAUDE.md workflow block as `.claude/claude-md/workflow.md` |
+| `0008` | 1.5.0 → 1.6.0 | Coverage Matrix Page (per-repo presence + freshness dashboard) |
+| `0009` | 1.6.0 → 1.8.0 | Vendor CLAUDE.md workflow block as `.claude/claude-md/workflow.md` (chain jumps 1.6 → 1.8 — see "Application order" note 3) |
 | `0010` | 1.8.0 → 1.9.0 | Post-process GSD section markers in CLAUDE.md |
 | `0005` | 1.9.0 → 1.9.1 | Multi-AI plan review enforcement (hook 6, gates `/gsd-review`) |
 | `0006` | 1.9.1 → 1.9.2 | LLM wiki builder integration (plugin symlink + per-family scaffolding) |
@@ -76,6 +76,13 @@ Two consequences worth stating explicitly:
    1.4.x security patch alongside an in-flight 1.5.0 feature) get one
    `to_version` each — `1.4.1` for the patch, `1.5.0` for the feature —
    so the chain stays linear.
+
+3. **`to_version` need not be `from_version + 0.1`.** The runner matches
+   on `from_version` only; nothing constrains the size of the minor-version
+   jump. Migration `0009` jumps `1.6.0 → 1.8.0` (skipping `1.7.0`) because
+   that intermediate version never shipped — it was an artifact of a
+   pre-rebase chain shape and was retired in Phase 11. Strict +0.1
+   increments are a useful default for readability, not a hard rule.
 
 If you're authoring a migration, the safe pattern is:
 

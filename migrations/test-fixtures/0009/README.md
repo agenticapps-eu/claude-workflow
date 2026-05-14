@@ -14,9 +14,9 @@ ever shipped. Hand-built synthetic fixtures are the right tool.
 
 | Directory | Project version | Vendored file | CLAUDE.md state | Migration outcome |
 |---|---|---|---|---|
-| `before-fresh/` | 1.7.0 | absent | small project-only content, no inlined block | Steps 1, 2, 3, 5 apply; Step 4 idempotency = applied (nothing to remove) |
-| `before-inlined-pristine/` | 1.7.0 | absent | contains canonical inlined workflow block | All 5 steps apply; Step 4 prompts user (canonical match → safe-to-remove) |
-| `before-inlined-customised/` | 1.7.0 | absent | contains customised inlined workflow block | All 5 steps apply; Step 4 prompts user with diff (3-way pick) |
+| `before-fresh/` | 1.6.0 | absent | small project-only content, no inlined block | Steps 1, 2, 3, 5 apply; Step 4 idempotency = applied (nothing to remove) |
+| `before-inlined-pristine/` | 1.6.0 | absent | contains canonical inlined workflow block | All 5 steps apply; Step 4 prompts user (canonical match → safe-to-remove) |
+| `before-inlined-customised/` | 1.6.0 | absent | contains customised inlined workflow block | All 5 steps apply; Step 4 prompts user with diff (3-way pick) |
 | `after-vendored/` | 1.8.0 | present (canonical) | reference link only | All idempotency checks return 0; migration is no-op |
 | `after-idempotent/` | 1.8.0 | present (canonical) | reference link only | Same as above; verifies a *second* run after migration is also no-op |
 
@@ -45,7 +45,7 @@ assertions. Fixtures themselves are read-only.
   blocks are markdown prose interpreted by the agent at execution time,
   not bash scripts the harness can run. End-to-end validation requires
   running the migration through `/update-agenticapps-workflow` against a
-  real project (e.g. `factiv/fx-signal-agent` once 1.8.0 ships).
+  real project (e.g. `factiv/fx-signal-agent`).
 - The **3-way pick** UX in Step 4 / divergence detection. Same reason —
   agent-driven.
 

@@ -2,7 +2,7 @@
 id: 0009
 slug: vendor-claude-md-sections
 title: Vendor CLAUDE.md workflow block as `.claude/claude-md/workflow.md`
-from_version: 1.7.0
+from_version: 1.6.0
 to_version: 1.8.0
 applies_to:
   - .claude/claude-md/workflow.md (new file in consumer repos)
@@ -14,7 +14,7 @@ optional_for: []
 
 # Migration 0009 — Vendor CLAUDE.md workflow block
 
-Brings projects from AgenticApps workflow v1.7.0 to v1.8.0 by replacing the
+Brings projects from AgenticApps workflow v1.6.0 to v1.8.0 by replacing the
 inlined ~150-line workflow boilerplate in CLAUDE.md with a vendored
 `.claude/claude-md/workflow.md` file plus a short reference block.
 
@@ -33,15 +33,15 @@ for the inline → vendor pivot.
 
 This migration is paired with a fix to `migrations/0000-baseline.md`
 Step 4 (committed in the same release) so fresh installs vendor from
-the start; 0009 handles the upgrade path for existing 1.7.0 projects.
+the start; 0009 handles the upgrade path for existing 1.6.0 projects.
 
 ## Pre-flight
 
 ```bash
-# Required: project at exactly v1.7.0 (or update skill chains earlier
-# migrations first)
+# Required: project at exactly v1.6.0 (or update skill chains earlier
+# migrations first — 0008 takes projects from 1.5.0 to 1.6.0)
 INSTALLED=$(grep -E '^version:' .claude/skills/agentic-apps-workflow/SKILL.md | sed 's/version: //')
-test "$INSTALLED" = "1.7.0" || { echo "ERROR: installed version is $INSTALLED, this migration requires 1.7.0"; exit 1; }
+test "$INSTALLED" = "1.6.0" || { echo "ERROR: installed version is $INSTALLED, this migration requires 1.6.0"; exit 1; }
 
 # Required: project files exist (this migration patches them, doesn't create them from scratch)
 test -f CLAUDE.md || { echo "ERROR: CLAUDE.md not found — was 0000-baseline applied?"; exit 1; }
@@ -188,8 +188,8 @@ outcomes:
 
 | Outcome | User prompt |
 |---|---|
-| Extracted range matches canonical (modulo whitespace and heading-level reframing) | "Inlined block detected (pristine copy of v1.7.0 template). Safe to remove — the canonical content is already vendored at `.claude/claude-md/workflow.md`. Proceed?" Default: yes. |
-| Extracted range diverges from canonical | "Inlined block detected, but it has been customised relative to the v1.7.0 template. Diff: [show]. Choose: (a) Replace with canonical (lose customisations), (b) Vendor the customised block as `.claude/claude-md/workflow.md` (preserve customisations as the vendored copy; the canonical from Step 1 is overwritten), (c) Skip removal (CLAUDE.md keeps the inline copy; vendored file from Step 1 stays as the canonical reference)." |
+| Extracted range matches canonical (modulo whitespace and heading-level reframing) | "Inlined block detected (pristine copy of the legacy inlined template). Safe to remove — the canonical content is already vendored at `.claude/claude-md/workflow.md`. Proceed?" Default: yes. |
+| Extracted range diverges from canonical | "Inlined block detected, but it has been customised relative to the legacy inlined template. Diff: [show]. Choose: (a) Replace with canonical (lose customisations), (b) Vendor the customised block as `.claude/claude-md/workflow.md` (preserve customisations as the vendored copy; the canonical from Step 1 is overwritten), (c) Skip removal (CLAUDE.md keeps the inline copy; vendored file from Step 1 stays as the canonical reference)." |
 | Detection ambiguous (markers found but end-anchor cannot be determined with confidence — e.g. inlined block was edited so heavily that no template H2 remains and no clean termination boundary exists) | "Inlined block markers found in CLAUDE.md but the extraction boundary is unclear. Manual review recommended. Skip this step?" Default: yes. |
 
 When the user confirms removal, the runtime deletes the extracted line
@@ -209,9 +209,9 @@ when aborting the entire migration, not for per-step rollback.
 ### Step 5: Bump installed version field in `.claude/skills/agentic-apps-workflow/SKILL.md`
 
 **Idempotency check:** `grep -q '^version: 1.8.0' .claude/skills/agentic-apps-workflow/SKILL.md`
-**Pre-condition:** `.claude/skills/agentic-apps-workflow/SKILL.md` exists and currently has `version: 1.7.0`
-**Apply:** Edit the file frontmatter to change `version: 1.7.0` → `version: 1.8.0`.
-**Rollback:** Edit `version: 1.8.0` → `version: 1.7.0`.
+**Pre-condition:** `.claude/skills/agentic-apps-workflow/SKILL.md` exists and currently has `version: 1.6.0`
+**Apply:** Edit the file frontmatter to change `version: 1.6.0` → `version: 1.8.0`.
+**Rollback:** Edit `version: 1.8.0` → `version: 1.6.0`.
 
 ## Post-checks
 
@@ -236,7 +236,7 @@ grep -q '^version: 1.8.0' .claude/skills/agentic-apps-workflow/SKILL.md
 
 ## Skip cases
 
-- **Project not at v1.7.0** — pre-flight blocks. The update skill chains
+- **Project not at v1.6.0** — pre-flight blocks. The update skill chains
   earlier migrations first if the project is older.
 - **Workflow scaffolder older than 1.8.0** (vendored template source missing)
   — pre-flight blocks with `git pull` instruction.
