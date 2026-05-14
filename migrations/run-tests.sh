@@ -23,6 +23,7 @@ cd "$REPO_ROOT"
 PASS=0
 FAIL=0
 SKIP=0
+RAN_AUDIT=0
 
 # Filter (optional first arg)
 FILTER="${1:-}"
@@ -1080,6 +1081,85 @@ test_migration_0007() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Preflight-correctness audit (Phase 13)
+# ─────────────────────────────────────────────────────────────────────────────
+# Walks every migration and executes each `requires[*].verify` shell command
+# against the host environment. Informational only — failures DO NOT add to
+# the suite's global PASS/FAIL counters, since CI environments without all
+# host dependencies installed will see expected non-zero counts.
+#
+# Catches the issue-#18 bug class: a verify path that points at a location
+# which doesn't exist on any system. Run pre-PR to surface verify rot before
+# it ships.
+
+test_preflight_verify_paths() {
+  local audit_pass=0 audit_fail=0 audit_skip=0
+  RAN_AUDIT=1
+
+  echo ""
+  echo "${YELLOW}━━━ Preflight-correctness audit (informational) ━━━${RESET}"
+  echo "  Exercises each migration's requires.verify against THIS machine."
+  echo "  Failures may mean either a broken verify path (real bug) OR a"
+  echo "  missing local dependency (expected on fresh machines)."
+  echo ""
+
+  # Sanity-check that python3 + pyyaml are available; skip the whole audit
+  # cleanly if not (degrades gracefully on minimal CI images).
+  if ! python3 -c 'import yaml' 2>/dev/null; then
+    echo "  ${YELLOW}~${RESET} python3 with PyYAML not available — preflight audit skipped"
+    return 0
+  fi
+
+  for migration in "$REPO_ROOT/migrations"/[0-9]*.md; do
+    local id
+    id="$(basename "$migration" | sed 's/-.*//')"
+    local verifies
+    verifies=$(python3 - "$migration" <<'PY'
+import sys, re, yaml
+text = open(sys.argv[1]).read()
+m = re.search(r'^---\n(.*?)\n---', text, re.DOTALL | re.MULTILINE)
+if not m:
+    sys.exit(0)
+try:
+    fm = yaml.safe_load(m.group(1))
+except Exception:
+    sys.exit(0)
+requires = fm.get('requires') if isinstance(fm, dict) else None
+if not isinstance(requires, list):
+    sys.exit(0)
+for entry in requires:
+    if isinstance(entry, dict) and 'verify' in entry:
+        v = entry['verify']
+        if isinstance(v, str) and v.strip():
+            print(v)
+PY
+    )
+
+    if [ -z "$verifies" ]; then
+      audit_skip=$((audit_skip+1))
+      continue
+    fi
+
+    while IFS= read -r v; do
+      [ -z "$v" ] && continue
+      if eval "$v" >/dev/null 2>&1; then
+        printf "  ${GREEN}✓${RESET} %s: %s\n" "$id" "$v"
+        audit_pass=$((audit_pass+1))
+      else
+        local rc=$?
+        printf "  ${RED}✗${RESET} %s: %s (exit %d)\n" "$id" "$v" "$rc"
+        audit_fail=$((audit_fail+1))
+      fi
+    done <<< "$verifies"
+  done
+
+  echo ""
+  printf "  Audit summary: ${GREEN}PASS=%d${RESET} ${RED}FAIL=%d${RESET} ${YELLOW}SKIP=%d${RESET}\n" \
+    "$audit_pass" "$audit_fail" "$audit_skip"
+  echo "  (NOT counted in suite totals — see disclaimer above.)"
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Dispatcher
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1107,6 +1187,10 @@ if [ -z "$FILTER" ] || [ "$FILTER" = "0010" ]; then
   test_migration_0010
 fi
 
+if [ -z "$FILTER" ] || [ "$FILTER" = "preflight" ]; then
+  test_preflight_verify_paths
+fi
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Summary
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1119,7 +1203,7 @@ echo "  ${GREEN}PASS${RESET}: $PASS"
 
 if [ $FAIL -gt 0 ]; then
   exit 1
-elif [ $PASS -eq 0 ] && [ $SKIP -eq 0 ]; then
+elif [ $PASS -eq 0 ] && [ $SKIP -eq 0 ] && [ $RAN_AUDIT -eq 0 ]; then
   echo "  ${RED}NO TESTS RAN${RESET}"
   exit 1
 else
