@@ -1,126 +1,152 @@
-# Session Handoff — 2026-05-14 (phases 08-10 shipped + chain-gap discovered)
+# Session Handoff — 2026-05-14 (Phases 11 + 12 shipped; fx-signal-agent off v1.9.0)
 
 ## Accomplished
 
-Shipped THREE migrations through the full GSD pipeline end-to-end across
-this session, plus pushed/merged the predecessor 0008/0009/0010 batch and
-closed the carry-over draft. Scaffolder advanced from **1.7.0 → 1.9.3**.
+Two phases shipped, two consumer projects unblocked. Picked up from
+yesterday's chain-gap discovery handoff. The end-to-end story:
 
 | PR | Title | Merge |
 |---|---|---|
-| #10 | feat: vendor CLAUDE.md workflow block (0009, v1.8.0) | `f77a205` |
-| #13 | feat: migrations 0008 (Coverage Matrix) + 0010 (post-process GSD markers), v1.9.0 | `20bcfdf` |
-| #9  | fix: bootstrap .claude/settings.json in baseline + self-heal in 0004 | `b94de20` |
-| #14 | feat: migration 0005 — multi-AI plan review enforcement gate (v1.9.1) | `33ab559` |
-| #15 | feat: migration 0006 — LLM wiki compiler integration (v1.9.2) | `af21388` |
-| #16 | feat: migration 0007 — GitNexus code-graph MCP integration (v1.9.3) | `a55ec60` |
-| #12 | draft: carry-over 0005-0007 | **closed** (split across 14/15/16) |
+| #17 | fix: chain integrity — re-anchor 0008 (1.5→1.6) and 0009 (1.6→1.8) | `8906470` |
+| #19 | fix: migration 0005 preflight verify path (closes #18) | `7ad3498` |
 
-Each of phases 08, 09, 10 followed full GSD discipline: CONTEXT → RESEARCH
-(≥2 alternatives) → PLAN (TDD + threat model + goal-backward) → multi-AI
-plan review (codex + gemini dogfood) → BLOCK fixes → TDD red/green →
-Stage 1 + Stage 2 + CSO post-execution reviews → fix findings → PR →
-squash-merge.
+Workflow scaffolder progression: `1.9.3` (head unchanged — both phases
+were path-to-head fixes, not new functionality).
 
-Plus end-of-day **cparx dry-run** revealed a real chain-integrity bug
-(see Next session).
+GitHub issue #18 (filed mid-session while merging Phase 11) — auto-closed
+on Phase 12 merge.
 
-## Decisions (cross-phase patterns)
+**Consumer-project state:**
+- `factiv/cparx`: still at v1.5.0 (you haven't run the live apply yet —
+  the chain is now provably clean v1.5.0 → v1.9.3 in 6 hops).
+- `factiv/fx-signal-agent`: **upgraded to v1.9.3** end-to-end. Was
+  stuck at v1.9.0 before Phase 12; you ran the live apply after the
+  merge.
 
-- **Multi-AI review dogfood works.** Codex flagged real bugs in every
-  phase (08 B1-B4, 09 B1-B3, 10 B1-B3). Worth the cost.
-- **Stage 2 + CSO consistently caught H1-class bugs.** The
-  `sed && rm` / `jq && mv` `&&`-chain under `set -e` pattern recurred
-  across phases — each `cmdA && cmdB` short-circuits silently and `set -e`
-  doesn't fire on the outer expression. Worth codifying as a workflow lint.
-- **Scope reduction for Phase 10** stripped 0007 from "install +
-  setup + 30-90 min mass-indexing" down to setup-only (install script +
-  helper script). Cleaner contract, sandboxable, license-honest.
-- **Fixture matrix grew with each phase**: 13 (0005) → 15 (0006) → 18 (0007).
-- **Preserve-data rollback** is the right default across all three.
+## Decisions
 
-## ⚠ Next session — chain-gap cleanup (Phase 11)
+- **Phase 11 scope widened beyond handoff spec.** The handoff said
+  "frontmatter only". 0009's body has a hardcoded preflight
+  `test "$INSTALLED" = "1.7.0"` that would have broken every fresh
+  apply post-rebase. Widened scope to include consequential body /
+  fixture / harness / CHANGELOG refs. **Audit pattern worth
+  codifying:** when re-anchoring a migration, audit body for
+  `from_version`-equality strings — they need to track.
 
-The cparx dry-run surfaced a real bug: **the migration chain on main has
-a gap AND a collision** that block cparx-at-v1.5.0 (and any project on
-that version line) from progressing to 1.9.3.
+- **Phase 11 dry-run didn't catch the Phase 12 bug.** Chain-walk
+  simulation exercises Step 2 (frontmatter pending-migration discovery
+  via `from_version` matching) but never Step 5 (per-migration
+  preflight verify). 0005's verify pointed at a path that didn't
+  exist; the bug only surfaced during actual apply against
+  fx-signal-agent.
 
-```
-CURRENT (broken)              PROPOSED (Phase 11 fix)
-0001  1.2 → 1.3               0001  1.2 → 1.3
-0004  1.3 → 1.4               0004  1.3 → 1.4
-0002  1.4 → 1.5               0002  1.4 → 1.5
-[GAP 1.5 → 1.7]               0008  1.5 → 1.6   ← re-anchor (was 1.7→1.8)
-0008  1.7 → 1.8  ─┐ collision 0009  1.6 → 1.8   ← re-anchor (was 1.7→1.8;
-0009  1.7 → 1.8  ─┘                              skip 1.7 — to_version need
-0010  1.8 → 1.9                                  not be from+0.1)
-0005  1.9 → 1.9.1             0010  1.8 → 1.9   (unchanged)
-0006  1.9.1 → 1.9.2           0005-0007 unchanged
-0007  1.9.2 → 1.9.3
-```
+  **Codify as a workflow norm:** dry-run is not "ready to ship" — at
+  least one consumer project needs to actually walk the apply path
+  before a chain-touching PR can be considered verified. Adding a
+  per-migration preflight-correctness check to `run-tests.sh` (assert
+  every `requires.verify` shell command resolves on a real install)
+  is the obvious follow-up.
 
-Why re-anchoring 0008/0009 is the cleanest fix:
-- **0008 (Coverage Matrix Page)** is workflow-repo only — the dashboard
-  surface doesn't change consumer-project state. Re-anchoring its
-  version is functionally harmless.
-- **0009 (Vendor CLAUDE.md sections)** does the same work regardless
-  of version. The to_version jump 1.6 → 1.8 (skipping 1.7) is unusual
-  but supported — the migration runner matches on `from_version`.
-- Resolves the 0008/0009 collision (both currently at 1.7→1.8).
-- Closes the 1.5→1.7 gap without touching shipped migrations 0010/0005/
-  0006/0007.
+- **No-op bridge migration 0011 rejected** (Phase 11). Cost is one
+  chain entry with a non-monotonic minor bump (1.6 → 1.8). Mitigated
+  with `migrations/README.md` "Application order" note 3 codifying
+  `to_version` need not equal `from_version + 0.1`.
 
-**Phase 11 scope:** version-chain hygiene only. No code-logic changes.
-- Rewrite frontmatter `from_version`/`to_version` on `0008` and `0009`.
-- Strike stale CHANGELOG `[1.6.0]` and `[1.7.0]` sections — they describe
-  the pre-rebase 0006/0007 (`1.5.1 → 1.6.0` and `1.6.0 → 1.7.0`) which
-  ended up shipping at `1.9.1 → 1.9.2` and `1.9.2 → 1.9.3` instead.
-  Replace with one-line "see [1.9.2]/[1.9.3]" pointer entries.
-- Update `migrations/README.md` index to reflect new from→to.
-- Test harness: run `bash migrations/run-tests.sh` end-to-end after the
-  frontmatter change to confirm no regressions.
-- Open Phase 11 PR through the full GSD discipline OR via `/gsd-quick`
-  if treated as a typed-fix (no functional changes, just metadata).
+- **Triple CHANGELOG rewrite** (Phase 11). Handoff called out `[1.6.0]`
+  and `[1.7.0]` as stale. Stale `[1.5.1]` was a third — described
+  pre-rebase 0005 that actually shipped as 0005 at 1.9.0 → 1.9.1. All
+  three rewritten with pointers to where the originally-planned
+  content shipped.
 
-After Phase 11 lands, **rerun the cparx dry-run** to confirm:
-`/update-agenticapps-workflow --dry-run --from 1.5.0` inside cparx walks
-0008 → 0009 → 0010 → 0005 → 0006 → 0007 cleanly.
+- **Phase 12 `requires:` key changed `patch:` → `skill:`.** The
+  documented "external skills" schema in `migrations/README.md` uses
+  `skill:`. The `patch:` outlier was an artifact of the
+  gsd-patches-centric mental model that has since been superseded by
+  Claude Code skills. Brought 0005 in line.
 
-**Alternative considered** if strict +0.1 increments preferred: keep 0009
-at `1.6 → 1.7`, add new `0011-bridge-1.7-1.8.md` (no-op version bump).
-More files, more granular, same end-state. Reject in favor of the leaner
-two-frontmatter-edit fix above.
+- **Phase 12 install hint deprescriptivised.** Old hint said
+  `bash ~/.config/gsd-patches/bin/sync` — wrong because that only
+  syncs the workflow body, not the skill. Without knowing the
+  user's canonical install command for the gsd-review skill (varies
+  by setup), new hint is non-prescriptive but accurate: "Sources
+  vary by setup — see your get-shit-done install or dotfiles."
+  Codifying a single canonical install command is a separate
+  follow-up.
 
-## Other follow-ups (lower priority)
+- **gstack `/review` skipped its heaviest dispatch passes (both
+  phases).** For metadata-only diffs (no SQL, shell, concurrency,
+  LLM trust, enums), the Codex / sub-agent / red-team ceremony is
+  wasted spend. Did structural checks (frontmatter validity, chain
+  walk, cross-file consistency, scope drift) inline and produced
+  REVIEW.md with explicit notes on what was skipped and why.
+  **Codify as workflow norm:** match review depth to diff *kind*,
+  not just size.
 
-Carry-over from phases 08-10 reviews:
+## Files modified (across both phases)
 
-1. **Phase 08 CSO H1 retroactive**: migration 0005's `sed && rm .bak`
-   chain has the same bug Phase 09 + 10 fixed in their own scripts.
-   Apply the explicit if/then/else pattern.
-2. **Supply-chain pinning**: pin vendored `ussumant/llm-wiki-compiler`
-   plugin to a tag + SHA-256 (0006 follow-up). Pin the `gitnexus` MCP
-   command's npm install reference similarly (0007 follow-up).
-3. **Phase 10 deferred FLAGs**: fixture 13 cosmetic rename; helper
-   script `GITNEXUS_BIN` env-override warning; symlinked `~/.claude.json`
-   edge case.
+### Phase 11 (PR #17, merge `8906470`)
+- `migrations/0008-coverage-matrix-page.md` — frontmatter re-anchor +
+  body version-ref cleanup
+- `migrations/0009-vendor-claude-md-sections.md` — frontmatter
+  re-anchor + body preflight value + Step 5 pre-condition / Apply /
+  Rollback values
+- `migrations/README.md` — index + "Application order" note 3
+- `migrations/test-fixtures/0009/` — 3× SKILL.md, fixtures README
+- `migrations/run-tests.sh` — 3 assertion messages
+- `CHANGELOG.md` — `[1.5.1]` / `[1.6.0]` / `[1.7.0]` rewritten; `[1.8.0]`
+  0009 refs updated
+- `.planning/phases/11-chain-gap-cleanup/` — RESEARCH, VERIFICATION,
+  REVIEW
 
-## Open questions
+### Phase 12 (PR #19, merge `7ad3498`)
+- `migrations/0005-multi-ai-plan-review-enforcement.md` — 5 path refs +
+  install hint + 4-line explanatory comment + `requires:` schema fix
+- `.planning/phases/12-fix-0005-verify-path/` — RESEARCH, VERIFICATION,
+  REVIEW
 
-- **Shell-lint hook** for the `&&`-chain pattern under `set -e`? CSO H1
-  has fired in three consecutive phases. Time to make it structural.
-- **Multi-AI plan review CLI floor**: currently using `codex exec` +
-  `gemini -p`. The 0005 pre-flight requires ≥2 of
-  `gemini|codex|claude|coderabbit|opencode`. coderabbit + opencode
-  CLIs are absent here — workflow ship a setup-doc, or "any 2" is fine?
-- **Helper script license consent**: `index-family-repos.sh` surfaces
-  a `⚠ LICENSE` block in usage, but `--all` is implicit acceptance.
-  Worth a `--accept-license` first-time flag?
+## Next session: start here
 
-## Files relevant for Phase 11
+The workflow chain is clean. Pending choices for next session:
 
-- `migrations/0008-coverage-matrix-page.md` (lines 5-6 — frontmatter)
-- `migrations/0009-vendor-claude-md-sections.md` (lines 5-6)
-- `migrations/README.md` (index table)
-- `CHANGELOG.md` (sections `[1.6.0]` line ~120, `[1.7.0]` line ~103)
-- `migrations/run-tests.sh` (full-suite verification post-rewrite)
+1. **(Optional) Re-run live apply against cparx** to upgrade
+   v1.5.0 → v1.9.3 the same way fx-signal-agent did. The dry-run
+   said clean (6 hops) and the preflight bug is now fixed, so this
+   should walk end-to-end without intervention. Branch the upgrade
+   work on cparx first (`git checkout -b chore/workflow-upgrade-v1.9.3`).
+
+2. **(Recommended) Phase 13 — per-migration preflight-correctness
+   test.** Add a runner stanza that asserts every `requires.verify`
+   shell command resolves on the actual installed environment. Would
+   have caught issue #18 pre-merge. Small phase, high leverage.
+
+3. **(Optional) Phase 14 — supply-chain pinning** for vendored
+   `ussumant/llm-wiki-compiler` plugin + `gitnexus` MCP. Pin to
+   tag + SHA-256. Still open from yesterday's handoff.
+
+4. **(Optional) Phase 15 — structural lint** for the `&&`-chain
+   under `set -e` pattern. CSO H1 has fired in three consecutive
+   phases — worth a shell-lint hook.
+
+5. **(Optional) Phase 16 — fix the 8 pre-existing
+   `test_migration_0001` failures** (`git merge-base` resolution).
+
+6. **(Optional environmental cleanup) `test_migration_0007` fixture
+   `03-no-gitnexus`** — fnm-managed gitnexus binary leaks through
+   the sandbox PATH on this machine, false-passing the
+   no-gitnexus scenario. Make the fixture strip fnm paths.
+
+## Open questions (carried from prior session)
+
+- **Shell-lint hook for `&&`-chains under `set -e`** — still open.
+  Worth structural enforcement now that the pattern has fired in
+  three consecutive phases.
+- **Multi-AI plan review CLI floor** — 0005 pre-flight requires ≥2
+  of `gemini|codex|claude|coderabbit|opencode`. coderabbit + opencode
+  CLIs absent on this machine; 3 are present, so the floor is met.
+  Document the canonical install for those two CLIs OR relax to
+  "any 2"?
+- **Helper script license consent** for `index-family-repos.sh`
+  `--all` — worth a `--accept-license` first-time flag?
+- **Canonical install command for `/gsd-review` skill** — Phase 12's
+  install hint left this deliberately vague. Worth codifying if a
+  canonical command emerges.
