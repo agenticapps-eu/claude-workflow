@@ -81,7 +81,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 - **Vendored CLAUDE.md workflow block** — `templates/.claude/claude-md/workflow.md` is the new canonical location for the Superpowers/GSD/gstack hooks, commitment ritual, rationalization table, and 13 Red Flags. Each consumer project gets `<repo>/.claude/claude-md/workflow.md` vendored on first install (via patched migration 0000) or on upgrade (via migration 0009). CLAUDE.md links to that path with a 5-line reference block instead of inlining ~150 lines. Self-contained — repo never references the meta-repo at runtime.
 - **ADR 0021** — Vendor the workflow block as a per-repo file instead of inlining it into CLAUDE.md. Documents the inline → vendor pivot, alternatives rejected (symlink, runtime fetch, `@import`), and why the meta-repo is never referenced at runtime. Captures the "patch 0000 in-place" decision that lets fresh installs go straight to vendored state.
-- **Migration `0009-vendor-claude-md-sections.md`** — promotes 1.7.0 → 1.8.0 by vendoring the workflow block, adding a reference to CLAUDE.md, and detecting + (with user confirmation) extracting any pre-existing inlined block. Three-way pick on customised inlined blocks: replace-with-canonical / preserve-as-vendored / skip. Five steps; each ships with idempotency check + rollback.
+- **Migration `0009-vendor-claude-md-sections.md`** — promotes 1.6.0 → 1.8.0 (re-anchored in Phase 11; the runner matches on `from_version` only, so the 1.6 → 1.8 jump skipping 1.7 is supported) by vendoring the workflow block, adding a reference to CLAUDE.md, and detecting + (with user confirmation) extracting any pre-existing inlined block. Three-way pick on customised inlined blocks: replace-with-canonical / preserve-as-vendored / skip. Five steps; each ships with idempotency check + rollback.
 - **Hand-built test fixtures for migration 0009** — `migrations/test-fixtures/0009/` with five scenarios (fresh, inlined-pristine, inlined-customised, after-vendored, after-idempotent). 29 assertions cover every step's idempotency check across every scenario. Distinct from migration 0001's git-ref-extracted fixtures because 0009's "pre-existing inlined block" state isn't in claude-workflow's own history.
 
 ### Changed
@@ -91,66 +91,60 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 - **`setup/SKILL.md`** — post-setup summary now lists `.claude/claude-md/workflow.md` as a created file. Migration history table updated with 0002, 0004–0007, and 0009 entries (was stale at 0001). Notes the v1.8.0 vendor-mode pivot.
 - **`update/SKILL.md` Step 5** — adds a "divergence variant" of the per-step Apply prompt: when a vendored file's local copy byte-differs from the canonical scaffolder source, present a 3-way pick (Replace / Keep / Vendor-local). Default to Keep (diverging is usually intentional). Failure modes table extended with vendored-file divergence and inlined-block extraction-ambiguous outcomes.
 - **`migrations/README.md`** — added a Migration index table near the top showing the current chain and the v1.8.0 vendor-mode property of 0000.
-- **`skill/SKILL.md`** frontmatter version bumped 1.7.0 → 1.8.0.
+- **`skill/SKILL.md`** frontmatter version bumped 1.6.0 → 1.8.0 (re-anchored in Phase 11; the prior frontmatter `1.7.0 → 1.8.0` was retired alongside the [1.5.1]/[1.6.0]/[1.7.0] slots).
 - **`migrations/run-tests.sh`** — added `test_migration_0009()` stanza (29 assertions). Existing `test_migration_0001()` kept as-is; its 8 pre-existing FAILs (caused by `git merge-base` resolving to a post-0001-merge commit) are unrelated to this phase and tracked separately.
 
 ### Notes
 
 - **fx-signal-agent** drops from 372 lines to ~201 after applying migration 0009 (the inlined block extraction is the single largest reduction).
 - **cparx** drops from 646 lines to ~496 after migration 0009. Getting it ≤200L requires migration 0010 (GSD compiler reference-mode for auto-managed PROJECT/STACK/CONVENTIONS/ARCHITECTURE sections), queued as a separate phase. ADR 0021 records why 0010 is not bundled into this release.
-- Existing 1.7.0 projects pick up the fix via `/update-agenticapps-workflow`; the migration runtime walks them through the inlined-block extraction prompt with diff preview.
+- Existing 1.6.0 projects pick up the fix via `/update-agenticapps-workflow`; the migration runtime walks them through the inlined-block extraction prompt with diff preview.
 
-## [1.7.0] — Unreleased
+## [1.7.0] — Skipped (no migration)
 
-### Added
+This version slot is intentionally skipped by the migration chain. Migration
+0009 promotes `1.6.0 → 1.8.0` directly — the runner matches on
+`from_version` only, so `to_version` need not be `from_version + 0.1`. See
+`migrations/README.md` "Application order" note 3.
 
-- **GitNexus code-knowledge graph integration** — vendor + reference to abhigyanpatwari/GitNexus (npm package `gitnexus`). Multi-repo MCP server backed by `~/.gitnexus/registry.json`. 16 MCP tools (impact analysis, 360-degree symbol view, call-chain trace, etc.), 7 per-repo skills, PreToolUse and PostToolUse hooks for graph-enriched grep/read and post-commit stale detection. Auto-generates a `gitnexus:start/end` block into each indexed repo's CLAUDE.md/AGENTS.md.
-- **ADR 0020** — GitNexus code-graph integration. Documents why GitNexus over Graphify (multi-repo registry wins for our 50-repo polyrepo), the PolyForm Noncommercial 1.0 license trade-off (internal development use is fine, commercial embedding requires akonlabs.com license), and the relationship to migrations 0005–0008.
-- **Migration `0007-gitnexus-code-graph-integration.md`** — promotes 1.6.0 → 1.7.0 by installing gitnexus globally, running `gitnexus setup` for MCP wiring, indexing active family repos via `gitnexus analyze`. Pre-flight requires node ≥ 18. Per-family scoped via the helper script `~/Sourcecode/gitnexus-index-all.sh`.
-- **Helper script** `~/Sourcecode/gitnexus-index-all.sh` — iterates through `agenticapps/`, `factiv/`, `neuroflash/` and runs `gitnexus analyze` per repo. Supports `--family <name>`, `--all`, and a curated "active development" default. Skips `personal/`, `shared/`, `archive/`.
-
-### Changed
-
-- `skill/SKILL.md` frontmatter version bumped 1.6.0 → 1.7.0.
-
-### Notes
-
-- Three-layer knowledge architecture is now in place: wiki (decision/doc knowledge, migration 0006), GitNexus (code-structure knowledge, this migration), multi-AI plan review (workflow contract, migration 0005). Migration 0008 (dashboard coverage matrix) is queued as the visibility layer over all three.
+The previous draft of this entry described the GitNexus code-graph
+integration that was once planned to ship as migration 0007 at
+`1.6.0 → 1.7.0`. After Phase 10's scope reduction and Phase 11's chain
+rebase, GitNexus actually shipped via migration 0007 at `1.9.2 → 1.9.3`.
+See **[1.9.3]** for the content that landed.
 
 ## [1.6.0] — Unreleased
 
 ### Added
 
-- **LLM wiki compiler integration** — vendored `ussumant/llm-wiki-compiler` v2.1.0 plugin into `agenticapps/wiki-builder/`. Implements Andrej Karpathy's LLM Knowledge Base pattern: per-family `.wiki-compiler.json` declares source directories; `/wiki-compile` produces a topic-based Obsidian-compatible wiki at `<family>/.knowledge/wiki/`. 12 slash commands available after install: `wiki-init`, `wiki-compile`, `wiki-lint`, `wiki-query`, `wiki-search`, `wiki-visualize`, `wiki-capture`, `wiki-ingest`, `wiki-migrate`, `wiki-upgrade`, `wiki-global-init`, `fetch-bookmarks`. Plugin supports both Claude Code and Codex via dual `.claude-plugin/` and `.codex-plugin/` manifests.
-- **ADR 0019** — LLM wiki compiler integration. Documents why this plugin over alternatives (nvk/llm-wiki, rvk7895/llm-knowledge-bases, Pinecone Nexus, GraphRAG/LightRAG/HippoRAG), why per-family rather than per-repo, why vendor instead of npm-install, and why `.wiki-compiler.json` superseded the sources.yaml manifest design from migration 0005.
-- **Migration `0006-llm-wiki-builder-integration.md`** — promotes 1.5.1 → 1.6.0 by symlinking the plugin into `~/.claude/plugins/`, validating per-family configs exist, and bumping skill version. Idempotent. Pre-flight verifies the vendored plugin is present.
-- **Per-family `.wiki-compiler.json`** created for agenticapps, factiv, neuroflash. Source directories listed per family. `topic_hints` and `article_sections` customized per domain.
+- **Coverage Matrix Page** — agenticapps-dashboard ships a new `/coverage`
+  route, a cross-family knowledge-layer freshness dashboard. Workflow-repo
+  surface only; no consumer-project state changes. ADR 0023.
+- **Migration `0008-coverage-matrix-page.md`** — promotes `1.5.0 → 1.6.0`.
+  Re-anchored in Phase 11 from a previously-planned `1.7.0 → 1.8.0` slot;
+  the prior chain had a gap at `1.5 → 1.7` and a `0008/0009` collision at
+  `1.7 → 1.8`. Re-anchoring closed both without touching shipped
+  migrations 0010 / 0005 / 0006 / 0007.
 
-### Changed
+### Notes
 
-- `skill/SKILL.md` frontmatter version bumped 1.5.1 → 1.6.0.
-- Per-family CLAUDE.md (in `~/Sourcecode/<family>/`, not in claude-workflow) updated with `/wiki-*` slash command reference block.
-- `.knowledge/sources.yaml` files from migration 0005 renamed to `sources.yaml.legacy` — kept as design-intent reference, not read by the compiler. Active config is `.wiki-compiler.json` at family root.
+- The previous draft of this entry described the LLM wiki compiler
+  integration that was once planned to ship as migration 0006 at
+  `1.5.1 → 1.6.0`. After Phase 11's chain rebase, the wiki compiler
+  actually shipped via migration 0006 at `1.9.1 → 1.9.2`. See **[1.9.2]**
+  for the content that landed.
 
-## [1.5.1] — Unreleased
+## [1.5.1] — Skipped (no migration)
 
-### Added
+This version slot is intentionally skipped by the migration chain. After
+Phase 11's chain rebase, migration `0008` promotes `1.5.0 → 1.6.0`
+directly, so no migration claims `1.5.1` as its `to_version`.
 
-- **Hook 6 — Multi-AI Plan Review Gate** (`.claude/hooks/multi-ai-review-gate.sh`, PreToolUse: `Edit|Write`). Blocks code-touching edits during a phase if `*-PLAN.md` files exist but `*-REVIEWS.md` does not. Closes the drift pattern observed in cparx phases 04.9 → 05 where `/gsd-review` was silently skipped for 8 consecutive phases. Override surfaces: `GSD_SKIP_REVIEWS=1` env var (session-scoped, no on-disk trace) or `touch .planning/current-phase/multi-ai-review-skipped` (phase-scoped, committed sentinel for audit).
-- **ADR 0018** — Multi-AI plan review enforcement. Documents the failure mode (eight cparx phases without REVIEWS.md), the three coordinated remedies (hook + contract entry + conceptual layer update), and the override surface.
-- **Migration `0005-multi-ai-plan-review-enforcement.md`** — promotes projects from 1.5.0 to 1.5.1 by installing hook 6, wiring `.claude/settings.json`, bumping skill version. Idempotent. Pre-flight checks that `/gsd-review` is installed and that ≥2 reviewer CLIs are available on the host.
-
-### Changed
-
-- `docs/ENFORCEMENT-PLAN.md` — Phase planning gates table now includes a `/gsd-review` row with `{padded_phase}-REVIEWS.md` as required evidence.
-- `templates/config-hooks.json` — new `pre_execute_gates.multi_ai_plan_review` entry between per_plan and post_phase, citing ADR 0018.
-- `skill/SKILL.md` — 13 Red Flags → 14 Red Flags (new entry at position 8: "`/gsd-review` skipped — no `{phase}-REVIEWS.md` artifact"). Rationalization table gains a new row anticipating the "just one model is fine" excuse. Verification check (post-phase grep) extended to confirm REVIEWS.md presence in addition to REVIEW.md Stage 2.
-- `skill/SKILL.md` frontmatter version bumped 1.5.0 → 1.5.1.
-
-### Audit
-
-- cparx `.planning/phases/`: REVIEWS.md present in 6/16 phases; missing in 10/16 including the entire 05-handover. Backfill is optional and out of scope for this migration — the hook gates new edits, not old artifacts.
-- fx-signal-agent `.planning/phases/`: REVIEWS.md missing in 1/1 phase (01-tenant-model-in-code). Same backfill posture.
+The previous draft of this entry described the multi-AI plan review
+enforcement gate that was once planned to ship as migration 0005 at
+`1.5.0 → 1.5.1`. After the rebase, the gate actually shipped via
+migration 0005 at `1.9.0 → 1.9.1`. See **[1.9.1]** for the content that
+landed.
 
 ## [1.5.0] — Unreleased
 

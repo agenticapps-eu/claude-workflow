@@ -3,8 +3,8 @@ id: 0008
 slug: coverage-matrix-page
 title: Coverage Matrix Page — cross-family knowledge-layer freshness dashboard
 type: workflow-surface
-from_version: 1.7.0
-to_version: 1.8.0
+from_version: 1.5.0
+to_version: 1.6.0
 applies_to:
   - agenticapps-dashboard's new /coverage route (no skill file mutations required on consumer repos)
   - Migration tracks dashboard-side capability bump; consumer repos auto-discover the new workflow surface
@@ -19,7 +19,7 @@ optional_for:
 notes:
   - "Wiki refresh is clipboard-only in v1.0 — no headless `/wiki-compile` runner exists; the dashboard surfaces a 'Copy command' affordance instead. See ADR 0023."
   - "GitNexus registry verify: use `jq 'length' ~/.gitnexus/registry.json 2>/dev/null || echo 0` (top-level array). Migration 0007's verify snippet `jq '.repos | length'` was incorrect — the registry has no .repos property."
-  - "Workflow version bump is consumer-passive: existing repos with version: 1.7.0 will show as 'stale (behind: 1.7.0 → 1.8.0)' in the dashboard's coverage matrix until updated."
+  - "Workflow version bump is consumer-passive: existing repos at any version below head will show as 'stale (behind: <local> → <head>)' in the dashboard's coverage matrix until updated. The matrix reads the workflow scaffolder's current head (1.9.3 at the time of writing), not this migration's to_version specifically."
 ---
 
 # Migration 0008: Coverage Matrix Page
@@ -38,7 +38,7 @@ See ADR 0023 for full design rationale.
 
 1. agenticapps-dashboard ships a new `/coverage` route — cross-family knowledge-layer freshness dashboard
 2. New daemon endpoints: `GET /api/coverage`, `POST /api/coverage/refresh`
-3. Workflow head version bumps to 1.8.0 — no skill-file edits required in consumer repos
+3. Workflow head version bumps to 1.6.0 (consumer-passive — no skill-file edits required in consumer repos; the dashboard surface is workflow-repo-only)
 4. Sidebar nav gains 'Observability' section with single 'Coverage' entry
 
 ## Verify
@@ -48,9 +48,9 @@ See ADR 0023 for full design rationale.
 curl -sH "Authorization: Bearer $TOKEN" http://127.0.0.1:5193/api/coverage | jq '.schemaVersion'
 # expect: 1
 
-# 2. Workflow head matches this migration
+# 2. Workflow head is at least this migration's to_version
 curl -sH "Authorization: Bearer $TOKEN" http://127.0.0.1:5193/api/coverage | jq -r '.workflowHeadVersion'
-# expect: "1.8.0" (or later if newer migrations are present)
+# expect: "1.9.3" (current head; "1.6.0" or later if checked before subsequent migrations apply)
 
 # 3. GitNexus column reports installed status correctly
 [ -d ~/.gitnexus ] && jq 'length' ~/.gitnexus/registry.json || echo "0 (not installed)"
@@ -61,9 +61,10 @@ curl -sH "Authorization: Bearer $TOKEN" http://127.0.0.1:5193/api/coverage | jq 
 ## Rollback
 
 Removing this migration does not delete data — the dashboard's /coverage page simply
-becomes unavailable. The workflow head version reverts to 1.7.0 (from migration 0007).
-Consumer repos that had their skill updated to 1.8.0 will then show as "ahead" instead
-of "fresh" in any future coverage matrix.
+becomes unavailable. After re-anchor (Phase 11), 0008 is now `1.5.0 → 1.6.0`, so rolling
+it back returns the chain head to 1.5.0 (the to_version of migration 0002). Consumer
+repos that had their skill updated to a higher version are unaffected by removing the
+dashboard surface — this migration does not write skill state in consumer repos.
 
 ## Related
 
