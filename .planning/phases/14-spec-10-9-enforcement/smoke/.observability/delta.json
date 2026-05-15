@@ -1,8 +1,8 @@
 {
   "spec_version": "0.3.0",
-  "scanned_at": "2026-05-15T07:56:50Z",
+  "scanned_at": "2026-05-15T09:26:55Z",
   "since_commit": "9815081af93b6693f2842b6553effaf5f4a6799a",
-  "head_commit": "367d0f3a42542518c64e32495a6332dd32f524fb",
+  "head_commit": "321c6a54bec80180388a7729c1c087e7c16c18df",
   "files_walked": [],
   "counts": {
     "conformant": 0,

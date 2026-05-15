@@ -205,7 +205,7 @@ any module-root subdirectory — there's one report per project).
 Print a 5-line summary to the user:
 
 ```
-Scan complete. Spec: 0.2.1. Stacks: <list>.
+Scan complete. Spec: 0.3.0. Stacks: <list>.
 Conformant:    <N>
 High gaps:     <N>  (apply with `scan-apply --confidence high`)
 Medium:        <N>  (review)

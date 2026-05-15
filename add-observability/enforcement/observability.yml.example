@@ -104,8 +104,12 @@ jobs:
             exit 1
           fi
 
-      - name: Policy drift check (warn-only)
-        if: env.ENFORCEMENT_DISABLED != '1'
+      - name: Policy drift check (warn-only, PR-only)
+        # PR-only: this step reads /tmp/base-baseline.json which the
+        # "Read base baseline" step only populates on pull_request events.
+        # On push, the baseline is being regenerated this run — there's no
+        # drift to detect.
+        if: github.event_name == 'pull_request' && env.ENFORCEMENT_DISABLED != '1'
         run: |
           set -euo pipefail
           if [ ! -f lib/observability/policy.md ]; then

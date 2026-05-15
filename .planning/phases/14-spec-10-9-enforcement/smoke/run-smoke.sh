@@ -21,8 +21,8 @@ echo "  head_commit=$HEAD_COMMIT"
 
 echo ""
 echo "=== Phase 1.5 — compute file scope via git diff --name-only <ref>...HEAD (triple-dot) ==="
-FILES=$(git diff --name-only "${SINCE_COMMIT}...HEAD" || echo "")
-N_FILES=$(printf '%s\n' "$FILES" | grep -c . || echo 0)
+FILES=$(git diff --name-only "${SINCE_COMMIT}...HEAD")
+N_FILES=$(printf '%s\n' "$FILES" | grep -c . || true)
 echo "  files_walked count: $N_FILES"
 echo "  files (first 20):"
 printf '%s\n' "$FILES" | head -20 | sed 's/^/    /'

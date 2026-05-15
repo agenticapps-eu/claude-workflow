@@ -60,7 +60,7 @@ grep -q '^observability:' CLAUDE.md || {
 }
 
 # 2. policy.md exists at the metadata-declared (or default) path
-POLICY_PATH=$(awk '/^observability:/{flag=1} flag && /^\s*policy:/{print $2; exit}' CLAUDE.md | tr -d '"')
+POLICY_PATH=$(awk '/^observability:/{flag=1} flag && /^[[:space:]]*policy:/{print $2; exit}' CLAUDE.md | tr -d '"')
 POLICY_PATH=${POLICY_PATH:-lib/observability/policy.md}
 test -f "$POLICY_PATH" || {
   echo "ABORT: policy.md not found at $POLICY_PATH."
@@ -102,7 +102,7 @@ rev-parse HEAD` succeeding).
 **Apply:** the consuming agent (Claude Code session running
 `/update-agenticapps-workflow`) follows the scan procedure in
 `~/.claude/skills/agenticapps-workflow/add-observability/scan/SCAN.md`
-with `--update-baseline=true`, using the project root as the working
+with `--update-baseline`, using the project root as the working
 directory. Step 1 establishes the conformance baseline locally; later
 PRs validate against it via `claude /add-observability scan
 --since-commit main` (per `add-observability/enforcement/README.md`).
@@ -302,14 +302,14 @@ CI gate copy the example workflow manually per
   works on self-hosted runners but not on hosted GHA runners
   out-of-the-box. The workflow ships dormant on hosted runners and
   fires when the v1.11.0 Node scanner port lands. See
-  `add-observability/ci/README.md` "v1.10.0 status" for workarounds.
+  `add-observability/enforcement/README.md` "v1.10.0 status" for workarounds.
 
 ## References
 
 - Spec §10.9: `agenticapps-workflow-core/spec/10-observability.md` (sections
   10.9.1 / 10.9.2 / 10.9.3 / 10.9.4)
-- Reference workflow: `add-observability/ci/observability.yml`
-- Adoption guide: `add-observability/ci/README.md`
+- Reference workflow: `add-observability/enforcement/observability.yml.example` (opt-in)
+- Adoption guide: `add-observability/enforcement/README.md`
 - Phase plan: `.planning/phases/14-spec-10-9-enforcement/`
 - ADR-0013 (migration framework): `claude-workflow/docs/decisions/0013-migration-framework.md`
 - Prior observability migration: `0002-observability-spec-0.2.1.md` (1.4.0 → 1.5.0)

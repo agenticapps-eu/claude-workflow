@@ -1,12 +1,14 @@
-# Session Handoff — 2026-05-15 (Phase 14 shipped — spec §10.9 enforcement landed; scaffolder 1.10.0)
+# Session Handoff — 2026-05-15 (Phase 14 shipped — spec §10.9 local-first enforcement at scaffolder 1.10.0)
 
 ## Accomplished
 
-Phase 14 shipped the v1.10.0 enforcement layer per spec §10.9. Single
-phase, 13 atomic commits on branch
-`feat/observability-enforcement-v1.10.0`. Multi-AI plan review went
-BLOCK → REQUEST-CHANGES → APPROVE after a 21-item PLAN.md revision
-pass.
+Phase 14 shipped the v1.10.0 enforcement layer per spec §10.9, **local-first
+after post-review pivot to Option 4** (no CI dependency). Single phase,
+~15 commits on branch `feat/observability-enforcement-v1.10.0`, PR #25.
+Multi-AI plan review went BLOCK → REQUEST-CHANGES → APPROVE after a
+21-item PLAN.md revision; user picked Option 4 (local-only) post-approval.
+A subsequent CodeRabbit pass surfaced 10 genuine bugs + 2 false positives,
+all addressed in a follow-up commit.
 
 | Commit | Subject |
 |---|---|
@@ -21,16 +23,27 @@ pass.
 | `2f1b16b` | chore(version): bump add-observability 0.2.1→0.3.0, scaffolder 1.9.3→1.10.0 |
 | `367d0f3` | docs(changelog): record v1.10.0 — observability enforcement |
 | `6dee657` | docs(verification): phase 14 evidence ledger + delta-scan smoke test |
+| `321c6a5` | refactor: pivot v1.10.0 to local-first enforcement (option 4, no CI dependency) |
+| `<next>`  | fix: address coderabbit review (push-event policy drift, smoke error masking, stale paths, POSIX awk) |
 
 Workflow scaffolder progression: `1.9.3 → 1.10.0`. Skill
 `add-observability` v0.2.1 → v0.3.0 (`implements_spec: 0.3.0`).
 
 Test status of `migrations/run-tests.sh`:
-- **0011: 7/7 PASS** (new fixtures).
-- 118 total PASS, 9 FAIL (pre-existing; 8x `test_migration_0001`
+- **0011: 6/6 PASS** (post-pivot; fixture 07 dropped).
+- ~117 total PASS, 9 FAIL (pre-existing; 8x `test_migration_0001`
   `git merge-base` resolution + 1x `test_migration_0007` fixture
   `03-no-gitnexus` fnm-PATH leak). Both tracked in prior session-handoff
   "Next session" items #5/#6.
+
+**Spec conformance at v1.10.0**:
+- §10.9.1 (delta scan): MUST, fully implemented.
+- §10.9.2 (baseline file): MUST, fully implemented.
+- §10.9.3 (reference CI workflow): SHOULD, shipped as opt-in example at
+  `add-observability/enforcement/observability.yml.example` but NOT
+  installed by migration 0011. Closes when v1.11.0 ships the Node
+  scanner port.
+- §10.9.4 (pre-commit hook): MAY, deferred.
 
 ## Decisions
 

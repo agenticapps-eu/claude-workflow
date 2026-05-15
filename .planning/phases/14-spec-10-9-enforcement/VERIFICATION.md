@@ -68,7 +68,7 @@ Maps every must-have from PLAN.md to the load-bearing artefact + verification co
 | Step 3 appends `### Observability enforcement (local)` section to CLAUDE.md | Step 3 heredoc append | fixture 02 verify.sh `grep -q '^### Observability enforcement (local)'` → ok |
 | Step 4 SKILL.md version bump | Step 4 `sed` with idempotency check | fixture 02 `grep -q '^version: 1.10.0$'` → ok |
 | Migration does NOT install CI workflow | fixture 02 verify.sh `test -f .github/workflows/observability.yml` → expected absent | fixture 02 `FAIL: migration installed a CI workflow but v1.10.0 ships local-only` assertion confirms |
-| Chain entry added to `migrations/README.md` | README table | `grep -q '^| \`0011\`' migrations/README.md` → ok |
+| Chain entry added to `migrations/README.md` | README table | `grep -q '0011.*1\.9\.3.*1\.10\.0' migrations/README.md` → ok |
 | Preflight verify-path audit (Phase 13) | `bash migrations/run-tests.sh preflight` | 0011 audit FAIL for `add-observability skill verify` is EXPECTED on dev machines that don't have canonical `~/.claude/skills/agenticapps-workflow/` install — per Phase 13 disclaimer ("informational only; FAIL may mean missing local dep on fresh machines"). The verify path itself is canonical-correct per `migrations/README.md` "Where the workflow scaffolder lives". Other 0011 verifies (claude, jq) pass on this machine. |
 
 ## Regression evidence
@@ -76,9 +76,9 @@ Maps every must-have from PLAN.md to the load-bearing artefact + verification co
 | Risk | Mitigation | Evidence |
 |---|---|---|
 | 61 v0.2.1 contract tests regress | Phase 14 modified no template files | `git diff main -- add-observability/templates/` → **0 lines diff**; structurally impossible to regress |
-| Migration 0001-0010 tests regress | Phase 14 modified no prior migrations | `bash migrations/run-tests.sh` results: phase-14-attributable status = 7/7 green (0011 only); 9 pre-existing failures (8x 0001 git-merge-base, 1x 0007 03-no-gitnexus fnm PATH leak) are unchanged from `main` baseline per session-handoff "Next session" items #5-6 |
+| Migration 0001-0010 tests regress | Phase 14 modified no prior migrations | `bash migrations/run-tests.sh` results: phase-14-attributable status = 6/6 green (0011 only); 9 pre-existing failures (8x 0001 git-merge-base, 1x 0007 03-no-gitnexus fnm PATH leak) are unchanged from `main` baseline per session-handoff "Next session" items #5-6 |
 | Spec drift between implementation and §10.9 wording | Multi-AI review pre-execution | `.planning/phases/14-spec-10-9-enforcement/14-REVIEWS.md` documents the BLOCK → REQUEST-CHANGES → APPROVE trajectory; codex's BLOCK on Q1 forced spec-strict interpretation (empty-delta path, baseline schema strict) |
-| YAML typo in CI workflow | yaml.safe_load smoke test | `python3 -c 'import yaml; yaml.safe_load(open("add-observability/ci/observability.yml"))'` exits 0 |
+| YAML typo in CI workflow example | yaml.safe_load smoke test | `python3 -c 'import yaml; yaml.safe_load(open("add-observability/enforcement/observability.yml.example"))'` exits 0 |
 
 ## Reviewer-required revisions incorporated (REVIEWS.md → PLAN v2)
 
