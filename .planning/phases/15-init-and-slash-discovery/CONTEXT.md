@@ -105,15 +105,21 @@ Migration 0012 does NOT install INIT.md — INIT.md ships as part of the scaffol
 
 ## Coverage matrix (what init MUST orchestrate per §10.7 bullet 1+2)
 
+(Updated to match PLAN.md v2 T4's 9-phase INIT.md skeleton; supersedes v1's draft phase numbering.)
+
 | §10.7 obligation | INIT.md section | Source data |
 |---|---|---|
-| Scaffold wrapper module | "Phase 4 — Materialise wrapper" | meta.yaml `target.wrapper_path` + `templates/<stack>/lib-observability.{ts,go,…}` |
-| Wire middleware (where applicable) | "Phase 5 — Wire middleware" | meta.yaml `target.middleware_path` + `templates/<stack>/middleware.{ts,go}` |
-| Edit entry file | "Phase 6 — Rewrite entry handler" | meta.yaml `target.entry_file_candidates` + per-stack wrap shape (NEW — to be authored) |
-| Write policy.md | "Phase 7 — Write policy.md" | NEW default template (Trivial errors, Redacted attributes, Project event names) |
-| Write CLAUDE.md metadata block | "Phase 8 — Write observability metadata" | spec §10.8 schema |
-| Parameter substitution | cross-cutting | meta.yaml `parameters.<NAME>.{default,derive_from}` |
-| Consent | every Phase | each Phase produces a unified diff + per-file y/n confirmation; spec §10.7 bullet 4 |
+| Stack detection | "Phase 1 — Detect stacks" | reuses `scan/SCAN.md` Phase 1 detection rules |
+| Target resolution | "Phase 2 — Resolve targets" | meta.yaml + spec §10.7.1 module-root resolution |
+| Plan summary (informational; not a gate) | "Phase 3 — Show full plan" | aggregated outputs from Phases 1-2 |
+| **Scaffold wrapper module + middleware + policy.md** (consent gate 1 of 3) | "Phase 4 — Materialise wrapper + middleware + policy" | meta.yaml `target.{wrapper_path, middleware_path, policy_path}` + per-stack templates |
+| **Edit entry file** (consent gate 2 of 3) | "Phase 5 — Rewrite entry file" | meta.yaml `target.entry_file_candidates` + per-stack wrap shape (T5-T9) |
+| **Write CLAUDE.md metadata block** (consent gate 3 of 3) | "Phase 6 — Write `observability:` metadata to CLAUDE.md" | spec §10.8 schema; **scalar `policy:`** (v0.3.1 contract — see PLAN.md T11) |
+| Smoke verification | "Phase 7 — Smoke verification" | language-native syntax check per stack |
+| Summary + chain hint (D7) | "Phase 8 — Print summary + chain hint" | (stale-scan-report detection) |
+| Verification | "Phase 9 — Verification before exit" | structural assertions on materialised files |
+| Parameter substitution | cross-cutting (Phase 4) | meta.yaml `parameters.<NAME>.{default,derive_from}` |
+| Consent | gates at Phases 4, 5, 6 | hybrid consent per RESEARCH D2 (PLAN v2: gates are `scaffold` / `entry-file` / `CLAUDE.md` — replaces v1's draft `intent / scaffold / entry-file`); spec §10.7 bullet 4. Decline of gate 2 ⇒ skip gate 3 + print rollback hint. Decline of gate 3 ⇒ print warning that future `/update-agenticapps-workflow` will fail until block is added manually. |
 
 ## Verification budget
 
