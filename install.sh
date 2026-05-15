@@ -2,9 +2,10 @@
 # install.sh — make the AgenticApps Claude Workflow skills discoverable.
 #
 # Claude Code's skill loader scans ~/.claude/skills/<name>/SKILL.md (one level
-# deep). This repo nests skills in subdirectories (skill/, setup/, update/) for
-# logical grouping, so the loader doesn't find them by default. This script
-# symlinks each skill subdirectory out to its canonical discoverable path.
+# deep). This repo nests skills in subdirectories (skill/, setup/, update/,
+# add-observability/) for logical grouping, so the loader doesn't find them by
+# default. This script symlinks each skill subdirectory out to its canonical
+# discoverable path.
 #
 # Run this once after cloning the scaffolder, and again after every `git pull`
 # that adds new skill subdirectories. Idempotent — safe to re-run any time.
@@ -25,6 +26,7 @@ LINKS=(
   "skill agentic-apps-workflow"
   "setup setup-agenticapps-workflow"
   "update update-agenticapps-workflow"
+  "add-observability add-observability"
 )
 
 mkdir -p "$SKILLS_DIR"
@@ -93,5 +95,6 @@ echo "Slash commands now available in any Claude Code session:"
 echo "  /agentic-apps-workflow         the workflow itself (auto-triggers on code tasks)"
 echo "  /setup-agenticapps-workflow    bootstrap a fresh project"
 echo "  /update-agenticapps-workflow   apply pending migrations to an installed project"
+echo "  /add-observability             greenfield observability scaffold (init) + brownfield scan + apply"
 echo ""
-echo "Verify discovery with: ls -la $SKILLS_DIR | grep -E '(agentic|setup|update)-?(apps-)?workflow'"
+echo "Verify discovery with: ls -la $SKILLS_DIR | grep -E '(agentic|setup|update)-?(apps-)?workflow|add-observability'"
