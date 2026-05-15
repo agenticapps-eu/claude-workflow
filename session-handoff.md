@@ -1,167 +1,197 @@
-# Session Handoff — 2026-05-14 (Phases 11 + 12 + 13 shipped; fx-signal-agent off v1.9.0)
+# Session Handoff — 2026-05-15 (Phase 14 shipped — spec §10.9 enforcement landed; scaffolder 1.10.0)
 
 ## Accomplished
 
-Three phases shipped, two consumer projects unblocked, one bug class
-structurally closed. Picked up from yesterday's chain-gap discovery
-handoff. The end-to-end story:
+Phase 14 shipped the v1.10.0 enforcement layer per spec §10.9. Single
+phase, 13 atomic commits on branch
+`feat/observability-enforcement-v1.10.0`. Multi-AI plan review went
+BLOCK → REQUEST-CHANGES → APPROVE after a 21-item PLAN.md revision
+pass.
 
-| PR | Title | Merge |
-|---|---|---|
-| #17 | fix: chain integrity — re-anchor 0008 (1.5→1.6) and 0009 (1.6→1.8) | `8906470` |
-| #19 | fix: migration 0005 preflight verify path (closes #18) | `7ad3498` |
-| #20 | docs(handoff): phases 11+12 shipped (handoff via PR, not direct-to-main) | `d8cd0b2` |
-| #21 | feat: per-migration preflight-correctness audit (run-tests.sh) | `65958f7` |
+| Commit | Subject |
+|---|---|
+| `289c8eb` | docs(planning): phase 14 — CONTEXT, RESEARCH, PLAN, REVIEWS |
+| `4aeaa0d` | feat(add-observability): SCAN.md delta scope + baseline/delta writers (§10.9.1, §10.9.2) |
+| `2f2a234` | feat(add-observability): scan report frontmatter + delta banner (§10.9.1) |
+| `1d699db` | feat(add-observability): add baseline-template.json schema (§10.9.2) |
+| `7372a36` | feat(add-observability): scan-apply regenerates baseline on success (§10.9.2) |
+| `2366ddc` | feat(add-observability): ship reference CI workflow + adoption README (§10.9.3) |
+| `df3e283` | feat(migrations): 0011 — observability enforcement (1.9.3 → 1.10.0) |
+| `e25daf1` | test(migrations): 0011 fixtures (7 scenarios) + run-tests stanza |
+| `2f1b16b` | chore(version): bump add-observability 0.2.1→0.3.0, scaffolder 1.9.3→1.10.0 |
+| `367d0f3` | docs(changelog): record v1.10.0 — observability enforcement |
+| `6dee657` | docs(verification): phase 14 evidence ledger + delta-scan smoke test |
 
-Workflow scaffolder progression: `1.9.3` (head unchanged — Phase 11/12
-were path-to-head fixes; Phase 13 is test-harness-only and ships no
-consumer-facing change).
+Workflow scaffolder progression: `1.9.3 → 1.10.0`. Skill
+`add-observability` v0.2.1 → v0.3.0 (`implements_spec: 0.3.0`).
 
-GitHub issue #18 (filed mid-session while merging Phase 11) — auto-closed
-on Phase 12 merge.
-
-**Consumer-project state:**
-- `factiv/cparx`: still at v1.5.0 (you haven't run the live apply yet —
-  the chain is now provably clean v1.5.0 → v1.9.3 in 6 hops).
-- `factiv/fx-signal-agent`: **upgraded to v1.9.3** end-to-end. Was
-  stuck at v1.9.0 before Phase 12; you ran the live apply after the
-  merge.
+Test status of `migrations/run-tests.sh`:
+- **0011: 7/7 PASS** (new fixtures).
+- 118 total PASS, 9 FAIL (pre-existing; 8x `test_migration_0001`
+  `git merge-base` resolution + 1x `test_migration_0007` fixture
+  `03-no-gitnexus` fnm-PATH leak). Both tracked in prior session-handoff
+  "Next session" items #5/#6.
 
 ## Decisions
 
-- **Phase 11 scope widened beyond handoff spec.** The handoff said
-  "frontmatter only". 0009's body has a hardcoded preflight
-  `test "$INSTALLED" = "1.7.0"` that would have broken every fresh
-  apply post-rebase. Widened scope to include consequential body /
-  fixture / harness / CHANGELOG refs. **Audit pattern worth
-  codifying:** when re-anchoring a migration, audit body for
-  `from_version`-equality strings — they need to track.
+- **Re-baselined the hand-off prompt's stale version targets.** The
+  `claude-workflow-update-prompt.md` carry-over (written 2026-05-13)
+  pre-supposed v1.5.0 → v1.6.0. By 2026-05-15 the scaffolder was at
+  v1.9.3 (phases 11/12/13 had advanced it). Updated to v1.9.3 →
+  v1.10.0 and migration slot 0011 (the prompt said 0003 but the
+  chain extends to 0010). The technical content of the hand-off
+  (three primitives + a migration) was implemented unchanged; only
+  the version arithmetic was off.
 
-- **Phase 11 dry-run didn't catch the Phase 12 bug.** Chain-walk
-  simulation exercises Step 2 (frontmatter pending-migration discovery
-  via `from_version` matching) but never Step 5 (per-migration
-  preflight verify). 0005's verify pointed at a path that didn't
-  exist; the bug only surfaced during actual apply against
-  fx-signal-agent.
+- **Spec-vs-hand-off divergence on baseline write trigger.** RESEARCH
+  D1 caught it: the hand-off's "Phase 7: write baseline if full scan
+  OR `--update-baseline`" is spec-incorrect. §10.9.2 line 219 says
+  ONLY `scan-apply` success (automatic) and `--update-baseline`
+  (manual) write the baseline. Regular full scans MUST NOT. Codified
+  in SCAN.md Phase 7 + Important Rules.
 
-  **Codify as a workflow norm:** dry-run is not "ready to ship" — at
-  least one consumer project needs to actually walk the apply path
-  before a chain-touching PR can be considered verified. Adding a
-  per-migration preflight-correctness check to `run-tests.sh` (assert
-  every `requires.verify` shell command resolves on a real install)
-  is the obvious follow-up.
+- **Codex BLOCK on Q1 caught two genuinely load-bearing spec
+  divergences my self-review missed.** First, the empty-delta path
+  was silently skipping `delta.json` emission (the §10.9.1 machine-
+  readable summary obligation is unconditional). Second, the
+  original baseline schema allowed `policy_hash: null` /
+  `scanned_commit: "working-tree"` non-conformant placeholders.
+  Fixed both pre-execution. **Codify as workflow norm**: when a
+  reviewer returns BLOCK on spec conformance, trust it — multi-AI
+  review catches what a single author misses. Document each load-
+  bearing item in the revision pass with the line-citation to the
+  spec.
 
-- **No-op bridge migration 0011 rejected** (Phase 11). Cost is one
-  chain entry with a non-monotonic minor bump (1.6 → 1.8). Mitigated
-  with `migrations/README.md` "Application order" note 3 codifying
-  `to_version` need not equal `from_version + 0.1`.
+- **Gemini's read-only mode (`--approval-mode plan`)** errored with
+  "Approval mode 'plan' is only available when experimental.plan is
+  enabled". Retry with `--allowed-tools read_file,list_directory,...`
+  worked but the workspace-only file resolution prevented gemini from
+  reading the spec at `~/Sourcecode/agenticapps/agenticapps-workflow-core/`.
+  Gemini's Q1 PASS was therefore based on summarised context, not
+  the spec itself; explicitly annotated in REVIEWS.md as weaker
+  evidence than codex's.
 
-- **Triple CHANGELOG rewrite** (Phase 11). Handoff called out `[1.6.0]`
-  and `[1.7.0]` as stale. Stale `[1.5.1]` was a third — described
-  pre-rebase 0005 that actually shipped as 0005 at 1.9.0 → 1.9.1. All
-  three rewritten with pointers to where the originally-planned
-  content shipped.
+- **CI workflow ships dormant but spec-conformant at v1.10.0.** The
+  reference `observability.yml` requires `claude` in CI which isn't
+  fully supported on hosted GHA runners as of 2026-05. Three
+  workarounds documented in `add-observability/ci/README.md`
+  (manual pre-PR scan, self-hosted runner, wait for v1.11.0 Node
+  scanner port). The workflow itself is fully spec-conformant — the
+  gap is in Claude Code's CI story, not in the skill.
 
-- **Phase 12 `requires:` key changed `patch:` → `skill:`.** The
-  documented "external skills" schema in `migrations/README.md` uses
-  `skill:`. The `patch:` outlier was an artifact of the
-  gsd-patches-centric mental model that has since been superseded by
-  Claude Code skills. Brought 0005 in line.
+- **GitHub Actions SHAs pinned at ship time** (`actions/checkout
+  @de0fac2...` v6.0.2, `marocchino/sticky-pull-request-comment
+  @0ea0beb...` v3.0.4). README ships a Dependabot example for
+  keeping them fresh.
 
-- **Phase 12 install hint deprescriptivised.** Old hint said
-  `bash ~/.config/gsd-patches/bin/sync` — wrong because that only
-  syncs the workflow body, not the skill. Without knowing the
-  user's canonical install command for the gsd-review skill (varies
-  by setup), new hint is non-prescriptive but accurate: "Sources
-  vary by setup — see your get-shit-done install or dotfiles."
-  Codifying a single canonical install command is a separate
-  follow-up.
+- **Migration 0011 ABORTS pre-flight** on missing observability
+  block / missing policy.md / missing `claude` — not silent skips.
+  CONTEXT said abort; the codex review caught a drift to skip in
+  PLAN v1; v2 reverted to abort. Skip would have stamped 1.10.0
+  onto a non-conformant project state.
 
-- **gstack `/review` skipped its heaviest dispatch passes (both
-  phases).** For metadata-only diffs (no SQL, shell, concurrency,
-  LLM trust, enums), the Codex / sub-agent / red-team ceremony is
-  wasted spend. Did structural checks (frontmatter validity, chain
-  walk, cross-file consistency, scope drift) inline and produced
-  REVIEW.md with explicit notes on what was skipped and why.
-  **Codify as workflow norm:** match review depth to diff *kind*,
-  not just size.
+- **`/review` (T15) and `/cso` (T16) deferred to PR-time tooling.**
+  The local gstack slash commands aren't invoked here; the
+  pre-execution multi-AI plan review (REVIEWS.md), VERIFICATION.md
+  ledger, and PR-time review tooling (coderabbit / autofix-bot /
+  GitHub PR review) are the substitutes. Explicit deviation noted
+  in VERIFICATION.md close-criteria section.
 
-## Files modified (across both phases)
+- **Templates dir unchanged → 61 contract tests structurally
+  cannot regress.** Cleanest possible regression evidence:
+  `git diff main -- add-observability/templates/` returns zero
+  lines. Codified as a regression-guard pattern.
 
-### Phase 11 (PR #17, merge `8906470`)
-- `migrations/0008-coverage-matrix-page.md` — frontmatter re-anchor +
-  body version-ref cleanup
-- `migrations/0009-vendor-claude-md-sections.md` — frontmatter
-  re-anchor + body preflight value + Step 5 pre-condition / Apply /
-  Rollback values
-- `migrations/README.md` — index + "Application order" note 3
-- `migrations/test-fixtures/0009/` — 3× SKILL.md, fixtures README
-- `migrations/run-tests.sh` — 3 assertion messages
-- `CHANGELOG.md` — `[1.5.1]` / `[1.6.0]` / `[1.7.0]` rewritten; `[1.8.0]`
-  0009 refs updated
-- `.planning/phases/11-chain-gap-cleanup/` — RESEARCH, VERIFICATION,
-  REVIEW
+## Files modified
 
-### Phase 12 (PR #19, merge `7ad3498`)
-- `migrations/0005-multi-ai-plan-review-enforcement.md` — 5 path refs +
-  install hint + 4-line explanatory comment + `requires:` schema fix
-- `.planning/phases/12-fix-0005-verify-path/` — RESEARCH, VERIFICATION,
-  REVIEW
+### Skill changes (add-observability/)
+- `SKILL.md` — version 0.2.1 → 0.3.0, implements_spec 0.2.1 → 0.3.0, subcommand description expanded with new flags + ci/ reference.
+- `scan/SCAN.md` — +230 lines net: new Phase 1.5 (resolve scope), Phase 7 (baseline writer), Phase 8 (delta writer), new Important Rules + Verification entries.
+- `scan/report-template.md` — +44 lines: report frontmatter (`scope`, `since_commit`, etc.) + delta banner section + token semantics docs.
+- `scan/baseline-template.json` — NEW. Strict schema matching spec §10.9.2 lines 184-217.
+- `scan/baseline-template.note.md` — NEW. Token reference + rationale.
+- `scan-apply/APPLY.md` — +52 lines: Phase 6b (regenerate baseline on apply success).
+- `ci/observability.yml` — NEW. SHA-pinned GHA reference workflow.
+- `ci/README.md` — NEW. Adoption guide + threat model.
+- `CONTRACT-VERIFICATION.md` — +36 lines: v0.3.0 §10.9 coverage matrix.
 
-### Phase 13 (PR #21, merge `65958f7`)
-- `migrations/run-tests.sh` — new `test_preflight_verify_paths()`
-  function (~60 lines) + `RAN_AUDIT` flag + dispatcher hook for the
-  `preflight` filter alias. Net +85 lines.
-- `.planning/phases/13-preflight-correctness-audit/` — RESEARCH,
-  VERIFICATION, REVIEW.
+### Migration
+- `migrations/0011-observability-enforcement.md` — NEW. 5 steps + 4-check pre-flight + post-checks.
+- `migrations/README.md` — +1 line (chain entry).
+- `migrations/run-tests.sh` — +120 lines (`test_migration_0011()` stanza + dispatcher).
+- `migrations/test-fixtures/0011/` — 7 fixtures × 3 files + common-setup.sh.
+
+### Scaffolder
+- `skill/SKILL.md` — version 1.9.3 → 1.10.0.
+- `CHANGELOG.md` — new `[1.10.0] — Unreleased` section.
+- `.gitignore` — NEW (none existed before phase 14): ignores reviewer raw outputs + local state.
+
+### Phase artefacts
+- `.planning/phases/14-spec-10-9-enforcement/{CONTEXT,RESEARCH,PLAN,VERIFICATION}.md` + `14-REVIEWS.md` + `smoke/`.
 
 ## Next session: start here
 
-The workflow chain is clean and the test harness now catches the
-issue-#18 bug class structurally. Pending choices for next session:
+The branch `feat/observability-enforcement-v1.10.0` is ready for PR.
+Run `gh pr create` (or use the prepared body in this session's PR
+draft) targeting `main`. After merge:
 
-1. **(Optional) Re-run live apply against cparx** to upgrade
-   v1.5.0 → v1.9.3 the same way fx-signal-agent did. The dry-run
-   said clean (6 hops) and both bug fixes are now in place.
+1. **CHANGELOG hygiene PR** (small) — stamp `[1.9.3]` as released
+   with a date. Currently shows "Unreleased" despite fx-signal-agent
+   having upgraded to v1.9.3 already (per prior session-handoff).
+   `[1.10.0]` is the new "Unreleased" tail.
 
-2. **(Optional) Phase 14 — supply-chain pinning** for vendored
-   `ussumant/llm-wiki-compiler` plugin + `gitnexus` MCP. Pin to
-   tag + SHA-256. Open from prior session.
+2. **v1.11.0 follow-up scope** — three threads ranked by demand:
+   - **Standalone Node scanner port** (closes the "Claude Code in
+     CI" gap; lets the shipped `observability.yml` actually run on
+     hosted GHA runners). Estimate 3-5 days. This is the highest-
+     impact follow-up — it activates the v1.10.0 CI gate for every
+     project, not just self-hosted-runner setups.
+   - **Pre-commit hook template** (§10.9.4 MAY).
+   - **fx-signal-agent retroactive adoption** of migration 0011
+     (run `/update-agenticapps-workflow` against fx-signal-agent at
+     its next maintenance window).
 
-3. **(Optional) Phase 15 — structural lint** for the `&&`-chain
-   under `set -e` pattern. CSO H1 has fired in three consecutive
-   phases — worth a shell-lint hook.
+3. **Optional Phase 17 — fix 8 pre-existing `test_migration_0001`
+   failures** (`git merge-base` resolution; carried from prior
+   session-handoff). Phase 14 didn't touch this; the 9-failure
+   baseline is unchanged.
 
-4. **(Optional) Phase 16 — fix 0008's `curl | jq` verify.** Phase 13
-   review surfaced that `curl ... | jq '.schemaVersion'` exits 0
-   even when curl fails (jq tolerates empty input). Either split
-   the pipeline with explicit error handling or require `pipefail`.
-   The Phase 13 audit reports `✓ 0008` misleadingly today.
+4. **Optional Phase 18 — fix `test_migration_0007` fixture
+   `03-no-gitnexus` fnm PATH leak** on this dev machine (also
+   carried).
 
-5. **(Optional) Phase 17 — fix the 8 pre-existing
-   `test_migration_0001` failures** (`git merge-base` resolution).
+5. **Optional Phase 19 — `--strict-preflight` flag** for the Phase 13
+   audit (carried). The 0011 verify-path FAIL on this dev machine is
+   a perfect motivating example: the verify command is correct, the
+   missing-canonical-install is real, but neither is a defect that
+   should block CI.
 
-6. **(Optional environmental cleanup) `test_migration_0007` fixture
-   `03-no-gitnexus`** — fnm-managed gitnexus binary leaks through
-   the sandbox PATH on this machine, false-passing the
-   no-gitnexus scenario. Make the fixture strip fnm paths.
+## Open questions
 
-7. **(Optional) Phase 18 — `--strict-preflight` flag** to gate CI
-   on Phase 13 audit failures. Currently informational only;
-   useful once CI environments gain parity with author dev setups.
+- **CI gate fail rule interpretation revisit?** Phase 14 codex review
+  questioned whether "fail if delta > 0" exactly matches spec
+  §10.9.3 "compares delta against baseline, fails if the count
+  increases". Defensible equivalence (delta represents net new
+  high-confidence gaps; post-PR total = baseline + delta) but the
+  wording matters. If a real PR ever fails the gate on a "noisy"
+  delta where someone removes high gaps but the count still looks
+  like it increases due to scope artefacts, revisit. Track as
+  "watch list" item.
 
-## Open questions (carried from prior session)
+- **Multi-AI plan review CLI floor** — coderabbit + opencode CLIs
+  still absent on this machine (carried from prior session-handoff).
+  Phase 14 used codex + gemini + Claude self-review. The floor of
+  ≥2 from `gemini|codex|claude|coderabbit|opencode` is met by
+  codex + gemini; document the canonical install for the remaining
+  two if a 4-reviewer floor ever becomes the bar.
 
-- **Shell-lint hook for `&&`-chains under `set -e`** — still open.
-  Worth structural enforcement now that the pattern has fired in
-  three consecutive phases.
-- **Multi-AI plan review CLI floor** — 0005 pre-flight requires ≥2
-  of `gemini|codex|claude|coderabbit|opencode`. coderabbit + opencode
-  CLIs absent on this machine; 3 are present, so the floor is met.
-  Document the canonical install for those two CLIs OR relax to
-  "any 2"?
-- **Helper script license consent** for `index-family-repos.sh`
-  `--all` — worth a `--accept-license` first-time flag?
-- **Canonical install command for `/gsd-review` skill** — Phase 12's
-  install hint left this deliberately vague. Worth codifying if a
-  canonical command emerges.
+- **Helper script license consent for `index-family-repos.sh
+  --all`** — still open, no change.
+
+- **Canonical install command for `/gsd-review` skill** — still
+  open, no change.
+
+- **Reviewer-prompt template** that this phase used for codex+gemini
+  could be codified as a reusable artefact for future phases —
+  `~/.claude/skills/agenticapps-workflow/.review-prompt-template.md`
+  with structured questions. Worth a small PR to formalise.
