@@ -5,8 +5,7 @@ title: Spec §10.9 — delta scan, baseline file, CI workflow (v0.3.0 enforcemen
 from_version: 1.9.3
 to_version: 1.10.0
 applies_to:
-  - .github/workflows/observability.yml          # CI workflow (scaffolder-owned; overwrite-with-backup)
-  - .observability/baseline.json                  # initial baseline (created by Step 2)
+  - .observability/baseline.json                  # initial baseline (created by Step 1)
   - CLAUDE.md                                     # observability metadata bump (0.2.1→0.3.0) + enforcement sub-block + Skills line
   - .claude/skills/agentic-apps-workflow/SKILL.md # version bump 1.9.3→1.10.0
 requires:
@@ -21,26 +20,33 @@ requires:
     verify: "command -v jq >/dev/null"
 ---
 
-# Migration 0011 — Spec §10.9 observability enforcement
+# Migration 0011 — Spec §10.9 observability enforcement (local-first)
 
 Brings projects from workflow v1.9.3 to v1.10.0 by installing the
-**enforcement layer** for AgenticApps spec §10 (observability):
+**local enforcement layer** for AgenticApps spec §10 (observability):
 
-1. Copies the reference GitHub Actions workflow into
-   `.github/workflows/observability.yml` (scaffolder-owned; overwrites
-   pre-existing copies with a timestamped `.bak`).
-2. Authors the initial `.observability/baseline.json` by invoking
+1. Authors the initial `.observability/baseline.json` by invoking
    `claude /add-observability scan --update-baseline`.
-3. Bumps the project's `observability:` metadata block:
+2. Bumps the project's `observability:` metadata block:
    - `spec_version: 0.2.1` → `0.3.0`
-   - Adds the new `enforcement:` sub-block (§10.8 OPTIONAL — but
-     enforced here to declare the project's enforcement posture).
-4. Adds a one-line cross-reference to the project's per-PR enforcement
-   command in CLAUDE.md.
-5. Bumps the workflow scaffolder version to `1.10.0`.
+   - Adds the new `enforcement:` sub-block (§10.8 OPTIONAL — declares
+     the project's enforcement posture: baseline path + pre-commit
+     toggle. The `ci:` field is omitted in v1.10.0 — see Notes.).
+3. Adds a one-line cross-reference to the per-PR enforcement command
+   in CLAUDE.md so contributors see how to validate locally before
+   opening a PR.
+4. Bumps the workflow scaffolder version to `1.10.0`.
 
-ADR record: see `claude-workflow/.planning/phases/14-spec-10-9-enforcement/` for the
-design discussion and multi-AI plan review.
+**Not installed by this migration (v1.10.0)**: the CI workflow file at
+`.github/workflows/observability.yml`. The skill ships a reference
+GHA workflow at `add-observability/enforcement/observability.yml.example`
+as an opt-in for projects with self-hosted runners or v1.11.0+
+Node-scanner-port adopters. See `add-observability/enforcement/README.md`
+for the rationale (Claude Code's CI installation isn't first-class on
+hosted runners as of 2026-05).
+
+ADR record: see `claude-workflow/.planning/phases/14-spec-10-9-enforcement/`
+for the design discussion and multi-AI plan review.
 
 ## Pre-flight (hard aborts on failure)
 
@@ -80,50 +86,7 @@ migration can apply.
 
 ## Steps
 
-### Step 1 — Install reference CI workflow
-
-**Idempotency check:**
-```bash
-cmp -s ~/.claude/skills/agenticapps-workflow/add-observability/ci/observability.yml \
-        .github/workflows/observability.yml
-```
-(returns 0 if the workflow file matches the scaffolder copy bit-for-bit)
-
-**Pre-condition:**
-```bash
-mkdir -p .github/workflows   # always succeeds
-```
-
-**Apply:**
-```bash
-SCAFFOLDER_YML=~/.claude/skills/agenticapps-workflow/add-observability/ci/observability.yml
-
-if [ -f .github/workflows/observability.yml ] && \
-   ! cmp -s "$SCAFFOLDER_YML" .github/workflows/observability.yml; then
-  # Pre-existing different content — back it up before overwrite
-  TS=$(date -u +%Y%m%dT%H%M%SZ)
-  cp .github/workflows/observability.yml ".github/workflows/observability.yml.bak.${TS}"
-  echo "Backed up pre-existing workflow to .github/workflows/observability.yml.bak.${TS}"
-fi
-
-cp "$SCAFFOLDER_YML" .github/workflows/observability.yml
-```
-
-**Rationale**: the CI workflow file is **scaffolder-owned** per spec
-§10.9.3 (reference-workflow contract). Always overwriting preserves
-spec-conformance. User customisations are preserved in the `.bak`
-file for manual reconciliation; the README documents the
-"sibling-workflow-file" pattern for sustainable customisation.
-
-**Rollback:**
-```bash
-rm -f .github/workflows/observability.yml
-# Restore the most recent backup if one exists
-LATEST_BAK=$(ls -t .github/workflows/observability.yml.bak.* 2>/dev/null | head -1)
-[ -n "$LATEST_BAK" ] && mv "$LATEST_BAK" .github/workflows/observability.yml || true
-```
-
-### Step 2 — Author initial baseline via scan
+### Step 1 — Author initial baseline via scan
 
 **Idempotency check:**
 ```bash
@@ -140,7 +103,9 @@ rev-parse HEAD` succeeding).
 `/update-agenticapps-workflow`) follows the scan procedure in
 `~/.claude/skills/agenticapps-workflow/add-observability/scan/SCAN.md`
 with `--update-baseline=true`, using the project root as the working
-directory.
+directory. Step 1 establishes the conformance baseline locally; later
+PRs validate against it via `claude /add-observability scan
+--since-commit main` (per `add-observability/enforcement/README.md`).
 
 Concretely:
 
@@ -161,7 +126,7 @@ optionally rewrites `.scan-report.md`.
 rm -rf .observability/
 ```
 
-### Step 3 — Bump observability metadata in CLAUDE.md
+### Step 2 — Bump observability metadata in CLAUDE.md
 
 **Idempotency check:**
 ```bash
@@ -191,37 +156,65 @@ Content to insert:
 ```yaml
   enforcement:
     baseline: .observability/baseline.json
-    ci: .github/workflows/observability.yml
     pre_commit: optional
 ```
 
 Indentation is 2-space (matching spec §10.8 example lines 158-162).
+
+**Note on the missing `ci:` field**: v1.10.0 ships local-only
+enforcement (the reference CI workflow is opt-in, not installed by
+this migration). Per spec §10.8 the `enforcement:` sub-block is
+OPTIONAL and each declared field MUST be satisfied — by omitting
+`ci:` we declare that this project does NOT claim §10.9.3 CI gating.
+To opt in later: copy
+`~/.claude/skills/agenticapps-workflow/add-observability/enforcement/observability.yml.example`
+to `.github/workflows/observability.yml`, then add the line
+`    ci: .github/workflows/observability.yml` to the enforcement
+block. See `add-observability/enforcement/README.md`.
 
 **Rollback:**
 - Revert `spec_version: 0.3.0` → `spec_version: 0.2.1`.
 - Remove the `enforcement:` sub-block (anchor: the four lines starting
   with `  enforcement:`).
 
-### Step 4 — Document per-PR enforcement command in CLAUDE.md
+### Step 3 — Document per-PR enforcement command in CLAUDE.md
 
 **Idempotency check:**
 ```bash
-grep -q 'add-observability scan --since-commit main' CLAUDE.md
+grep -q '^### Observability enforcement (local)' CLAUDE.md && \
+  grep -q 'add-observability scan --since-commit main' CLAUDE.md
 ```
 
 **Pre-condition:** CLAUDE.md exists.
 
-**Apply:** append a one-line reference to the project's relevant
-section (Skills section if present, else under the observability
-metadata block):
+**Apply:** append the following block to the relevant section of
+CLAUDE.md (Skills section if present, else under the observability
+metadata block). v1.10.0 ships local-only enforcement, so this is
+THE load-bearing developer touchpoint — the snippet documents both
+the command and how to interpret its output.
 
+```markdown
+### Observability enforcement (local)
+
+Before opening a PR, run:
+
+```bash
+claude /add-observability scan --since-commit main
 ```
-Observability enforcement: `claude /add-observability scan --since-commit main` before opening a PR; CI gate enforces post-push.
+
+Check `.observability/delta.json` — if `counts.high_confidence_gaps > 0`,
+the PR introduces new high-confidence observability gaps. Fix with
+`claude /add-observability scan-apply --confidence high` (per-file
+consent) before pushing.
+
+See `add-observability/enforcement/README.md` for the full local-first
+workflow + the opt-in CI workflow example.
 ```
 
-**Rollback:** remove that line.
+**Rollback:** remove the appended block (anchored by its `###
+Observability enforcement (local)` header).
 
-### Step 5 — Bump workflow scaffolder version
+### Step 4 — Bump workflow scaffolder version
 
 **Idempotency check:**
 ```bash
@@ -250,31 +243,35 @@ rm .claude/skills/agentic-apps-workflow/SKILL.md.bak
 ## Post-checks
 
 ```bash
-# 1. CI workflow installed (matches scaffolder copy)
-cmp -s ~/.claude/skills/agenticapps-workflow/add-observability/ci/observability.yml \
-        .github/workflows/observability.yml
-
-# 2. Baseline exists with correct shape
+# 1. Baseline exists with correct shape
 jq -e '
   .spec_version == "0.3.0" and
   (.scanned_commit | test("^[a-f0-9]{40}$")) and
   (.policy_hash    | test("^sha256:[a-f0-9]{64}$"))
 ' .observability/baseline.json
 
-# 3. CLAUDE.md observability block bumped + enforcement sub-block present
+# 2. CLAUDE.md observability block bumped + enforcement sub-block present
 grep -q '^  spec_version: 0.3.0' CLAUDE.md
 grep -q '^  enforcement:' CLAUDE.md
+grep -q '^    baseline: .observability/baseline.json' CLAUDE.md
 
-# 4. Per-PR command reference present
+# 3. Per-PR enforcement section + command reference present
+grep -q '^### Observability enforcement (local)' CLAUDE.md
 grep -q 'add-observability scan --since-commit main' CLAUDE.md
 
-# 5. Workflow scaffolder version bumped
+# 4. Workflow scaffolder version bumped
 grep -q '^version: 1.10.0$' .claude/skills/agentic-apps-workflow/SKILL.md
 ```
 
-All 5 post-checks return 0 on a successful apply. Each is also the
+All 4 post-checks return 0 on a successful apply. Each is also the
 idempotency check for the matching step — re-applying the migration
 finds them all green and reports "skipped (already applied)".
+
+**Not checked by post-checks**: presence of the CI workflow at
+`.github/workflows/observability.yml`. The migration does NOT install
+it (v1.10.0 ships local-only enforcement); projects opting in to the
+CI gate copy the example workflow manually per
+`add-observability/enforcement/README.md`.
 
 ## Skip cases
 

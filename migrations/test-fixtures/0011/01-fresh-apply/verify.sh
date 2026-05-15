@@ -1,5 +1,5 @@
 #!/bin/sh
-# Verify pre-flight + Step 1-5 idempotency checks behave as expected
+# Verify pre-flight + Step 1-4 idempotency checks behave as expected
 # on the BEFORE state (fixture 01). Migration is not yet applied.
 set -eu
 
@@ -10,15 +10,13 @@ grep -qE '^version: 1\.(9\.3|10\.0)$' .claude/skills/agentic-apps-workflow/SKILL
 command -v claude >/dev/null || { echo "PRE-FLIGHT 4 (claude) should pass — stub missing?"; exit 1; }
 
 # Each step's idempotency check should return NON-ZERO (= "needs to apply"):
-# Step 1
-cmp -s "$HOME/.claude/skills/agenticapps-workflow/add-observability/ci/observability.yml" .github/workflows/observability.yml 2>/dev/null && { echo "STEP 1 idempotency wrong: reports already-applied on before state"; exit 1; }
-# Step 2
-{ test -f .observability/baseline.json && jq -e '.spec_version == "0.3.0"' .observability/baseline.json >/dev/null 2>&1; } && { echo "STEP 2 idempotency wrong"; exit 1; }
-# Step 3
-{ grep -q '^  enforcement:' CLAUDE.md && grep -q '^  spec_version: 0.3.0' CLAUDE.md; } && { echo "STEP 3 idempotency wrong"; exit 1; }
-# Step 4
-grep -q 'add-observability scan --since-commit main' CLAUDE.md && { echo "STEP 4 idempotency wrong"; exit 1; }
-# Step 5
-grep -q '^version: 1.10.0$' .claude/skills/agentic-apps-workflow/SKILL.md && { echo "STEP 5 idempotency wrong"; exit 1; }
+# Step 1 — baseline
+{ test -f .observability/baseline.json && jq -e '.spec_version == "0.3.0"' .observability/baseline.json >/dev/null 2>&1; } && { echo "STEP 1 idempotency wrong"; exit 1; }
+# Step 2 — enforcement sub-block + spec_version bump
+{ grep -q '^  enforcement:' CLAUDE.md && grep -q '^  spec_version: 0.3.0' CLAUDE.md; } && { echo "STEP 2 idempotency wrong"; exit 1; }
+# Step 3 — per-PR enforcement section
+{ grep -q '^### Observability enforcement (local)' CLAUDE.md && grep -q 'add-observability scan --since-commit main' CLAUDE.md; } && { echo "STEP 3 idempotency wrong"; exit 1; }
+# Step 4 — version bump
+grep -q '^version: 1.10.0$' .claude/skills/agentic-apps-workflow/SKILL.md && { echo "STEP 4 idempotency wrong"; exit 1; }
 
-echo "fixture 01 — before state correctly reports 'needs to apply' for all 5 steps"
+echo "fixture 01 — before state correctly reports 'needs to apply' for all 4 steps"

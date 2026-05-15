@@ -7,11 +7,7 @@ set -eu
 
 # Transform sandbox to the after-state by applying each step's effect:
 
-# Step 1: copy scaffolder workflow into place
-mkdir -p .github/workflows
-cp "$HOME/.claude/skills/agenticapps-workflow/add-observability/ci/observability.yml" .github/workflows/observability.yml
-
-# Step 2: synthesize a v0.3.0 baseline.json (canned shape)
+# Step 1: synthesize a v0.3.0 baseline.json (canned shape)
 mkdir -p .observability
 cat > .observability/baseline.json <<'EOF_BL'
 {
@@ -32,24 +28,41 @@ cat > .observability/baseline.json <<'EOF_BL'
 }
 EOF_BL
 
-# Step 3: bump observability metadata + add enforcement sub-block
-# Replace spec_version line and append enforcement: block right after policy: line
+# Step 2: bump observability metadata + add enforcement sub-block
+# Replace spec_version line and append enforcement: block right after policy: line.
+# v1.10.0 ships local-only enforcement so the enforcement: block omits the ci: field.
 awk '
   /^  spec_version: 0\.2\.1$/ { print "  spec_version: 0.3.0"; next }
   /^  policy:/ {
     print
     print "  enforcement:"
     print "    baseline: .observability/baseline.json"
-    print "    ci: .github/workflows/observability.yml"
     print "    pre_commit: optional"
     next
   }
   { print }
 ' CLAUDE.md > CLAUDE.md.new && mv CLAUDE.md.new CLAUDE.md
 
-# Step 4: append per-PR enforcement command line under Skills section
-printf '\nObservability enforcement: `claude /add-observability scan --since-commit main` before opening a PR; CI gate enforces post-push.\n' >> CLAUDE.md
+# Step 3: append per-PR enforcement section to CLAUDE.md
+cat >> CLAUDE.md <<'EOF_ENF'
 
-# Step 5: bump SKILL.md version
+### Observability enforcement (local)
+
+Before opening a PR, run:
+
+```bash
+claude /add-observability scan --since-commit main
+```
+
+Check `.observability/delta.json` — if `counts.high_confidence_gaps > 0`,
+the PR introduces new high-confidence observability gaps. Fix with
+`claude /add-observability scan-apply --confidence high` (per-file
+consent) before pushing.
+
+See `add-observability/enforcement/README.md` for the full local-first
+workflow + the opt-in CI workflow example.
+EOF_ENF
+
+# Step 4: bump SKILL.md version
 sed -i.bak 's/^version: 1.9.3$/version: 1.10.0/' .claude/skills/agentic-apps-workflow/SKILL.md
 rm -f .claude/skills/agentic-apps-workflow/SKILL.md.bak

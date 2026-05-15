@@ -24,8 +24,11 @@ description: |
   The scan subcommand is implemented as a prompt-based procedure (this
   skill drives Claude Code's Read/Grep/Write tools); init and scan-apply
   use the same pattern. Stack templates live alongside this skill in
-  ./templates/<stack-id>/. A reference CI workflow for §10.9.3
-  enforcement lives in ./ci/observability.yml.
+  ./templates/<stack-id>/. Local-first enforcement guidance lives in
+  ./enforcement/README.md; an opt-in §10.9.3 reference CI workflow is
+  shipped as ./enforcement/observability.yml.example (NOT installed by
+  migration 0011 in v1.10.0 — see enforcement/README.md for the
+  rationale).
 ---
 
 # add-observability — AgenticApps observability scaffolder + auditor

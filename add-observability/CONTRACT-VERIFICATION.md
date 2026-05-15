@@ -148,20 +148,29 @@ spec §10.9.1-3 (conformance enforcement, added v0.3.0).
 | §10.9.2 `module_roots` sorted (stack, path) | `scan/SCAN.md` Phase 7 step 2.MODULE_ROOTS | sort directive in procedure |
 | §10.9.2 baseline regen on scan-apply success | `scan-apply/APPLY.md` Phase 6b | structural review (Phase 6b runs iff applied_count > 0) |
 | §10.9.2 `--update-baseline` manual override | `scan/SCAN.md` Inputs + Phase 7 | `grep -q 'update-baseline'` |
-| §10.9.3 reference CI workflow shipped | `ci/observability.yml` (SHA-pinned actions) + `ci/README.md` | `python3 -c yaml.safe_load`; `grep -E '@[a-f0-9]{40}'` |
-| §10.9.3 (1) delta scan on every PR | `ci/observability.yml` step `if: pull_request` | inline in workflow |
-| §10.9.3 (2) compare delta against base baseline | `ci/observability.yml` `Compare delta vs baseline` step | `git show ${BASE_SHA}:.observability/baseline.json` |
-| §10.9.3 (3) fail PR if count increases | `ci/observability.yml` `if [ "$D" -gt 0 ]; then exit 1` | inline |
-| §10.9.3 (4) surface findings as PR comment | `ci/observability.yml` `marocchino/sticky-pull-request-comment@0ea0beb...` | SHA-pinned action |
-| §10.9.3 no silent opt-out | `ci/observability.yml` "Read base baseline" emits `::warning::enforcement disabled` if baseline missing/empty | `grep -q 'enforcement disabled'` |
-| §10.8 enforcement sub-block | migration 0011 Step 3 patches CLAUDE.md | fixture 02 verify.sh |
+| §10.9.3 reference CI workflow (SHOULD; v1.10.0 ships as opt-in example) | `enforcement/observability.yml.example` (SHA-pinned actions) + `enforcement/README.md` | `python3 -c yaml.safe_load`; `grep -E '@[a-f0-9]{40}'`. NOT installed by migration 0011 — see "v1.10.0 local-only" note below. |
+| §10.9.3 (1) delta scan on every PR | example workflow step `if: pull_request` | inline in workflow.yml.example |
+| §10.9.3 (2) compare delta against base baseline | example workflow `Compare delta vs baseline` step | `git show ${BASE_SHA}:.observability/baseline.json` |
+| §10.9.3 (3) fail PR if count increases | example workflow `if [ "$D" -gt 0 ]; then exit 1` | inline |
+| §10.9.3 (4) surface findings as PR comment | example workflow `marocchino/sticky-pull-request-comment@0ea0beb...` | SHA-pinned action |
+| §10.9.3 no silent opt-out | example workflow "Read base baseline" emits `::warning::enforcement disabled` if baseline missing/empty | `grep -q 'enforcement disabled'` |
+| §10.8 enforcement sub-block | migration 0011 Step 2 patches CLAUDE.md (baseline + pre_commit fields; ci field omitted in v1.10.0) | fixture 02 verify.sh |
 
 **Phase 14 multi-AI review verdict**: BLOCK (codex Q1) → REQUEST-CHANGES
 (gemini, Claude self) → APPROVE after 21-item PLAN.md v2 revision pass.
 See `.planning/phases/14-spec-10-9-enforcement/14-REVIEWS.md`.
 
-**Verdict (v0.3.0)**: skill fully implements §10.9.1-3. §10.9.4
-(pre-commit hook, MAY) deferred to v1.11.0 per non-goals. CI workflow
-ships SHA-pinned and threat-modelled but depends on `claude` in CI —
-documented limitation; v1.11.0 ships a standalone Node scanner port as
-the workaround.
+**Verdict (v0.3.0, local-first)**: skill fully implements §10.9.1 and
+§10.9.2 (the MUSTs). §10.9.3 (SHOULD ship a reference CI workflow) is
+satisfied at the "opt-in example" level — the workflow file is shipped
+(SHA-pinned and threat-modelled) but NOT installed by migration 0011.
+Projects adopt it manually when they have a Claude-Code-capable runner
+(self-hosted today, hosted after the v1.11.0 Node scanner port).
+§10.9.4 (pre-commit hook, MAY) deferred to v1.11.0 per non-goals.
+
+This local-first posture is a deliberate v1.10.0 choice driven by the
+"claude in CI" feasibility constraints (cost, latency, determinism,
+prompt-injection threat). The §10.9 MUSTs work locally exactly as
+specified; the CI gate is opt-in. v1.11.0 closes the gap with a
+deterministic Node CLI that the example workflow will invoke instead
+of `claude /add-observability scan`.

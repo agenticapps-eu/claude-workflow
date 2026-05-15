@@ -1083,21 +1083,22 @@ test_migration_0007() {
 # ─────────────────────────────────────────────────────────────────────────────
 # Migration 0011 — Spec §10.9 observability enforcement (1.9.3 → 1.10.0)
 # ─────────────────────────────────────────────────────────────────────────────
-# Migration 0011 is markdown-only (no install script). The fixture pattern
-# is state-comparison: each fixture's setup.sh produces a target sandbox
-# state (before-apply, after-apply, or a pre-flight-abort state), and the
-# verify.sh asserts the migration's idempotency markers + side-effect
-# presence/absence behave correctly for that state.
+# Migration 0011 is markdown-only (no install script). v1.10.0 ships
+# local-only enforcement — no CI workflow installed. The fixture pattern is
+# state-comparison: each fixture's setup.sh produces a target sandbox state
+# (before-apply, after-apply, or a pre-flight-abort state), and verify.sh
+# asserts the migration's idempotency markers + side-effect presence/absence
+# behave correctly for that state.
 #
-# 7 fixtures:
-#   01-fresh-apply              — before state; all 5 step idempotency
+# 6 fixtures:
+#   01-fresh-apply              — before state; all 4 step idempotency
 #                                 checks return non-zero (= "needs apply")
-#   02-idempotent-reapply       — after state; all 5 return zero (= "skip")
+#   02-idempotent-reapply       — after state; all 4 return zero (= "skip")
 #   03-no-observability-metadata — pre-flight 1 fails (no observability:)
 #   04-no-policy-md             — pre-flight 2 fails (policy.md missing)
-#   05-baseline-already-present — Step 2 idempotency catches; others need apply
+#   05-baseline-already-present — Step 1 idempotency catches; Steps 2/3/4
+#                                 still need apply
 #   06-no-claude-cli            — requires.tool.claude.verify fails
-#   07-existing-workflow-yml    — pre-existing workflow backed up + overwritten
 
 test_migration_0011() {
   echo ""
@@ -1111,17 +1112,15 @@ test_migration_0011() {
     return
   fi
 
-  # Sanity-check that the scaffolder ships the artefacts the migration
-  # copies from. If we ever rename the source paths, fail loudly.
-  local scaffolder_yml="$REPO_ROOT/add-observability/ci/observability.yml"
+  # Sanity-check that the scaffolder ships the scan/SCAN.md the migration
+  # references. The enforcement/observability.yml.example is NOT installed
+  # by this migration (local-only enforcement) so we don't need to check it.
   local scaffolder_scan="$REPO_ROOT/add-observability/scan/SCAN.md"
-  for src in "$scaffolder_yml" "$scaffolder_scan"; do
-    if [ ! -f "$src" ]; then
-      echo "  ${RED}✗${RESET} scaffolder source missing: $src — RED state"
-      FAIL=$((FAIL+1))
-      return
-    fi
-  done
+  if [ ! -f "$scaffolder_scan" ]; then
+    echo "  ${RED}✗${RESET} scaffolder source missing: $scaffolder_scan — RED state"
+    FAIL=$((FAIL+1))
+    return
+  fi
 
   run_0011_fixture() {
     local fixname="$1"
@@ -1131,17 +1130,10 @@ test_migration_0011() {
     mkdir -p "$fake_home"
 
     # The scaffolder-side files the migration references must live under
-    # $HOME/.claude/skills/agenticapps-workflow/ in the sandbox. Strategy:
-    #   1. Pre-create the scaffolder layout with REAL files from this branch
-    #      so fixture 07's content-comparison test sees the actual shipped
-    #      workflow YAML — not a stub.
-    #   2. Then run setup.sh which sources common-setup.sh. Common-setup
-    #      writes a SKILL.md stub (we need it to declare version: 0.3.0 for
-    #      the requires.verify check) but skips re-writing the scan/SCAN.md
-    #      and ci/observability.yml if those already exist with real content.
-    mkdir -p "$fake_home/.claude/skills/agenticapps-workflow/add-observability/ci"
+    # $HOME/.claude/skills/agenticapps-workflow/ in the sandbox. Pre-create
+    # with the REAL scan/SCAN.md from this branch so fixtures referring to
+    # the scan procedure see the actual shipped file.
     mkdir -p "$fake_home/.claude/skills/agenticapps-workflow/add-observability/scan"
-    cp "$scaffolder_yml"  "$fake_home/.claude/skills/agenticapps-workflow/add-observability/ci/observability.yml"
     cp "$scaffolder_scan" "$fake_home/.claude/skills/agenticapps-workflow/add-observability/scan/SCAN.md"
 
     if [ -x "$fixdir/setup.sh" ]; then
