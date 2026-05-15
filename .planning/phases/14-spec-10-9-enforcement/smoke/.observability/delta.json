@@ -1,0 +1,16 @@
+{
+  "spec_version": "0.3.0",
+  "scanned_at": "2026-05-15T07:56:50Z",
+  "since_commit": "9815081af93b6693f2842b6553effaf5f4a6799a",
+  "head_commit": "367d0f3a42542518c64e32495a6332dd32f524fb",
+  "files_walked": [],
+  "counts": {
+    "conformant": 0,
+    "high_confidence_gaps": 0,
+    "medium_confidence_findings": 0,
+    "low_confidence_findings": 0
+  },
+  "high_confidence_gaps_by_checklist": {
+    "C1": 0, "C2": 0, "C3": 0, "C4": 0
+  }
+}
