@@ -226,6 +226,142 @@ of writing this skeleton, the placeholders are:
   scan. Apply the appropriate middleware wrap shape at server boot.
   Call `observability.Init()` once in `main()`. (T9)
 
+<!-- per-stack detail subsections appended below by T5-T9 -->
+
+#### Phase 5 detail — `ts-cloudflare-worker`
+
+Worker projects export a default `{ fetch?, scheduled?, queue? }`
+object from one of `entry_file_candidates`:
+
+```yaml
+entry_file_candidates:
+  - src/index.ts
+  - src/worker.ts
+  - worker/index.ts
+  - src/main.ts
+```
+
+(per `templates/ts-cloudflare-worker/meta.yaml`). Init scans the first
+matching candidate and rewrites the `export default { ... }` object.
+
+**Wrappers** — imported from the wrapper materialised in Phase 4 at
+`<module-root>/src/lib/observability/index.ts`. Per
+`templates/ts-cloudflare-worker/middleware.ts:35,78`:
+
+| Handler | Wrap |
+|---------|------|
+| `fetch: handler` | `fetch: withObservability(handler)` |
+| `scheduled: handler` | `scheduled: withObservabilityScheduled(handler)` |
+
+The wrapping is applied to whichever handlers the default export
+actually defines — projects with only `fetch` get only the fetch
+wrap; projects with `{ fetch, scheduled }` get both wraps.
+
+**Queue handler — explicitly out of scope at v0.3.1.** The template's
+queue wrapper at `templates/ts-cloudflare-worker/middleware.ts:130-138`
+is commented out (future work). If init detects a `queue:` key in the
+default export, print:
+
+```
+Worker exports a `queue` handler. Wrapping queue handlers requires
+withObservabilityQueue, which is reserved for v0.4.0+. The fetch and
+scheduled handlers (if present) have been wrapped; queue handling is
+left untouched. See add-observability/templates/ts-cloudflare-worker/env-additions.md
+for manual instrumentation guidance.
+```
+
+Then continue wrapping the other handlers — do NOT abort.
+
+**Class-based exports — explicitly out of scope at v0.3.1.** If the
+entry file contains `export default class extends WorkerEntrypoint`
+or any class-export shape, print:
+
+```
+Worker uses a class-based default export (e.g. `extends
+WorkerEntrypoint`). Class-based instrumentation requires a different
+wrap shape (decorator-style) reserved for v0.4.0+. Aborting Phase 5
+for this stack. The wrapper module from Phase 4 remains; you can
+wire it manually per env-additions.md. CLAUDE.md observability block
+write (Phase 6) is skipped to avoid false-conformance — see
+"Important rules".
+```
+
+Then skip Phase 6 for this stack and treat the stack as a gate-2
+decline (Phase 5 decline path).
+
+**Rewrite shape — examples**
+
+Before:
+```typescript
+import { handler } from "./handler";
+
+export default {
+  fetch: handler,
+} satisfies ExportedHandler<Env>;
+```
+
+After:
+```typescript
+// agenticapps:observability:start
+import { withObservability } from "./lib/observability";
+// agenticapps:observability:end
+import { handler } from "./handler";
+
+// agenticapps:observability:start
+export default {
+  fetch: withObservability(handler),
+} satisfies ExportedHandler<Env>;
+// agenticapps:observability:end
+```
+
+Before (multi-handler):
+```typescript
+export default {
+  fetch: async (request, env, ctx) => new Response("ok"),
+  scheduled: async (event, env, ctx) => { /* cron */ },
+} satisfies ExportedHandler<Env>;
+```
+
+After:
+```typescript
+// agenticapps:observability:start
+import { withObservability, withObservabilityScheduled } from "./lib/observability";
+// agenticapps:observability:end
+
+// agenticapps:observability:start
+export default {
+  fetch: withObservability(async (request, env, ctx) => new Response("ok")),
+  scheduled: withObservabilityScheduled(async (event, env, ctx) => { /* cron */ }),
+} satisfies ExportedHandler<Env>;
+// agenticapps:observability:end
+```
+
+**Anchor regions**: TWO separate anchored blocks per entry file —
+one around the inserted `import` line(s), one around the modified
+default-export object. The blocks must NOT straddle (i.e. each anchor
+opens and closes on its own region; rewrites between the regions stay
+out of the anchored zones).
+
+**Edge cases handled by diff-preview + per-file consent**:
+- Handler defined inline as an arrow function vs imported from another
+  module — both supported (the diff covers the literal characters in
+  the default-export object regardless of where the handler reference
+  comes from).
+- Mixed-handler defaults like `{ fetch: f, scheduled: s, email: e }` —
+  fetch and scheduled get wrapped; email is left untouched (email
+  handler wrapping is future scope).
+- TypeScript `satisfies ExportedHandler<Env>` clause — preserved
+  verbatim; the wrap happens on the object literal contents.
+
+**Fixture pair** (lives at
+`migrations/test-fixtures/init-ts-cloudflare-worker/{before,expected-after}/`):
+- `before/`: minimal Worker with `wrangler.toml`, `package.json`,
+  `src/index.ts` exporting `{ fetch, scheduled }`, empty `CLAUDE.md`.
+- `expected-after/`: same files plus wrapper at
+  `src/lib/observability/{index.ts, middleware.ts, policy.md}`,
+  rewritten `src/index.ts` with anchored imports + anchored default
+  export, and `CLAUDE.md` with the observability block.
+
 ### Phase 6 — Write `observability:` metadata to CLAUDE.md (consent gate 3 of 3 — CLAUDE.md)
 
 Compute the spec §10.8 metadata block to add to CLAUDE.md:
