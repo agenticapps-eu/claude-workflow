@@ -1,0 +1,31 @@
+<!-- agenticapps:observability:start -->
+# Observability policy — fixture-stdmux
+
+Materialised by `/add-observability init`. See spec §10.5.
+
+## Trivial errors
+
+Errors classified as "trivial" — not surfaced as alerts, but still
+emitted as low-severity events for trend analysis.
+
+- pgx.ErrNoRows
+- sql.ErrNoRows
+- context.Canceled
+- context.DeadlineExceeded
+
+## Redacted attributes
+
+Attribute key substrings that are redacted from emitted events before
+they leave the service.
+
+- password
+- token
+- api_key
+- card_number
+- cvv
+- ssn
+
+## Project event names
+
+<!-- add domain events here -->
+<!-- agenticapps:observability:end -->

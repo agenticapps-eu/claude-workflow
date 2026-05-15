@@ -362,6 +362,572 @@ out of the anchored zones).
   rewritten `src/index.ts` with anchored imports + anchored default
   export, and `CLAUDE.md` with the observability block.
 
+#### Phase 5 detail — `ts-cloudflare-pages`
+
+Pages Functions use a fundamentally different mount pattern from
+Workers: Cloudflare Pages auto-loads `functions/_middleware.ts` (and any
+per-folder `_middleware.ts`) and runs it before any matching
+`onRequest*` handler in the same subtree. The `_middleware.ts` file IS
+the middleware mount; route files do not need to be wrapped.
+
+**Phase 5 for `ts-cloudflare-pages` is a no-op for route files.** This
+is intentional and load-bearing — touching `onRequest*` exports would
+duplicate instrumentation that Pages's runtime already wires via the
+auto-loaded middleware.
+
+The materialisation work for this stack happens in Phase 4. Per
+`templates/ts-cloudflare-pages/meta.yaml`, Phase 4 writes three files:
+
+| Target | Source template |
+|--------|-----------------|
+| `functions/_lib/observability/index.ts` | wrapper (same shape as Worker's `lib-observability.ts` after token substitution; the `meta.yaml` declares `inherits_wrapper_from: ts-cloudflare-worker`) |
+| `functions/_middleware.ts` | `templates/ts-cloudflare-pages/_middleware.ts` copied verbatim, with `{{ENV_VAR_*}}` substitutions applied |
+| `functions/_lib/observability/policy.md` | per-stack policy.md (see T10) |
+
+**Phase 5 procedure for this stack**
+
+1. Scan for an existing `functions/_middleware.ts` at the project root.
+2. If **none exists**: the file materialised in Phase 4 IS the entry.
+   No additional rewrite. Phase 5 prints "Entry: `functions/_middleware.ts`
+   (mount-point; auto-loaded by Pages runtime — no per-route wrap needed)"
+   and moves on to Phase 6.
+3. If **one already exists**: do NOT overwrite. Print:
+
+   ```
+   Existing functions/_middleware.ts found.
+
+   This stack uses the mount-point pattern — Pages auto-loads
+   _middleware.ts before any matching onRequest* handler. Two
+   middlewares cannot coexist at the same path; manual merge is
+   required.
+
+   Suggested merge: copy the AgenticApps observability shape from
+   add-observability/templates/ts-cloudflare-pages/_middleware.ts
+   (which runs init(), parses traceparent, calls context.next(), and
+   echoes traceparent on the response) and chain your existing
+   middleware logic INSIDE the runWithContext(...) callback before
+   `await context.next()`. See Pages Functions docs on
+   `onRequest`-as-array if you need to express the chain as a list.
+
+   The Phase 4 wrapper (functions/_lib/observability/index.ts) and
+   policy.md are already in place; only the mount file needs your
+   merge.
+   ```
+
+   Then treat this stack as a **gate-2 decline** (Phase 5 decline path
+   above): print the rollback hint and skip Phase 6 for this stack. The
+   user either resolves the merge manually and re-runs init, or
+   accepts the partial scaffold.
+
+**Route files are NOT touched.** Functions under `functions/api/`,
+`functions/_health/`, etc. with `onRequest`, `onRequestGet`,
+`onRequestPost` exports remain untouched. The middleware intercepts
+all matching requests via Pages's runtime — no per-route wrap is
+needed or correct here.
+
+**Edge cases — explicitly out of scope at v0.3.1:**
+
+- **Per-folder `_middleware.ts`** (Pages allows nested middleware at
+  `functions/admin/_middleware.ts`, etc.). Init materialises only the
+  root-level `functions/_middleware.ts`; nested middleware must be
+  wired manually. The root middleware runs for every request under
+  `functions/`, so observability coverage is complete by default —
+  per-folder middleware is a refinement (e.g. for auth scoping)
+  reserved for v0.4.0+.
+- **Pages projects with NO `functions/` directory** — detection
+  (`meta.yaml detection.must: file_exists: functions/`) fails earlier
+  in Phase 1. Such projects are pure-static-site Pages deployments
+  with no server-side execution; observability does not apply.
+
+**Anchor regions** — Phase 4 wraps the materialised `_middleware.ts`
+content with `// agenticapps:observability:start` / `:end` at file top
+and bottom (since the entire file is generator-owned for this stack —
+unlike Worker, where only the import + default-export regions are
+anchored).
+
+**Fixture pair** (lives at
+`migrations/test-fixtures/init-ts-cloudflare-pages/{before,expected-after}/`):
+- `before/`: minimal Pages project with `wrangler.toml`,
+  `package.json`, a route file at `functions/api/[[path]].ts`
+  containing `onRequest` + `onRequestPost` exports, **no
+  pre-existing `functions/_middleware.ts`**, and a `CLAUDE.md` stub.
+- `expected-after/`: same files plus wrapper at
+  `functions/_lib/observability/{index.ts, policy.md}`, the
+  materialised `functions/_middleware.ts` mount (anchor-wrapped),
+  the route file `functions/api/[[path]].ts` **byte-identical to
+  `before/`** (the load-bearing assertion for this stack), and
+  `CLAUDE.md` with the observability block whose `policy:` points at
+  `functions/_lib/observability/policy.md`.
+
+#### Phase 5 detail — `ts-supabase-edge`
+
+Supabase Edge Functions run on Deno. Each function lives at
+`supabase/functions/<name>/index.ts` and starts with a `Deno.serve(...)`
+call. There is no per-project middleware hook — each function
+independently wraps its handler with `withObservability(handler)` from
+the shared module at `supabase/functions/_shared/observability/`.
+
+**Import source** — `withObservability` is exported from
+`middleware.ts`, NOT `index.ts`. Per
+`templates/ts-supabase-edge/middleware.ts:4-12`, the canonical import
+shape is:
+
+```typescript
+import { withObservability } from "../_shared/observability/middleware.ts"
+```
+
+`index.ts` is the wrapper module itself (re-exports the underlying
+trace context + capture primitives); `middleware.ts` is where the
+`withObservability` factory lives. Getting this wrong yields a runtime
+import error on first deploy.
+
+**Rewrite shape — handle BOTH `Deno.serve` signatures.** Deno's
+`Deno.serve` supports two argument orders for the modern (options-first)
+shape:
+
+| Entry shape | Wrapped shape |
+|-------------|---------------|
+| `Deno.serve(handler)` | `Deno.serve(withObservability(handler))` |
+| `Deno.serve({ port: 8000 }, handler)` | `Deno.serve({ port: 8000 }, withObservability(handler))` |
+| `Deno.serve({ port, hostname }, handler)` | wrap the function-position arg regardless of which options keys appear |
+
+**Detection rule** for the call's function-position argument:
+
+1. Locate the first `Deno.serve(` call expression in the entry file
+   (one of `entry_file_candidates` — for this stack the candidates are
+   each `supabase/functions/<name>/index.ts` matching the
+   `per_function_pattern.glob`).
+2. Inspect the first argument:
+   - If it parses as an **object literal** (starts with `{`), the
+     function-position argument is the **second** argument; wrap that.
+   - Otherwise, the function-position argument is the **first**
+     argument; wrap that.
+3. The wrap is always `withObservability(<original-arg>)` — i.e. wrap
+   the function reference (named, arrow, or inline).
+
+**Anchor regions** — TWO anchored blocks per entry file:
+
+1. One around the inserted `import { withObservability } from
+   "../_shared/observability/middleware.ts"` line at the top of the
+   file (above any existing imports is fine; init places it as the
+   last import).
+2. One around the modified `Deno.serve(...)` call expression.
+
+**Edge cases — explicitly out of scope at v0.3.1:**
+
+- **Legacy `Deno.serve(handler, options)`** (handler-first,
+  options-second — the deprecated Deno signature, still accepted by
+  the runtime). Detection treats a non-object first argument as
+  function-position, which means a project using the legacy shape
+  would have its options object wrapped incorrectly. Init falls back
+  to the manual-instrumentation message:
+
+  ```
+  Detected legacy Deno.serve(handler, options) signature in
+  <path>. The modern signature (options-first or handler-only) is
+  reserved for v0.4.0+ auto-rewrite. Phase 5 skipped for this
+  function; wrap manually per
+  add-observability/templates/ts-supabase-edge/env-additions.md.
+  ```
+
+  Then treat this function as a gate-2 decline (no Phase 6 write for
+  this stack — see the decline contract above).
+- **HTTP/2 transport options** that include a function-valued option
+  (e.g. `signal`) — only the top-level `Deno.serve(...)` is parsed;
+  nested option values are not inspected.
+
+**Per-function walk** — multi-function projects have many entry files
+(`supabase/functions/auth/index.ts`,
+`supabase/functions/payments/index.ts`, etc.). Phase 5 walks every
+`supabase/functions/*/index.ts` matching the `per_function_pattern`
+(skipping `_shared/**` and `_health/**` per `meta.yaml`), shows one
+unified diff per file, and prompts ONCE at the end ("Rewrite these N
+entry files? [y/n]"). All-or-nothing per the gate-2 contract; partial
+acceptance is not supported at v0.3.1.
+
+**Rewrite shape — example**
+
+Before:
+```typescript
+const handler = async (req: Request): Promise<Response> => {
+  return new Response("ok")
+}
+
+Deno.serve(handler)
+```
+
+After:
+```typescript
+// agenticapps:observability:start
+import { withObservability } from "../_shared/observability/middleware.ts"
+// agenticapps:observability:end
+
+const handler = async (req: Request): Promise<Response> => {
+  return new Response("ok")
+}
+
+// agenticapps:observability:start
+Deno.serve(withObservability(handler))
+// agenticapps:observability:end
+```
+
+**Fixture pair** (lives at
+`migrations/test-fixtures/init-ts-supabase-edge/{before,expected-after}/`):
+- `before/`: minimal Supabase project with `supabase/config.toml`,
+  `supabase/functions/hello/index.ts` containing
+  `Deno.serve(handler)`, and a `CLAUDE.md` stub.
+- `expected-after/`: same files plus wrapper at
+  `supabase/functions/_shared/observability/{index.ts, middleware.ts,
+  policy.md}`, rewritten `supabase/functions/hello/index.ts` with the
+  anchored import at the top and the anchored `Deno.serve(...)` wrap,
+  and `CLAUDE.md` with the observability block.
+
+#### Phase 5 detail — `ts-react-vite`
+
+React + Vite SPAs are browser-side: there is no HTTP middleware to
+wire. Instrumentation is installed at React-root mount time via two
+distinct insertions in the entry file (typically `src/main.tsx`):
+
+1. A call to `init()` BEFORE `createRoot(...).render(...)` runs.
+   `init()` installs the global `fetch` interceptor (per
+   `templates/ts-react-vite/lib-observability.ts:131`: `window.fetch =
+   instrumentedFetch(originalFetch)`). Without this call, §10.7
+   obligation (2) "wire trace-propagation middleware" is NOT satisfied
+   for browser stacks.
+2. A JSX wrap of the rendered app in `<ObservabilityErrorBoundary>`.
+   The boundary catches React render-time errors and forwards them to
+   `captureError`.
+
+**Canonical post-init shape** (per
+`templates/ts-react-vite/env-additions.md:55-73`):
+
+```tsx
+import { StrictMode } from "react"
+import { createRoot } from "react-dom/client"
+import { init, ObservabilityErrorBoundary } from "./lib/observability"
+import App from "./App"
+import "./index.css"
+
+init()
+
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <ObservabilityErrorBoundary>
+      <App />
+    </ObservabilityErrorBoundary>
+  </StrictMode>,
+)
+```
+
+**There is no `ObservabilityProvider`.** Earlier drafts of this skill
+referenced one; the shipped template at
+`templates/ts-react-vite/ErrorBoundary.tsx` exports
+`ObservabilityErrorBoundary` only. Init MUST NOT emit a `Provider`
+import or JSX wrap — that would produce an import error against the
+materialised wrapper.
+
+**Wrappers materialised by Phase 4** (per
+`templates/ts-react-vite/meta.yaml` `target.*`):
+
+- `src/lib/observability/index.ts` — re-exports `init`, `captureError`,
+  `startSpan`, `logEvent`, and the `ObservabilityErrorBoundary` React
+  component.
+- `src/lib/observability/ErrorBoundary.tsx` — the boundary
+  implementation (class component with `componentDidCatch`).
+- `src/lib/observability/policy.md`.
+
+**Phase 5 produces TWO anchored regions** in the entry file:
+
+1. **Anchored import** — around the added `import { init,
+   ObservabilityErrorBoundary } from "./lib/observability"` line. The
+   wrapper exports both symbols from the same module, so a single
+   import line suffices.
+2. **Anchored init+wrap region** — around the `init()` call AND the
+   `<ObservabilityErrorBoundary>` JSX wrap of the rendered tree.
+
+The `init()` call sits between the import block and the
+`createRoot(...).render(...)` call. The `<ObservabilityErrorBoundary>`
+wrap goes IMMEDIATELY around the existing top-level JSX child of
+`.render(...)`:
+
+- **`StrictMode` present** — both `init()` and the boundary go INSIDE
+  `StrictMode` (the boundary wraps `<App />`, not `<StrictMode>`),
+  per the canonical shape above. Rationale: `init()` is React-mount
+  ordering only and is unaffected by StrictMode's
+  double-invoke-in-dev; the boundary needs to be the closest ancestor
+  to the app tree to catch the most errors.
+- **`StrictMode` absent** — `init()` is still placed before
+  `createRoot`; the boundary wraps the bare `<App />`:
+  ```tsx
+  createRoot(document.getElementById("root")!).render(
+    <ObservabilityErrorBoundary>
+      <App />
+    </ObservabilityErrorBoundary>,
+  )
+  ```
+
+**Entry-shape detection.** The procedure tolerates the following
+naming variants for the React-DOM client API (parsed by AST or
+substring match in this order):
+
+| Order | Pattern | Receiver expression for `.render(...)` |
+|-------|---------|----------------------------------------|
+| 1 | `import { createRoot } from "react-dom/client"` ⇒ `createRoot(<target>)` | the `createRoot(<target>)` call |
+| 2 | `import ReactDOM from "react-dom/client"; ReactDOM.createRoot(...)` | the `ReactDOM.createRoot(<target>)` call |
+| 3 | `import * as ReactDOM from "react-dom/client"; ReactDOM.createRoot(...)` | same as #2 |
+
+The anchor wrap is placed around the **argument** to `.render(...)` —
+the receiver expression is irrelevant to the wrap shape.
+
+**Edge cases handled by the procedure:**
+
+- **Project already has an ErrorBoundary** — init inserts
+  `ObservabilityErrorBoundary` as the OUTER ancestor (closer to the
+  root), so it captures errors thrown by the user's inner boundary's
+  fallback UI. Existing boundary code is untouched.
+- **Project uses `hydrateRoot` instead of `createRoot`** (SSR-resumable
+  apps) — out of scope at v0.3.1. Init prints "Detected `hydrateRoot`
+  in entry file; SSR-resumable instrumentation is reserved for
+  v0.4.0+. Phase 5 skipped for this stack; wrap manually per
+  env-additions.md." and treats as a gate-2 decline.
+- **Entry uses `ReactDOM.render` (legacy React 17)** — out of scope.
+  Same fallback path as `hydrateRoot`.
+- **`<App />` is wrapped in additional providers (Router, Query,
+  etc.)** — the boundary is inserted INSIDE all of those, immediately
+  around the app component. Rationale: providers throwing during
+  setup are typically build-time errors caught by Vite; React render
+  errors come from the app tree. Anchoring the boundary close to the
+  app maximises useful coverage.
+
+**Rewrite shape — example**
+
+Before:
+```tsx
+import { StrictMode } from "react"
+import { createRoot } from "react-dom/client"
+import App from "./App"
+import "./index.css"
+
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+)
+```
+
+After:
+```tsx
+import { StrictMode } from "react"
+import { createRoot } from "react-dom/client"
+// agenticapps:observability:start
+import { init, ObservabilityErrorBoundary } from "./lib/observability"
+// agenticapps:observability:end
+import App from "./App"
+import "./index.css"
+
+// agenticapps:observability:start
+init()
+
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <ObservabilityErrorBoundary>
+      <App />
+    </ObservabilityErrorBoundary>
+  </StrictMode>,
+)
+// agenticapps:observability:end
+```
+
+**Fixture pair** (lives at
+`migrations/test-fixtures/init-ts-react-vite/{before,expected-after}/`):
+- `before/`: minimal Vite + React project with `package.json`,
+  `vite.config.ts`, `src/main.tsx` (StrictMode + `<App />`),
+  `src/App.tsx`, and a `CLAUDE.md` stub.
+- `expected-after/`: same files plus wrapper at
+  `src/lib/observability/{index.ts, ErrorBoundary.tsx, policy.md}`,
+  rewritten `src/main.tsx` with anchored import + anchored
+  `init()` + `<ObservabilityErrorBoundary>` JSX wrap (inside
+  StrictMode), and `CLAUDE.md` with the observability block.
+
+#### Phase 5 detail — `go-fly-http`
+
+Go HTTP services use the `http.Handler` middleware pattern. The shipped
+template at `templates/go-fly-http/middleware.go:38` exports
+`Middleware(next http.Handler) http.Handler` — compatible with
+net/http, chi, echo, gorilla/mux, and any router that accepts
+`http.Handler` middleware (per template lines 33-48).
+
+**Router detection — explicit rule.** Scan the project's Go source
+files (under the module root resolved from `go.mod`) for the following
+import substrings in lexical order; **first match wins**:
+
+| Order | Import substring | Detected pattern |
+|-------|------------------|------------------|
+| 1 | `"github.com/go-chi/chi/v5"` or `"github.com/go-chi/chi"` | **chi** |
+| 2 | `"github.com/gorilla/mux"` | **gorilla/mux** |
+| 3 | (none of the above) | **std net/http** (fallback) |
+
+**Echo, fiber, gin — explicitly out of scope at v0.3.1.** If init
+detects an import for any of `"github.com/labstack/echo"`,
+`"github.com/gofiber/fiber"`, or `"github.com/gin-gonic/gin"`, print:
+
+```
+Detected unsupported router (echo / fiber / gin) in <module-root>.
+v0.3.1 supports auto-instrumentation for net/http, chi, and
+gorilla/mux only. Other routers require manual wiring — see
+add-observability/templates/go-fly-http/env-additions.md.
+```
+
+Then skip Phase 5 for this stack and treat as a gate-2 decline.
+
+**Alias handling** — Go imports can be aliased
+(e.g. `chiv5 "github.com/go-chi/chi/v5"`). The detection scans the
+quoted import path, not the alias; the rewrite then uses the resolved
+alias for the router constructor call (e.g. `chiv5.NewRouter()`).
+
+**Phase 5 rewrite shape per detected pattern.** All three insert the
+SAME imports at the top of the entry file:
+
+```go
+// agenticapps:observability:start
+import "<MODULE_PATH>/internal/observability"
+// agenticapps:observability:end
+```
+
+`MODULE_PATH` is resolved per `templates/go-fly-http/meta.yaml`
+`parameters.MODULE_PATH.derive_from = "module declaration in go.mod"`.
+
+All three also insert `observability.Init()` at the top of `main()`
+(or `New()` / `NewServer()` for the `internal/server/server.go` entry
+shape — first function body in the file).
+
+The wrap site differs:
+
+- **chi**: locate the first `chi.NewRouter()` call (or its aliased
+  form). Insert `<router-var>.Use(observability.Middleware)`
+  immediately AFTER the variable assignment, anchored as a single-line
+  block:
+
+  ```go
+  r := chi.NewRouter()
+  // agenticapps:observability:start
+  r.Use(observability.Middleware)
+  // agenticapps:observability:end
+  ```
+
+- **gorilla/mux**: locate the first `mux.NewRouter()` call. Same shape
+  as chi — `r.Use(observability.Middleware)` immediately after, with
+  anchor comments wrapping the inserted `Use` call.
+
+- **std net/http**: locate the FIRST of
+  - `http.ListenAndServe(<addr>, <handler>)` — rewrite to
+    `http.ListenAndServe(<addr>, observability.Middleware(<handler>))`
+    with anchor comments wrapping the rewritten call.
+  - `http.Server{Handler: <handler>, ...}` (or
+    `&http.Server{Handler: ..., ...}` — same shape). Rewrite the
+    `Handler:` field value to
+    `observability.Middleware(<handler>)`. Anchor the rewritten field
+    line.
+
+  Both shapes leave every other arg / field untouched.
+
+**Anchor regions** — THREE anchored blocks per entry file: imports,
+`observability.Init()` in `main()`, and the middleware-wrap site
+(`Use` call for chi/gorilla; rewritten handler arg for std net/http).
+
+**Edge cases handled by the procedure:**
+
+- **Multiple routers in one entry file** (e.g. `cmd/api/main.go` boots
+  both an admin router and a public router) — Phase 5 wraps only the
+  FIRST router constructor call detected per the priority table. The
+  second router is left unwrapped; init prints "Detected additional
+  router constructor at line N; only the first is auto-wrapped at
+  v0.3.1. Wrap manually if needed." (Multi-router wrapping is reserved
+  for v0.4.0+.)
+- **Init already present** — if `observability.Init()` already appears
+  anywhere in the entry file, the procedure does not re-insert it
+  (idempotency for re-runs once strict-first-run is lifted at
+  v0.4.0+).
+- **Custom `http.Server` constructed inside a function other than
+  `main()`** (e.g. `func newServer() *http.Server`) — the
+  `http.Server{Handler: ...}` rewrite happens at the literal site
+  regardless of which function it's inside. `observability.Init()` is
+  still inserted at the top of `main()` so the SDK is initialised
+  before the server boots.
+
+**Rewrite shapes — examples**
+
+**chi (before):**
+```go
+package main
+
+import (
+  "github.com/go-chi/chi/v5"
+  "net/http"
+)
+
+func main() {
+  r := chi.NewRouter()
+  r.Get("/", func(w http.ResponseWriter, req *http.Request) {
+    w.Write([]byte("ok"))
+  })
+  http.ListenAndServe(":8080", r)
+}
+```
+
+**chi (after):**
+```go
+package main
+
+import (
+  "github.com/go-chi/chi/v5"
+  "net/http"
+  // agenticapps:observability:start
+  "example.com/fixture/internal/observability"
+  // agenticapps:observability:end
+)
+
+func main() {
+  // agenticapps:observability:start
+  observability.Init()
+  // agenticapps:observability:end
+
+  r := chi.NewRouter()
+  // agenticapps:observability:start
+  r.Use(observability.Middleware)
+  // agenticapps:observability:end
+  r.Get("/", func(w http.ResponseWriter, req *http.Request) {
+    w.Write([]byte("ok"))
+  })
+  http.ListenAndServe(":8080", r)
+}
+```
+
+**std net/http (after):** `http.ListenAndServe` arg gets the wrap:
+```go
+// agenticapps:observability:start
+http.ListenAndServe(":8080", observability.Middleware(mux))
+// agenticapps:observability:end
+```
+
+**Fixture set** — 3 fixture pairs (one per detected pattern), each at
+`migrations/test-fixtures/init-go-fly-http-<pattern>/{before,expected-after}/`
+with `<pattern>` ∈ {`stdmux`, `chi`, `gorilla`}:
+
+- `init-go-fly-http-stdmux/before/`: `go.mod`, `cmd/api/main.go` with
+  `http.NewServeMux()` + `http.ListenAndServe(":8080", mux)`,
+  `CLAUDE.md` stub.
+- `init-go-fly-http-chi/before/`: `go.mod` with chi dep, `cmd/api/main.go`
+  with `chi.NewRouter()` + `http.ListenAndServe(":8080", r)`.
+- `init-go-fly-http-gorilla/before/`: `go.mod` with gorilla/mux dep,
+  `cmd/api/main.go` with `mux.NewRouter()` + `http.ListenAndServe(":8080", r)`.
+
+Each `expected-after/` shows the wrapper materialised at
+`internal/observability/{observability.go, middleware.go, policy.md}`,
+the entry file rewritten per the pattern's wrap shape, and `CLAUDE.md`
+with the observability block whose `policy:` points at
+`internal/observability/policy.md`.
+
 ### Phase 6 — Write `observability:` metadata to CLAUDE.md (consent gate 3 of 3 — CLAUDE.md)
 
 Compute the spec §10.8 metadata block to add to CLAUDE.md:

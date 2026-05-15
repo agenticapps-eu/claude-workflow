@@ -1,0 +1,9 @@
+project_id = "fixture-edge"
+
+[api]
+enabled = true
+port = 54321
+
+[functions]
+[functions.hello]
+verify_jwt = false
