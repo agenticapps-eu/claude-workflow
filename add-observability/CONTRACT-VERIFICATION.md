@@ -129,3 +129,39 @@ Both templates satisfy §10.1–10.6 with idiomatic per-language realizations of
 | G4 — fail-safe order with framework recoverer | **fixed** (clarification) | Spec §10.5 note added. |
 | G5 — RequestID coexistence | already documented | No spec change needed; stack README templates explain. |
 | G6 — wrapper unit tests in templates | **fixed** | Both stacks ship `*_test.{ts,go}` contract tests. Skill spec directory layout updated. |
+
+---
+
+## v0.3.0 §10.9 enforcement (phase 14, scaffolder 1.10.0)
+
+Side-by-side check that the skill at v0.3.0 satisfies every MUST in
+spec §10.9.1-3 (conformance enforcement, added v0.3.0).
+
+| §10.9 obligation | Where it lands | Verified by |
+|---|---|---|
+| §10.9.1 `--since-commit` flag accepted | `scan/SCAN.md` Inputs + Phase 1.5 | phase 14 T1 grep checks; fixture 01 idempotency assertion |
+| §10.9.1 delta scope = `git diff --name-only <ref>...HEAD` (triple-dot) | `scan/SCAN.md` Phase 1.5 step 2.d + Important Rules | `grep -q 'triple-dot' scan/SCAN.md` |
+| §10.9.1 confidence/output rules unchanged | `scan/SCAN.md` Phase 3 (walk) preserves v0.2.x logic; only the input scope changes | structural review |
+| §10.9.1 machine-readable summary emitted unconditionally | `scan/SCAN.md` Phase 8 — runs even on empty `files_walked` | `grep -q "Empty deltas still emit"` |
+| §10.9.2 canonical path `.observability/baseline.json` | `scan/SCAN.md` Phase 7 atomic-write; `scan-apply/APPLY.md` Phase 6b | path hardcoded in both |
+| §10.9.2 schema byte-exact to spec example | `scan/baseline-template.json` + sibling `.note.md` | `migrations/run-tests.sh 0011` fixture 02 jq schema check (`scanned_commit ~ ^[a-f0-9]{40}$`, `policy_hash ~ ^sha256:[a-f0-9]{64}$`) |
+| §10.9.2 `module_roots` sorted (stack, path) | `scan/SCAN.md` Phase 7 step 2.MODULE_ROOTS | sort directive in procedure |
+| §10.9.2 baseline regen on scan-apply success | `scan-apply/APPLY.md` Phase 6b | structural review (Phase 6b runs iff applied_count > 0) |
+| §10.9.2 `--update-baseline` manual override | `scan/SCAN.md` Inputs + Phase 7 | `grep -q 'update-baseline'` |
+| §10.9.3 reference CI workflow shipped | `ci/observability.yml` (SHA-pinned actions) + `ci/README.md` | `python3 -c yaml.safe_load`; `grep -E '@[a-f0-9]{40}'` |
+| §10.9.3 (1) delta scan on every PR | `ci/observability.yml` step `if: pull_request` | inline in workflow |
+| §10.9.3 (2) compare delta against base baseline | `ci/observability.yml` `Compare delta vs baseline` step | `git show ${BASE_SHA}:.observability/baseline.json` |
+| §10.9.3 (3) fail PR if count increases | `ci/observability.yml` `if [ "$D" -gt 0 ]; then exit 1` | inline |
+| §10.9.3 (4) surface findings as PR comment | `ci/observability.yml` `marocchino/sticky-pull-request-comment@0ea0beb...` | SHA-pinned action |
+| §10.9.3 no silent opt-out | `ci/observability.yml` "Read base baseline" emits `::warning::enforcement disabled` if baseline missing/empty | `grep -q 'enforcement disabled'` |
+| §10.8 enforcement sub-block | migration 0011 Step 3 patches CLAUDE.md | fixture 02 verify.sh |
+
+**Phase 14 multi-AI review verdict**: BLOCK (codex Q1) → REQUEST-CHANGES
+(gemini, Claude self) → APPROVE after 21-item PLAN.md v2 revision pass.
+See `.planning/phases/14-spec-10-9-enforcement/14-REVIEWS.md`.
+
+**Verdict (v0.3.0)**: skill fully implements §10.9.1-3. §10.9.4
+(pre-commit hook, MAY) deferred to v1.11.0 per non-goals. CI workflow
+ships SHA-pinned and threat-modelled but depends on `claude` in CI —
+documented limitation; v1.11.0 ships a standalone Node scanner port as
+the workaround.
