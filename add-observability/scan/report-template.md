@@ -6,7 +6,16 @@ project root. Substitution tokens use double-curly: `{{...}}`.
 ---
 
 ```markdown
+---
+scope: {{SCOPE}}
+since_commit: {{SINCE_COMMIT}}
+head_commit: {{HEAD_COMMIT}}
+scanned_at: {{DATE_ISO}}
+---
+
 # Observability scan report — {{PROJECT_NAME}}
+
+{{DELTA_BANNER}}
 
 **Spec version checked**: {{SPEC_VERSION}}
 **Stacks detected**: {{STACK_LIST}}
@@ -54,6 +63,41 @@ project root. Substitution tokens use double-curly: `{{...}}`.
 ---
 
 ## Section content rules
+
+### Frontmatter fields (added v0.3.0 §10.9.1)
+
+- `{{SCOPE}}` — literal string `full` or `delta`.
+- `{{SINCE_COMMIT}}` — for `scope: delta`, the 40-char SHA `<ref>`
+  resolved to in SCAN.md Phase 1.5. For `scope: full`, omit this line
+  from the frontmatter (do NOT render with an empty value).
+- `{{HEAD_COMMIT}}` — for `scope: delta`, the 40-char SHA from
+  `git rev-parse HEAD`. For `scope: full`, omit.
+- `{{DATE_ISO}}` — RFC 3339 UTC timestamp (e.g. `2026-05-15T09:30:00Z`).
+
+When `scope: full`, the frontmatter contains only `scope` and
+`scanned_at`. When `scope: delta`, all four fields are present.
+
+### `{{DELTA_BANNER}}` (added v0.3.0)
+
+- If `scope: full`: render as empty (no banner at all).
+- If `scope: delta` AND `files_walked` is non-empty:
+  ```markdown
+  > **Delta scan** — {{FILE_COUNT}} file(s) changed since `{{SINCE_COMMIT_SHORT}}`.
+  > Findings below are the delta only. Run `scan --update-baseline` for the full baseline.
+  >
+  > Files walked:
+  > ```
+  > {{FILE_LIST_NEWLINE_JOINED}}
+  > ```
+  ```
+  where `SINCE_COMMIT_SHORT` is the 7-char abbreviation of
+  `SINCE_COMMIT` and `FILE_LIST_NEWLINE_JOINED` is the list of files
+  joined by `\n`.
+
+- If `scope: delta` AND `files_walked` is empty:
+  ```markdown
+  > **Delta scan** — 0 files changed since `{{SINCE_COMMIT_SHORT}}`. No findings to report.
+  ```
 
 ### `{{INIT_BANNER_IF_PRESENT}}`
 
