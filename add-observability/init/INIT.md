@@ -930,7 +930,14 @@ with the observability block whose `policy:` points at
 
 ### Phase 6 — Write `observability:` metadata to CLAUDE.md (consent gate 3 of 3 — CLAUDE.md)
 
-Compute the spec §10.8 metadata block to add to CLAUDE.md:
+Compute the spec §10.8 metadata block to add to CLAUDE.md. The
+authoritative schema reference is
+`add-observability/init/metadata-template.md` — that document is the
+source of truth for field shapes, types, defaults, and the validation
+contract. The procedure below describes the writer behaviour; the
+template document describes the data.
+
+**Canonical block shape** (v0.3.1 defaults):
 
 ```yaml
 observability:
@@ -943,6 +950,20 @@ observability:
     baseline: .observability/baseline.json
     pre_commit: optional
 ```
+
+**Optional fields not emitted by default at v0.3.1:**
+
+- `destinations: - analytics: <vendor>` — OPTIONAL per spec §10.8.
+  Init omits the `analytics:` line; users who route analytics-class
+  events through the wrapper add it manually.
+- `enforcement.ci: <ci-workflow-path>` — OPTIONAL per spec §10.8
+  line 160. Init omits this field because the current option-4 shape
+  ships no auto-installed CI workflow (per PLAN T11 + the
+  metadata-template.md reference). Users who wire a CI gate manually
+  MAY add `ci: .github/workflows/observability.yml` (or the
+  host-specific equivalent) post-init. The spec uses this field's
+  presence to flag projects that have a CI gate; absence does NOT
+  block migrations or scan.
 
 **Schema constraint (v0.3.1)**: the `policy:` field is a **scalar
 string path**, per spec §10.8 line 157 AND per migration 0011's
@@ -963,22 +984,90 @@ stacks' policy.md files are materialised but not referenced from
 CLAUDE.md. Per-stack policy unification awaits a spec amendment.
 ```
 
+#### Add vs update vs conflict — pre-existing state detection
+
+Before computing the diff, inspect the project's CLAUDE.md to decide
+which of three paths to take. The detection logic is encoded in
+`metadata-template.md` ("Add vs update vs conflict — detection paths"
+section); summary:
+
+| Pre-existing state | Path |
+|--------------------|------|
+| Neither anchors nor `^observability:` line present | **Add** — append the block at end of file, anchored |
+| Anchor pair present AND `observability:` block inside | **Update** — replace the anchored region's body; preserve surrounding hand-written content |
+| `^observability:` line present BUT no anchor pair around it | **Conflict** — print manual-merge hint; treat as gate-3 decline |
+
+Detection commands:
+
+```bash
+HAS_ANCHORS=$(grep -c 'agenticapps:observability:start' CLAUDE.md || true)
+HAS_OBS_KEY=$(grep -c '^observability:' CLAUDE.md || true)
+
+case "$HAS_ANCHORS:$HAS_OBS_KEY" in
+  0:0) MODE=add ;;
+  1:*) MODE=update ;;        # anchor pair present
+  0:*) MODE=conflict ;;       # unanchored observability: key
+esac
+```
+
+(At v0.3.1's strict-first-run, the update path is rare — wrapper
+strict-first-run typically intercepts earlier in Phase 2 — but the
+metadata block can be out of date even when wrappers are valid, e.g.
+after a spec_version bump. The update path is documented here so
+init has a defined behaviour when it does fire.)
+
+#### Anchor markers
+
 Wrap the block insertion with anchor markers
 `<!-- agenticapps:observability:start -->` /
 `<!-- agenticapps:observability:end -->` so future updates / removals
-can target the anchored region.
+can target the anchored region without disturbing surrounding
+hand-written CLAUDE.md content.
 
-**Consent prompt**:
+#### Consent prompt (add or update paths)
 
 ```
-About to add the observability: metadata block to CLAUDE.md.
+About to <add | update> the observability: metadata block in CLAUDE.md.
 
   <unified diff>
 
-Add this block to CLAUDE.md? [y/n]
+<Add | Update> this block? [y/n]
 ```
 
-**Decline path (gate 3 decline)**: print:
+#### Conflict path (unanchored existing block)
+
+Phase 6 does NOT auto-overwrite a hand-written `observability:` block
+that lacks anchor markers — that would silently destroy user-tuned
+values (e.g. a custom `policy:` path, an `analytics:` destination init
+wouldn't add). Print:
+
+```
+CLAUDE.md already declares an `observability:` block, but it is
+not wrapped in `<!-- agenticapps:observability:start -->` /
+`<!-- agenticapps:observability:end -->` anchor markers. Init will
+NOT overwrite hand-curated metadata blindly.
+
+To resolve:
+  1. Verify the existing block satisfies the §10.8 schema (see
+     add-observability/init/metadata-template.md for the canonical
+     shape).
+  2. Wrap the block with the anchor comments above and below.
+  3. Re-run `/add-observability init` — Phase 6 will then detect
+     the anchored block and switch to the update path.
+
+Phase 6 is being skipped. The wrapper and entry-file scaffolding
+from Phases 4-5 remain in place; only the metadata-block update is
+blocked.
+```
+
+Treat as a gate-3 decline (use the decline path below, with the
+conflict notice prepended). Wrapper + entry-file rewrites stay; only
+the metadata write is skipped.
+
+#### Decline path (gate 3 decline)
+
+Reached either by user typing `n` at the consent prompt or by the
+conflict path above. Print:
 
 ```
 CLAUDE.md observability block not added.
@@ -1000,6 +1089,29 @@ contract is incomplete.
 Exit cleanly with code 0. Do NOT auto-roll-back Phases 4-5 (the
 wrapper + entry rewrite are valid even without the metadata block;
 only the upgrade path is blocked).
+
+#### Post-write validation
+
+After accepting and writing the block, Phase 6 runs the canonical
+0011 POLICY_PATH parser invocation as a self-check before handing
+off to Phase 7. This is the same parser migration 0011 uses to read
+the project's policy path during its pre-flight, so passing here
+guarantees 0011 will accept the block at next upgrade:
+
+```bash
+# Self-check: extract policy: value via the 0011 parser; assert
+# it's a non-empty single-token scalar string.
+POLICY_PATH=$(awk '/^observability:/{flag=1} flag && /^[[:space:]]*policy:/{print $2; exit}' CLAUDE.md | tr -d '"')
+[ -n "$POLICY_PATH" ] || { echo "ABORT: post-write parser check failed — policy: did not extract"; exit 1; }
+echo "$POLICY_PATH" | grep -qE '^[^[:space:]]+$' || { echo "ABORT: post-write parser check failed — policy: is not a scalar single-token path"; exit 1; }
+```
+
+If either assertion fails, Phase 6 reports the failure and exits
+with code 1. This is a defence-in-depth check against the writer
+emitting a list-shape or quoted-with-whitespace `policy:` value
+that would silently break 0011's pre-flight. Phase 9 re-runs the
+same parser as part of the full structural-assertion gate before
+init's final exit.
 
 ### Phase 7 — Smoke verification
 
