@@ -1,12 +1,25 @@
 ---
 name: add-observability
-version: 0.3.0
+version: 0.3.1
 implements_spec: 0.3.0
 description: |
   Generate or audit an observability wrapper that satisfies AgenticApps
   core spec §10 for the project's tech stack. Three subcommands:
 
-    init        — greenfield scaffold (write wrapper, wire middleware, add env stubs)
+    init        — greenfield scaffold per the 9-phase procedure in
+                  ./init/INIT.md (shipped v0.3.1; closes #26). Detect
+                  stacks → resolve targets → show plan → materialise
+                  wrapper+middleware+policy (consent gate 1) → rewrite
+                  entry file (consent gate 2) → write `observability:`
+                  block in CLAUDE.md (consent gate 3) → smoke-verify →
+                  summary + chain hint → structural assertions before
+                  exit. Strict first-run at v0.3.1 (refuses if wrapper
+                  dir already exists). Per-stack rewrite shapes for
+                  ts-cloudflare-worker / ts-cloudflare-pages /
+                  ts-supabase-edge / ts-react-vite / go-fly-http live
+                  in INIT.md's Phase 5 detail subsections; canonical
+                  CLAUDE.md metadata schema lives at
+                  ./init/metadata-template.md.
     scan        — brownfield validate, produce .scan-report.md
                   Flags (v0.3.0 §10.9):
                     --since-commit <ref>  delta scan limited to files changed
@@ -46,12 +59,35 @@ to a sub-skill prompt:
 
 | Subcommand   | Sub-skill prompt              | Purpose                                            |
 |--------------|-------------------------------|----------------------------------------------------|
-| `init`       | `./init/INIT.md`              | Greenfield scaffold + wiring (task #2 / #3 work).  |
+| `init`       | `./init/INIT.md`              | Greenfield scaffold + wiring (9 phases, 3 consent gates; shipped v0.3.1, closes #26). |
 | `scan`       | `./scan/SCAN.md`              | Walk project, produce `.scan-report.md`.           |
 | `scan-apply` | `./scan-apply/APPLY.md`       | Apply high-confidence findings with consent.       |
 
 If the subcommand is omitted, default to `scan` (the safest no-op
 operation; produces a report without modifying anything).
+
+**Routing-table structural invariant**: every `Sub-skill prompt` path
+in the table above MUST exist on disk inside this skill directory.
+This is a contractual invariant — slash-discovery loads the skill via
+the symlink at `~/.claude/skills/add-observability` (per migration
+0002 Step 4 / migration 0012), and dispatch resolves the routed paths
+relative to the skill root. A missing routed path means the
+subcommand is unrunnable. The mechanical Q8 check enforced during
+phase planning (introduced phase 15; codified in `.planning/`'s
+gsd-review prompt template per the PLAN v2 lesson) is:
+
+```bash
+grep -oiE '\./[a-zA-Z/_-]+\.md' add-observability/SKILL.md | sort -u | while read rel; do
+  abs="add-observability/${rel#./}"
+  [ -f "$abs" ] && echo "  OK $rel" || echo "  MISSING $rel"
+done
+```
+
+All four routed paths (`./init/INIT.md`, `./scan/SCAN.md`,
+`./scan-apply/APPLY.md`, `./enforcement/README.md`) resolve as of
+v0.3.1. The `./init/INIT.md` path was historically MISSING at v0.3.0
+(issue #26); shipping that file structurally closes #26 and is the
+load-bearing piece of this version bump.
 
 ## Resolution rules
 
