@@ -48,6 +48,7 @@ project (currently the v1.2.0 default). Every other migration is incremental.
 | `0006` | 1.9.1 → 1.9.2 | LLM wiki builder integration (plugin symlink + per-family scaffolding) |
 | `0007` | 1.9.2 → 1.9.3 | GitNexus code-graph integration (MCP wire + helper script; user-initiated indexing) |
 | `0011` | 1.9.3 → 1.10.0 | Spec §10.9 observability enforcement (delta scan, baseline file, CI workflow) |
+| `0012` | 1.10.0 → 1.11.0 | Slash-command discovery wire-up (closes #22; INIT.md ships via skill, not migration) |
 
 (IDs are not chronological — see "Application order" below for why
 `0004` runs before `0002` in the chain. Application order is by
