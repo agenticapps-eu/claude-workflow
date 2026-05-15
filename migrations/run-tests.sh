@@ -1081,6 +1081,109 @@ test_migration_0007() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Migration 0011 — Spec §10.9 observability enforcement (1.9.3 → 1.10.0)
+# ─────────────────────────────────────────────────────────────────────────────
+# Migration 0011 is markdown-only (no install script). v1.10.0 ships
+# local-only enforcement — no CI workflow installed. The fixture pattern is
+# state-comparison: each fixture's setup.sh produces a target sandbox state
+# (before-apply, after-apply, or a pre-flight-abort state), and verify.sh
+# asserts the migration's idempotency markers + side-effect presence/absence
+# behave correctly for that state.
+#
+# 6 fixtures:
+#   01-fresh-apply              — before state; all 4 step idempotency
+#                                 checks return non-zero (= "needs apply")
+#   02-idempotent-reapply       — after state; all 4 return zero (= "skip")
+#   03-no-observability-metadata — pre-flight 1 fails (no observability:)
+#   04-no-policy-md             — pre-flight 2 fails (policy.md missing)
+#   05-baseline-already-present — Step 1 idempotency catches; Steps 2/3/4
+#                                 still need apply
+#   06-no-claude-cli            — requires.tool.claude.verify fails
+
+test_migration_0011() {
+  echo ""
+  echo "${YELLOW}━━━ Migration 0011 — Spec §10.9 observability enforcement ━━━${RESET}"
+
+  local fixtures="$REPO_ROOT/migrations/test-fixtures/0011"
+
+  if [ ! -d "$fixtures" ]; then
+    echo "  ${RED}SKIP${RESET}: fixtures directory missing"
+    SKIP=$((SKIP+1))
+    return
+  fi
+
+  # Sanity-check that the scaffolder ships the scan/SCAN.md the migration
+  # references. The enforcement/observability.yml.example is NOT installed
+  # by this migration (local-only enforcement) so we don't need to check it.
+  local scaffolder_scan="$REPO_ROOT/add-observability/scan/SCAN.md"
+  if [ ! -f "$scaffolder_scan" ]; then
+    echo "  ${RED}✗${RESET} scaffolder source missing: $scaffolder_scan — RED state"
+    FAIL=$((FAIL+1))
+    return
+  fi
+
+  run_0011_fixture() {
+    local fixname="$1"
+    local fixdir="$fixtures/$fixname"
+    local tmp; tmp="$(mktemp -d -t "migration-0011-${fixname}-XXXXXX")"
+    local fake_home="$tmp/home"
+    mkdir -p "$fake_home"
+
+    # The scaffolder-side files the migration references must live under
+    # $HOME/.claude/skills/agenticapps-workflow/ in the sandbox. Pre-create
+    # with the REAL scan/SCAN.md from this branch so fixtures referring to
+    # the scan procedure see the actual shipped file.
+    mkdir -p "$fake_home/.claude/skills/agenticapps-workflow/add-observability/scan"
+    cp "$scaffolder_scan" "$fake_home/.claude/skills/agenticapps-workflow/add-observability/scan/SCAN.md"
+
+    if [ -x "$fixdir/setup.sh" ]; then
+      (
+        cd "$tmp" && \
+        HOME="$fake_home" REPO_ROOT="$REPO_ROOT" FIXTURES_ROOT="$fixtures" \
+        REAL_SCAFFOLDER_FILES=1 \
+          "$fixdir/setup.sh" >/dev/null 2>&1
+      ) || {
+        echo "  ${RED}✗${RESET} $fixname — setup.sh failed"
+        FAIL=$((FAIL+1))
+        rm -rf "$tmp"
+        return
+      }
+    fi
+
+    # No install script to run for a markdown-only migration. Go straight
+    # to verify.sh.
+    local verify_out verify_exit
+    verify_out=$(
+      cd "$tmp" && \
+      HOME="$fake_home" REPO_ROOT="$REPO_ROOT" \
+      PATH="$fake_home/bin:$PATH" bash "$fixdir/verify.sh" 2>&1
+    )
+    verify_exit=$?
+
+    local expected_exit
+    expected_exit=$(tr -d '\n' < "$fixdir/expected-exit")
+    if [ "$verify_exit" != "$expected_exit" ]; then
+      echo "  ${RED}✗${RESET} $fixname — verify exit $verify_exit, expected $expected_exit"
+      echo "      verify output:"
+      printf '%s\n' "$verify_out" | sed 's/^/        /' | head -10
+      FAIL=$((FAIL+1))
+      rm -rf "$tmp"
+      return
+    fi
+
+    echo "  ${GREEN}✓${RESET} $fixname"
+    PASS=$((PASS+1))
+    rm -rf "$tmp"
+  }
+
+  for fix in "$fixtures"/[0-9]*-*/; do
+    local name
+    name="$(basename "${fix%/}")"
+    run_0011_fixture "$name"
+  done
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Preflight-correctness audit (Phase 13)
 # ─────────────────────────────────────────────────────────────────────────────
 # Walks every migration and executes each `requires[*].verify` shell command
@@ -1185,6 +1288,10 @@ fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "0010" ]; then
   test_migration_0010
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "0011" ]; then
+  test_migration_0011
 fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "preflight" ]; then

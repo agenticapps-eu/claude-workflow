@@ -1,0 +1,14 @@
+
+# Phase 14 — reviewer raw outputs (consolidated into 14-REVIEWS.md)
+.planning/phases/*/.codex-review.md
+.planning/phases/*/.gemini-review.md
+.planning/phases/*/.claude-review.md
+.planning/phases/*/.review-prompt.md
+
+# Local state
+.claude/scheduled_tasks.lock
+.planning/current-phase
+.planning/skill-observations/
+
+# Local working notes
+claude-workflow-update-prompt.md

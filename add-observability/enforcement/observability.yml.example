@@ -1,0 +1,148 @@
+# Reference CI workflow for AgenticApps spec §10.9.3 enforcement
+#
+# Shipped by claude-workflow add-observability skill v0.3.0 (implements_spec: 0.3.0).
+# Copy this file to .github/workflows/observability.yml in your project (migration
+# 0011 does this automatically). See ../ci/README.md for the adoption guide and
+# threat model.
+#
+# Trigger MUST be pull_request, NEVER pull_request_target.
+# pull_request_target would give forks access to secrets — see README threat model.
+#
+# Pinned action SHAs (update via Dependabot — sample config in README):
+#   actions/checkout                          @ de0fac2 # v6.0.2
+#   marocchino/sticky-pull-request-comment    @ 0ea0beb # v3.0.4
+
+name: Observability conformance
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Top-level permissions are read-only. The PR-comment job elevates to
+# pull-requests: write for its single step. Forks running PR triggers
+# inherit these constraints — no secret access, no write tokens.
+permissions:
+  contents: read
+
+concurrency:
+  group: observability-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write   # required only for the sticky-comment step
+    steps:
+      - name: Checkout (full history for git diff)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          fetch-depth: 0
+
+      # Lift GitHub context into env vars to avoid shell injection via
+      # ${{ }} interpolation inside run: blocks.
+      - name: Resolve refs
+        env:
+          BASE_SHA_INPUT: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA_INPUT: ${{ github.event.pull_request.head.sha }}
+          EVENT_NAME_INPUT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          echo "BASE_SHA=${BASE_SHA_INPUT}" >> "$GITHUB_ENV"
+          echo "HEAD_SHA=${HEAD_SHA_INPUT}" >> "$GITHUB_ENV"
+          echo "EVENT_NAME=${EVENT_NAME_INPUT}" >> "$GITHUB_ENV"
+
+      - name: Read base baseline (PR only)
+        if: github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          if git show "${BASE_SHA}:.observability/baseline.json" > /tmp/base-baseline.json 2>/dev/null; then
+            B=$(jq -r '.counts.high_confidence_gaps // empty' /tmp/base-baseline.json)
+            if [ -z "$B" ]; then
+              echo "::warning::baseline.json on base branch is malformed — enforcement disabled for this PR"
+              echo "ENFORCEMENT_DISABLED=1" >> "$GITHUB_ENV"
+            else
+              echo "BASELINE_HIGH=$B" >> "$GITHUB_ENV"
+              echo "Base-branch baseline: high-confidence gaps = $B"
+            fi
+          else
+            echo "::warning::No baseline.json on base branch — enforcement disabled for this PR"
+            echo "ENFORCEMENT_DISABLED=1" >> "$GITHUB_ENV"
+          fi
+
+      # NOTE: this step depends on Claude Code being installable in CI.
+      # See ../README.md "v1.10.0 limitation" for workarounds and the
+      # v1.11.0 Node scanner port roadmap.
+      - name: Delta scan (PR)
+        if: github.event_name == 'pull_request' && env.ENFORCEMENT_DISABLED != '1'
+        run: |
+          set -euo pipefail
+          claude /add-observability scan --since-commit "${BASE_SHA}"
+
+      - name: Full scan + baseline refresh (push to main)
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          claude /add-observability scan --update-baseline
+
+      - name: Compare delta vs baseline (PR only)
+        if: github.event_name == 'pull_request' && env.ENFORCEMENT_DISABLED != '1'
+        run: |
+          set -euo pipefail
+          D=$(jq -r '.counts.high_confidence_gaps' .observability/delta.json)
+          echo "Delta high-confidence gaps: $D"
+          echo "Baseline (base branch) high-confidence gaps: $BASELINE_HIGH"
+          # Spec §10.9.3 (3): "Fails the PR if the count increases."
+          # The count is the project total of high-confidence gaps. A delta gap > 0
+          # means at least one new high-confidence gap was introduced; the post-PR
+          # total would be BASELINE_HIGH + D > BASELINE_HIGH.
+          if [ "$D" -gt 0 ]; then
+            echo "::error::PR introduces $D new high-confidence observability gap(s). Project total would increase from $BASELINE_HIGH to $((BASELINE_HIGH + D))."
+            exit 1
+          fi
+
+      - name: Policy drift check (warn-only, PR-only)
+        # PR-only: this step reads /tmp/base-baseline.json which the
+        # "Read base baseline" step only populates on pull_request events.
+        # On push, the baseline is being regenerated this run — there's no
+        # drift to detect.
+        if: github.event_name == 'pull_request' && env.ENFORCEMENT_DISABLED != '1'
+        run: |
+          set -euo pipefail
+          if [ ! -f lib/observability/policy.md ]; then
+            exit 0
+          fi
+          EXPECTED=$(jq -r '.policy_hash' /tmp/base-baseline.json 2>/dev/null | sed 's/^sha256://')
+          if [ -z "$EXPECTED" ]; then
+            exit 0
+          fi
+          ACTUAL=$(shasum -a 256 lib/observability/policy.md | awk '{print $1}')
+          if [ "$EXPECTED" != "$ACTUAL" ]; then
+            echo "::warning::policy.md hash changed since baseline was last recorded. Run \`claude /add-observability scan --update-baseline\` and commit."
+          fi
+
+      - name: Comment on PR (on failure)
+        if: failure() && github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0  # v3.0.4
+        with:
+          header: observability-gate
+          message: |
+            ## Observability conformance check failed
+
+            This PR adds new high-confidence observability gaps to the project's
+            instrumentation. See the `.scan-report.md` artifact in this workflow
+            run for the file:line list and proposed fixes.
+
+            **To apply the fixes locally with consent:**
+            ```
+            claude /add-observability scan-apply --confidence high
+            ```
+
+            Then re-push to update this PR.
+
+            See `.observability/baseline.json` on the base branch for the
+            current project-wide gap count. The CI gate fails when this PR
+            would increase that count.

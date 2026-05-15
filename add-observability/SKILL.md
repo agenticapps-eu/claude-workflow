@@ -1,19 +1,34 @@
 ---
 name: add-observability
-version: 0.2.1
-implements_spec: 0.2.1
+version: 0.3.0
+implements_spec: 0.3.0
 description: |
   Generate or audit an observability wrapper that satisfies AgenticApps
   core spec §10 for the project's tech stack. Three subcommands:
 
     init        — greenfield scaffold (write wrapper, wire middleware, add env stubs)
     scan        — brownfield validate, produce .scan-report.md
-    scan-apply  — apply high-confidence scan findings with per-file consent
+                  Flags (v0.3.0 §10.9):
+                    --since-commit <ref>  delta scan limited to files changed
+                                          since <ref>; emits .observability/delta.json
+                                          unconditionally (machine-readable summary)
+                    --update-baseline     after a full scan, rewrite
+                                          .observability/baseline.json with strict
+                                          v0.3.0 schema (40-char SHA scanned_commit,
+                                          sha256:<hex> policy_hash). Mutually
+                                          exclusive with --since-commit.
+    scan-apply  — apply high-confidence scan findings with per-file consent.
+                  Regenerates .observability/baseline.json automatically on
+                  successful apply (v0.3.0 §10.9.2).
 
   The scan subcommand is implemented as a prompt-based procedure (this
   skill drives Claude Code's Read/Grep/Write tools); init and scan-apply
   use the same pattern. Stack templates live alongside this skill in
-  ./templates/<stack-id>/.
+  ./templates/<stack-id>/. Local-first enforcement guidance lives in
+  ./enforcement/README.md; an opt-in §10.9.3 reference CI workflow is
+  shipped as ./enforcement/observability.yml.example (NOT installed by
+  migration 0011 in v1.10.0 — see enforcement/README.md for the
+  rationale).
 ---
 
 # add-observability — AgenticApps observability scaffolder + auditor

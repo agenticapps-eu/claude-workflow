@@ -1,0 +1,44 @@
+=== Phase 1.5 — resolve --since-commit main ===
+  since_commit=9815081af93b6693f2842b6553effaf5f4a6799a
+  head_commit=367d0f3a42542518c64e32495a6332dd32f524fb
+
+=== Phase 1.5 — compute file scope via git diff --name-only <ref>...HEAD (triple-dot) ===
+  files_walked count: 41
+  files (first 20):
+    .gitignore
+    .planning/phases/14-spec-10-9-enforcement/14-REVIEWS.md
+    .planning/phases/14-spec-10-9-enforcement/CONTEXT.md
+    .planning/phases/14-spec-10-9-enforcement/PLAN.md
+    .planning/phases/14-spec-10-9-enforcement/RESEARCH.md
+    CHANGELOG.md
+    add-observability/CONTRACT-VERIFICATION.md
+    add-observability/SKILL.md
+    add-observability/ci/README.md
+    add-observability/ci/observability.yml
+    add-observability/scan-apply/APPLY.md
+    add-observability/scan/SCAN.md
+    add-observability/scan/baseline-template.json
+    add-observability/scan/baseline-template.note.md
+    add-observability/scan/report-template.md
+    migrations/0011-observability-enforcement.md
+    migrations/README.md
+    migrations/run-tests.sh
+    migrations/test-fixtures/0011/01-fresh-apply/expected-exit
+    migrations/test-fixtures/0011/01-fresh-apply/setup.sh
+
+=== Phase 1 — stack detection ===
+  template-declared path_root manifests: go.mod package.json package.json package.json supabase/config.toml
+  stacks detected in this repo: 0
+
+=== Phase 8 — delta.json (unconditional emit, even on empty walk) ===
+  written: .planning/phases/14-spec-10-9-enforcement/smoke/.observability/delta.json
+  jq -e schema check: OK
+
+=== Smoke summary ===
+  scope: delta
+  files in scope (from git diff): 41
+  stacks detected: 0
+  delta.json: emitted with valid schema; counts all zero (empty walk)
+  conclusion: the scan procedure correctly handles a no-stack project
+              under delta mode — emits an empty machine-readable
+              summary, never panics, never overwrites baseline.

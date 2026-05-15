@@ -1,0 +1,21 @@
+{
+  "spec_version": "0.3.0",
+  "scanned_at": "{{DATE_ISO}}",
+  "scanned_commit": "{{COMMIT_SHA}}",
+  "module_roots": [
+    { "stack": "{{STACK_ID}}", "path": "{{PATH}}" }
+  ],
+  "counts": {
+    "conformant": {{N_CONFORMANT}},
+    "high_confidence_gaps": {{N_HIGH}},
+    "medium_confidence_findings": {{N_MEDIUM}},
+    "low_confidence_findings": {{N_LOW}}
+  },
+  "high_confidence_gaps_by_checklist": {
+    "C1": {{N_C1}},
+    "C2": {{N_C2}},
+    "C3": {{N_C3}},
+    "C4": {{N_C4}}
+  },
+  "policy_hash": "sha256:{{POLICY_HASH_HEX}}"
+}

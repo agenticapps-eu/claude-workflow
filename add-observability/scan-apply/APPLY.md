@@ -150,6 +150,58 @@ Rewrite `.scan-report.md` reflecting the post-apply state:
 
 3. Write the rewritten report to `.scan-report.md`.
 
+### Phase 6b — Regenerate `.observability/baseline.json` (added v0.3.0 §10.9.2)
+
+Per spec §10.9.2 line 219: "Generators MUST update the baseline
+whenever `scan-apply` successfully modifies code". Phase 6b is that
+update.
+
+**Run only if** at least one finding from Phase 5 has
+`status: applied`. If every finding was `skipped`, `stale`, or
+`failed`, the on-disk source code is unchanged and the baseline is
+already accurate — skip Phase 6b.
+
+**Procedure**:
+
+1. Recompute the baseline content using the same procedure as
+   `SCAN.md` Phase 7. Counts reflect the **post-apply** state:
+   - Findings that were `applied` move from their original confidence
+     bucket to `conformant` (the proposed insertion is now in place).
+   - Findings that were `skipped`, `stale`, or `failed` retain their
+     original classification.
+   - Findings outside this run's severity filter (e.g. medium
+     findings on a `--severity high` run) retain their original
+     classification.
+
+2. Same schema invariants as SCAN.md Phase 7:
+   - `scanned_commit` is `git rev-parse HEAD` (40-char hex).
+   - `policy_hash` is `sha256:<64-hex of policy.md>`.
+   - `module_roots` sorted lexicographically by `(stack, path)`.
+
+3. **Pre-conditions**:
+   - `policy.md` MUST exist (since scan-apply requires a prior `scan`
+     which itself requires init, this is normally guaranteed). If
+     missing in some recovery scenario, log a warning and skip Phase
+     6b — do NOT fail the apply session, since the source-code
+     modifications have already happened and the baseline is just a
+     downstream summary.
+   - The project MUST have at least one git commit. If not, log the
+     same warning and skip.
+
+4. Atomic write:
+   ```bash
+   mkdir -p .observability
+   <fill template> > .observability/baseline.json.tmp
+   mv .observability/baseline.json.tmp .observability/baseline.json
+   ```
+
+5. Phase 8's user-facing summary mentions:
+   `Baseline updated: high-confidence gaps {{OLD_HIGH}} → {{NEW_HIGH}}`.
+
+This phase is the **only** automatic baseline-write path. The manual
+path is `scan --update-baseline`. Regular `scan` runs MUST NOT rewrite
+the baseline.
+
 ### Phase 7 — Optional verification
 
 For each language touched in this apply run, run the language's

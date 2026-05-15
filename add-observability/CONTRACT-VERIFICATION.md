@@ -129,3 +129,48 @@ Both templates satisfy §10.1–10.6 with idiomatic per-language realizations of
 | G4 — fail-safe order with framework recoverer | **fixed** (clarification) | Spec §10.5 note added. |
 | G5 — RequestID coexistence | already documented | No spec change needed; stack README templates explain. |
 | G6 — wrapper unit tests in templates | **fixed** | Both stacks ship `*_test.{ts,go}` contract tests. Skill spec directory layout updated. |
+
+---
+
+## v0.3.0 §10.9 enforcement (phase 14, scaffolder 1.10.0)
+
+Side-by-side check that the skill at v0.3.0 satisfies every MUST in
+spec §10.9.1-3 (conformance enforcement, added v0.3.0).
+
+| §10.9 obligation | Where it lands | Verified by |
+|---|---|---|
+| §10.9.1 `--since-commit` flag accepted | `scan/SCAN.md` Inputs + Phase 1.5 | phase 14 T1 grep checks; fixture 01 idempotency assertion |
+| §10.9.1 delta scope = `git diff --name-only <ref>...HEAD` (triple-dot) | `scan/SCAN.md` Phase 1.5 step 2.d + Important Rules | `grep -q 'triple-dot' scan/SCAN.md` |
+| §10.9.1 confidence/output rules unchanged | `scan/SCAN.md` Phase 3 (walk) preserves v0.2.x logic; only the input scope changes | structural review |
+| §10.9.1 machine-readable summary emitted unconditionally | `scan/SCAN.md` Phase 8 — runs even on empty `files_walked` | `grep -q "Empty deltas still emit"` |
+| §10.9.2 canonical path `.observability/baseline.json` | `scan/SCAN.md` Phase 7 atomic-write; `scan-apply/APPLY.md` Phase 6b | path hardcoded in both |
+| §10.9.2 schema byte-exact to spec example | `scan/baseline-template.json` + sibling `.note.md` | `migrations/run-tests.sh 0011` fixture 02 jq schema check (`scanned_commit ~ ^[a-f0-9]{40}$`, `policy_hash ~ ^sha256:[a-f0-9]{64}$`) |
+| §10.9.2 `module_roots` sorted (stack, path) | `scan/SCAN.md` Phase 7 step 2.MODULE_ROOTS | sort directive in procedure |
+| §10.9.2 baseline regen on scan-apply success | `scan-apply/APPLY.md` Phase 6b | structural review (Phase 6b runs iff applied_count > 0) |
+| §10.9.2 `--update-baseline` manual override | `scan/SCAN.md` Inputs + Phase 7 | `grep -q 'update-baseline'` |
+| §10.9.3 reference CI workflow (SHOULD; v1.10.0 ships as opt-in example) | `enforcement/observability.yml.example` (SHA-pinned actions) + `enforcement/README.md` | `python3 -c yaml.safe_load`; `grep -E '@[a-f0-9]{40}'`. NOT installed by migration 0011 — see "v1.10.0 local-only" note below. |
+| §10.9.3 (1) delta scan on every PR | example workflow step `if: pull_request` | inline in workflow.yml.example |
+| §10.9.3 (2) compare delta against base baseline | example workflow `Compare delta vs baseline` step | `git show ${BASE_SHA}:.observability/baseline.json` |
+| §10.9.3 (3) fail PR if count increases | example workflow `if [ "$D" -gt 0 ]; then exit 1` | inline |
+| §10.9.3 (4) surface findings as PR comment | example workflow `marocchino/sticky-pull-request-comment@0ea0beb...` | SHA-pinned action |
+| §10.9.3 no silent opt-out | example workflow "Read base baseline" emits `::warning::enforcement disabled` if baseline missing/empty | `grep -q 'enforcement disabled'` |
+| §10.8 enforcement sub-block | migration 0011 Step 2 patches CLAUDE.md (baseline + pre_commit fields; ci field omitted in v1.10.0) | fixture 02 verify.sh |
+
+**Phase 14 multi-AI review verdict**: BLOCK (codex Q1) → REQUEST-CHANGES
+(gemini, Claude self) → APPROVE after 21-item PLAN.md v2 revision pass.
+See `.planning/phases/14-spec-10-9-enforcement/14-REVIEWS.md`.
+
+**Verdict (v0.3.0, local-first)**: skill fully implements §10.9.1 and
+§10.9.2 (the MUSTs). §10.9.3 (SHOULD ship a reference CI workflow) is
+satisfied at the "opt-in example" level — the workflow file is shipped
+(SHA-pinned and threat-modelled) but NOT installed by migration 0011.
+Projects adopt it manually when they have a Claude-Code-capable runner
+(self-hosted today, hosted after the v1.11.0 Node scanner port).
+§10.9.4 (pre-commit hook, MAY) deferred to v1.11.0 per non-goals.
+
+This local-first posture is a deliberate v1.10.0 choice driven by the
+"claude in CI" feasibility constraints (cost, latency, determinism,
+prompt-injection threat). The §10.9 MUSTs work locally exactly as
+specified; the CI gate is opt-in. v1.11.0 closes the gap with a
+deterministic Node CLI that the example workflow will invoke instead
+of `claude /add-observability scan`.
