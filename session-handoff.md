@@ -1,8 +1,10 @@
-# Session Handoff — 2026-05-16 (Phase 17 in progress on branch)
+# Session Handoff — 2026-05-16 (Phase 17 PR open: #28)
 
 On branch `feat/test-0001-baseline-fix-phase17`, branched from `main` at
-`e5e9983`. Working tree has Phase 17 changes staged for commit (test-suite
-hygiene fix, no scaffolder semantics moved).
+`e5e9983`. Phase 17 changes are committed (5 atomic commits) and pushed to
+`origin/feat/test-0001-baseline-fix-phase17`; PR #28 is open against `main`
+awaiting review/merge. Working tree clean. Test-suite hygiene fix, no
+scaffolder semantics moved.
 
 ## Accomplished
 
@@ -58,28 +60,34 @@ hygiene fix, no scaffolder semantics moved).
 ## Verification
 
 - `bash migrations/run-tests.sh | tail -3` → **PASS=130 FAIL=1** (was 122/9).
-- `bash migrations/run-tests.sh | grep '^\s*✗'` → single line
+- `bash migrations/run-tests.sh | grep '^[[:space:]]*✗'` → single line
   `✗ 03-no-gitnexus — exit 0, expected 1` (Phase 18 carry-over only).
 - `bash .planning/phases/15-init-and-slash-discovery/smoke/run-smoke.sh` →
   Passed: 10 Failed: 0 with the tightened thresholds.
 
 ## Next session: start here
 
-Commits are not yet on the branch (the local edits are unstaged). Pick up by:
+PR #28 is open: <https://github.com/agenticapps-eu/claude-workflow/pull/28>.
+Branch is pushed; 5 atomic commits (`8f6b320 → 3a4c471`) plus one CodeRabbit
+fix-up commit. Pick up by:
 
-1. `git status` — confirm the 5 modified files + 3 new files listed above.
-2. `git add` + atomic commits per phase convention. Suggested split:
-   - Commit A: `migrations/run-tests.sh` fix (the load-bearing change).
-   - Commit B: Phase 15 smoke threshold tighten.
-   - Commit C: CHANGELOG `### Fixed` entry.
-   - Commit D: Phase 17 scaffolding (`PLAN.md` + `VERIFICATION.md` +
-     `current-phase` symlink repoint).
-   - Commit E: session-handoff refresh.
-3. `git push -u origin feat/test-0001-baseline-fix-phase17` and `gh pr create`
-   against `main`. PR body should link Phase 18 as the obvious follow-up and
-   note the test-only / no-version-bump scope.
-4. After merge, repoint `.planning/current-phase` to phase 18 (or leave
-   dangling) and refresh handoff.
+1. `gh pr view 28` — confirm CodeRabbit + CI green and the PR is mergeable.
+2. `gh pr merge 28 --squash --delete-branch` — squash-merge per repo
+   convention (every prior `main` commit has the `(#N)` suffix).
+3. Locally: `git checkout main && git pull && git branch -D
+   feat/test-0001-baseline-fix-phase17`.
+4. Repoint `.planning/current-phase` to `phases/18-test-0007-fnm-path-fix`
+   (or leave dangling until phase 18 opens) and refresh this handoff.
+
+Atomic commits on the branch (for reference if needed):
+
+- Commit A `8f6b320` — `migrations/run-tests.sh` fix (load-bearing).
+- Commit B `c8190e2` — Phase 15 smoke threshold tighten.
+- Commit C `9810d6d` — CHANGELOG `### Fixed` entry.
+- Commit D `a752b16` — Phase 17 scaffolding (`PLAN.md` + `VERIFICATION.md`).
+- Commit E `3a4c471` — session-handoff refresh.
+- Commit F (CodeRabbit fix-up) — `\s` → `[[:space:]]` in smoke + this
+  handoff's staged/unstaged contradiction resolved.
 
 ## Open questions (carried forward)
 

@@ -125,7 +125,7 @@ elif [ "$pass_count" -ge 130 ] && [ "$fail_count" -le 1 ]; then
         echo "    UNKNOWN FAIL: $line"
         ;;
     esac
-  done < <(grep -E '^\s*✗' "$SANDBOX_HOME/m-all.log")
+  done < <(grep -E '^[[:space:]]*✗' "$SANDBOX_HOME/m-all.log")
 
   if [ "$unknown_fails" -eq 0 ]; then
     pass "all failures are known carry-over (Phase 18 target only)"
