@@ -1184,6 +1184,92 @@ test_migration_0011() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Migration 0012 — Slash-command discovery wire-up
+# ─────────────────────────────────────────────────────────────────────────────
+# Same state-comparison pattern as 0011. Each fixture builds a sandboxed
+# $HOME with the scaffolder skill tree, a per-project workflow SKILL.md
+# at v1.10.0, and a fixture-specific $HOME/.claude/skills/add-observability
+# state. verify.sh asserts pre-flight + step idempotency checks return
+# what they should for that state.
+
+test_migration_0012() {
+  echo ""
+  echo "${YELLOW}━━━ Migration 0012 — Slash-command discovery wire-up ━━━${RESET}"
+
+  local fixtures="$REPO_ROOT/migrations/test-fixtures/0012"
+
+  if [ ! -d "$fixtures" ]; then
+    echo "  ${RED}SKIP${RESET}: fixtures directory missing"
+    SKIP=$((SKIP+1))
+    return
+  fi
+
+  # Sanity-check that the scaffolder ships the add-observability/SKILL.md
+  # the migration's Step 2 verify references via the symlink.
+  local scaffolder_skill="$REPO_ROOT/add-observability/SKILL.md"
+  if [ ! -f "$scaffolder_skill" ]; then
+    echo "  ${RED}✗${RESET} scaffolder source missing: $scaffolder_skill — RED state"
+    FAIL=$((FAIL+1))
+    return
+  fi
+
+  run_0012_fixture() {
+    local fixname="$1"
+    local fixdir="$fixtures/$fixname"
+    local tmp; tmp="$(mktemp -d -t "migration-0012-${fixname}-XXXXXX")"
+    local fake_home="$tmp/home"
+    mkdir -p "$fake_home"
+
+    # The scaffolder-side files the migration references live at
+    # $HOME/.claude/skills/agenticapps-workflow/add-observability/. The
+    # fixture's common-setup.sh handles the SKILL.md stub directly (kept
+    # in-sandbox for hermeticity, just like 0011's common-setup).
+
+    if [ -x "$fixdir/setup.sh" ]; then
+      (
+        cd "$tmp" && \
+        HOME="$fake_home" REPO_ROOT="$REPO_ROOT" FIXTURES_ROOT="$fixtures" \
+          "$fixdir/setup.sh" >/dev/null 2>&1
+      ) || {
+        echo "  ${RED}✗${RESET} $fixname — setup.sh failed"
+        FAIL=$((FAIL+1))
+        rm -rf "$tmp"
+        return
+      }
+    fi
+
+    local verify_out verify_exit
+    verify_out=$(
+      cd "$tmp" && \
+      HOME="$fake_home" REPO_ROOT="$REPO_ROOT" \
+        bash "$fixdir/verify.sh" 2>&1
+    )
+    verify_exit=$?
+
+    local expected_exit
+    expected_exit=$(tr -d '\n' < "$fixdir/expected-exit")
+    if [ "$verify_exit" != "$expected_exit" ]; then
+      echo "  ${RED}✗${RESET} $fixname — verify exit $verify_exit, expected $expected_exit"
+      echo "      verify output:"
+      printf '%s\n' "$verify_out" | sed 's/^/        /' | head -10
+      FAIL=$((FAIL+1))
+      rm -rf "$tmp"
+      return
+    fi
+
+    echo "  ${GREEN}✓${RESET} $fixname"
+    PASS=$((PASS+1))
+    rm -rf "$tmp"
+  }
+
+  for fix in "$fixtures"/[0-9]*-*/; do
+    local name
+    name="$(basename "${fix%/}")"
+    run_0012_fixture "$name"
+  done
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Preflight-correctness audit (Phase 13)
 # ─────────────────────────────────────────────────────────────────────────────
 # Walks every migration and executes each `requires[*].verify` shell command
@@ -1292,6 +1378,10 @@ fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "0011" ]; then
   test_migration_0011
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "0012" ]; then
+  test_migration_0012
 fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "preflight" ]; then

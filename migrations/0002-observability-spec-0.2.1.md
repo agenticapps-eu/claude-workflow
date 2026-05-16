@@ -168,6 +168,83 @@ If CLAUDE.md has no such section, append a new section near the bottom:
 
 Remove the added line / section.
 
+### Step 4 — Register `add-observability` as a top-level slash-discoverable skill
+
+(Added in scaffolder v1.11.0 — closes part of issue #22. Together with
+the new `LINKS` row in `install.sh` for fresh installs, this step
+ensures projects passing through 0002 land with a working
+`/add-observability` slash command. Projects already past 0002 get the
+equivalent fix from migration 0012 (`slash-discovery`).)
+
+Discoverability relies on `~/.claude/skills/<name>/SKILL.md` being
+visible to Claude Code's skill loader at HOME-global scope. The
+per-project copy (Step 1) lives at `.claude/skills/add-observability/`
+inside the project, which the loader doesn't reach. This step adds a
+HOME-global symlink pointing into the scaffolder's nested copy at
+`$HOME/.claude/skills/agenticapps-workflow/add-observability/`.
+
+**Idempotency check:**
+
+```bash
+# Already-applied if a symlink exists pointing to the scaffolder's
+# add-observability directory. (Pointing somewhere else is not skipped
+# silently — see the wrong-target case in Pre-condition below.)
+test -L "$HOME/.claude/skills/add-observability" \
+  && readlink "$HOME/.claude/skills/add-observability" \
+       | grep -q '/agenticapps-workflow/add-observability$'
+```
+
+**Pre-condition:**
+
+```bash
+# 1. The scaffolder is installed at the canonical global path.
+test -d "$HOME/.claude/skills/agenticapps-workflow/add-observability" || {
+  echo "SKIP: scaffolder not installed at \$HOME/.claude/skills/agenticapps-workflow/."
+  echo "      Slash-discovery for /add-observability will not work until you install"
+  echo "      it there (git clone https://github.com/agenticapps-eu/claude-workflow.git"
+  echo "      \$HOME/.claude/skills/agenticapps-workflow && \$HOME/.claude/skills/agenticapps-workflow/install.sh)."
+  echo "      Migration 0002 will continue without Step 4; re-run /update-agenticapps-workflow"
+  echo "      after installing the scaffolder globally."
+  exit 0   # treat as soft skip — the per-project install (Step 1) still succeeded
+}
+
+# 2. If a path already exists at the target and is NOT a symlink, refuse to clobber.
+if [ -e "$HOME/.claude/skills/add-observability" ] && [ ! -L "$HOME/.claude/skills/add-observability" ]; then
+  echo "ABORT: \$HOME/.claude/skills/add-observability exists and is not a symlink."
+  echo "       Inspect it; if safe to replace, run:"
+  echo "         rm -rf \$HOME/.claude/skills/add-observability"
+  echo "       and re-run /update-agenticapps-workflow."
+  exit 3
+fi
+
+# 3. If a symlink exists pointing elsewhere, the idempotency check already
+#    returned non-zero. This step will use `ln -sfn` which atomically
+#    replaces the symlink — that's the right behaviour for a wrong-target
+#    symlink in this case (the symlink is scaffolder-owned discovery
+#    metadata, not user data).
+```
+
+**Apply:**
+
+```bash
+# Note: no `readlink -f` — BSD `readlink` (macOS default) does not
+# support -f. The one-level `readlink` used in the idempotency check
+# is POSIX and works on both BSD and GNU.
+ln -sfn "$HOME/.claude/skills/agenticapps-workflow/add-observability" \
+        "$HOME/.claude/skills/add-observability"
+```
+
+**Rollback:**
+
+```bash
+# Only remove the symlink if it points at the scaffolder (don't clobber
+# a symlink the user redirected to a fork of the skill).
+if [ -L "$HOME/.claude/skills/add-observability" ] && \
+   readlink "$HOME/.claude/skills/add-observability" | grep -q '/agenticapps-workflow/add-observability$'; then
+  rm "$HOME/.claude/skills/add-observability"
+fi
+```
+
 ## Post-checks
 
 ```bash
@@ -186,6 +263,14 @@ grep -q "^version: 1\.5\.0" .claude/skills/agentic-apps-workflow/SKILL.md
 
 # CLAUDE.md references the skill
 grep -q "/add-observability" CLAUDE.md
+
+# Step 4: slash-discoverability symlink. Soft-passes if Step 4 was
+# skipped because the scaffolder isn't globally installed (Pre-condition #1).
+if [ -d "$HOME/.claude/skills/agenticapps-workflow/add-observability" ]; then
+  test -L "$HOME/.claude/skills/add-observability" \
+    && readlink "$HOME/.claude/skills/add-observability" | grep -q '/agenticapps-workflow/add-observability$' \
+    || (echo "POST-CHECK FAIL: Step 4 symlink missing or wrong target" && exit 1)
+fi
 ```
 
 ## Skip cases

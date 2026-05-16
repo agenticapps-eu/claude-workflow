@@ -1,0 +1,29 @@
+<!-- agenticapps:observability:start -->
+# Observability policy — fixture-edge
+
+Materialised by `/add-observability init`. See spec §10.5.
+
+## Trivial errors
+
+Errors classified as "trivial" — not surfaced as alerts, but still
+emitted as low-severity events for trend analysis.
+
+- HTTP 4xx-returning errors (client-side; expected behaviour)
+- Validation errors (request shape mismatches)
+
+## Redacted attributes
+
+Attribute key substrings that are redacted from emitted events before
+they leave the function.
+
+- password
+- token
+- api_key
+- card_number
+- cvv
+- ssn
+
+## Project event names
+
+<!-- add domain events here -->
+<!-- agenticapps:observability:end -->

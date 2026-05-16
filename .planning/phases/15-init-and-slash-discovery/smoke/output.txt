@@ -1,0 +1,43 @@
+
+═══ Step 0: install.sh fresh-install symlink test (closes #22 fresh path) ═══
+  sandbox HOME=/var/folders/60/0bc5g70x4ybg7rjmrfq_cjnw0000gn/T/tmp.QH9vbOHcqy
+  ✓ add-observability symlinked to /Users/donald/Sourcecode/agenticapps/claude-workflow/add-observability
+  ✓ agentic-apps-workflow symlinked
+  ✓ setup-agenticapps-workflow symlinked
+  ✓ update-agenticapps-workflow symlinked
+
+═══ Steps 4-5: migration 0011 (1.9.3 → 1.10.0) — fixture harness exercise ═══
+  ✓ migrations/run-tests.sh 0011 — all fixtures green
+
+═══ Steps 6-7: migration 0012 (1.10.0 → 1.11.0) — fixture harness exercise ═══
+  ✓ migrations/run-tests.sh 0012 — all fixtures green
+
+═══ Regression guard: full migration suite — no NEW failures ═══
+    full-suite counts: PASS=122 FAIL=9
+  ✓ full suite within baseline (PASS≥122 FAIL≤9)
+  ✓ all failures are known carry-over (Phase 17 + Phase 18 targets)
+
+═══ Scaffolder versions at HEAD ═══
+  ✓ skill/SKILL.md at v1.11.0
+  ✓ add-observability/SKILL.md at v0.3.1
+
+═══ Summary ═══
+  Passed: 10
+  Failed: 0
+
+PASS — end-to-end chain v1.9.3 → v1.10.0 → v1.11.0 verified via fixture harness.
+
+─── Manual procedural steps (PLAN T14 steps 2-3, require real claude CLI) ───
+
+The following two steps exercise the same end-to-end chain through the
+agentic CLI surface instead of the fixture harness. Run them in a fresh
+Claude Code session against a minimal Worker fixture if you want to dogfood
+the full /add-observability init + scan loop:
+
+  1. mkdir -p /tmp/worker-smoke && cd /tmp/worker-smoke && \
+     cp -r /Users/donald/Sourcecode/agenticapps/claude-workflow/migrations/test-fixtures/init-ts-cloudflare-worker/before/* .
+  2. claude /add-observability init     # answer consent gates 1/2/3
+  3. claude /add-observability scan     # expect zero high-confidence gaps
+
+Both should complete without error and produce the same after-state captured
+in migrations/test-fixtures/init-ts-cloudflare-worker/expected-after/.
