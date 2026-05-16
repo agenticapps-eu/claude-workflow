@@ -1033,10 +1033,15 @@ test_migration_0007() {
       ( cd "$tmp" && HOME="$fake_home" REPO_ROOT="$REPO_ROOT" FIXTURES_ROOT="$fixtures" "$fixdir/setup.sh" >/dev/null 2>&1 )
     fi
 
-    # Run install with PATH prepended for sandbox stubs
+    # Run install in a hermetic env: env -i strips host PATH (so an
+    # fnm-managed `gitnexus` on the developer's $PATH can't shadow the
+    # missing-stub case in 03-no-gitnexus) and also clears any host
+    # GITNEXUS_* / WIKI_SKILL_MD env vars that the script reads. Only
+    # HOME + a curated PATH ($fake_home/bin for stubs, /usr/bin:/bin
+    # for coreutils + system jq) cross the sandbox boundary.
     local stderr_capture="$tmp/.stderr"
     local actual_exit
-    ( cd "$fake_home" && HOME="$fake_home" PATH="$fake_home/bin:$PATH" bash "$install_script" 2> "$stderr_capture" >/dev/null )
+    ( cd "$fake_home" && env -i HOME="$fake_home" PATH="$fake_home/bin:/usr/bin:/bin" bash "$install_script" 2> "$stderr_capture" >/dev/null )
     actual_exit=$?
 
     # Compare exit
@@ -1073,10 +1078,11 @@ test_migration_0007() {
       fi
     fi
 
-    # verify.sh
+    # verify.sh — same hermetic env as install (plus REPO_ROOT which several
+    # verify scripts need to locate rollback/helper scripts).
     if [ -x "$fixdir/verify.sh" ]; then
       local verify_out
-      verify_out=$( cd "$fake_home" && HOME="$fake_home" REPO_ROOT="$REPO_ROOT" PATH="$fake_home/bin:$PATH" bash "$fixdir/verify.sh" 2>&1 )
+      verify_out=$( cd "$fake_home" && env -i HOME="$fake_home" REPO_ROOT="$REPO_ROOT" PATH="$fake_home/bin:/usr/bin:/bin" bash "$fixdir/verify.sh" 2>&1 )
       local verify_exit=$?
       if [ "$verify_exit" != "0" ]; then
         echo "  ${RED}✗${RESET} $fixname — verify.sh failed: $verify_out"
