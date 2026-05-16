@@ -1209,6 +1209,20 @@ If any assertion fails, print the failing assertion and exit with code 1.
   `// agenticapps:observability:start` / `:end` blocks by hand. That
   region is an init-rewrite-only zone — manual edits will be silently
   overwritten on re-init.
+- **Anchor-comment threat model: fail-safe, not bypass-safe.** The
+  anchor pair serves two roles — idempotent re-detection in Phase 2
+  and block boundary in Phase 6. A malicious contributor who injects
+  anchor comments around unrelated code in the wrapper directory or
+  CLAUDE.md does NOT achieve silent conformance bypass: Phase 2's
+  strict-first-run refuses to proceed (exit 1, "already initialised"),
+  Phase 6's POLICY_PATH self-check rejects mal-shaped blocks (exit 1),
+  and `add-observability scan` walks files independently of anchor
+  presence. The worst an attacker achieves is denial-of-init, which
+  surfaces to the user instead of silently masking gaps. Future
+  refactors MUST preserve this fail-safe stance — do NOT relax the
+  Phase 2 strict-first-run or the Phase 6 self-check under "improve UX
+  of re-init" pressure. See `.planning/phases/15-init-and-slash-discovery/REVIEW.md`
+  S2 for the full threat assessment.
 - **`policy:` in CLAUDE.md is scalar at v0.3.1.** Multi-stack projects
   ship the primary stack's policy.md path only. Materialised per-stack
   policy.md files exist on disk but are not referenced from the
