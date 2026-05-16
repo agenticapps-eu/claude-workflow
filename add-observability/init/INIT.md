@@ -930,6 +930,14 @@ with the observability block whose `policy:` points at
 
 ### Phase 6 — Write `observability:` metadata to CLAUDE.md (consent gate 3 of 3 — CLAUDE.md)
 
+**Prerequisite (per-stack)**: for each stack, gate 2 (Phase 5) MUST
+have been accepted. Stacks in gate-2-decline state are skipped
+entirely in Phase 6 — writing the metadata block while entry-file
+wiring is missing would falsely claim conformance to §10.7 obligation
+(2). The Phase 5 decline path establishes this rule; this prerequisite
+re-states it so a future maintainer refactoring Phase 6 in isolation
+preserves the cross-phase invariant.
+
 Compute the spec §10.8 metadata block to add to CLAUDE.md. The
 authoritative schema reference is
 `add-observability/init/metadata-template.md` — that document is the

@@ -79,9 +79,9 @@ fi
 
 # 4. If a symlink exists pointing to a wrong target (not the scaffolder's
 #    add-observability), hard-abort. NO version bump on this path — the
-#    user must resolve manually. Phase 14's "applied with warning" pattern
-#    does not apply because 0012 has no scaffolder-owned content to
-#    overwrite — there is nothing valid to install if the symlink is wrong.
+#    user must resolve manually. This migration installs only a symlink;
+#    a wrong-target symlink has nothing valid to fall back to, so the
+#    only safe action is to refuse and surface the conflict.
 if [ -L "$HOME/.claude/skills/add-observability" ]; then
   EXISTING=$(readlink "$HOME/.claude/skills/add-observability")
   case "$EXISTING" in
