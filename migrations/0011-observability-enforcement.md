@@ -56,6 +56,11 @@ grep -q '^observability:' CLAUDE.md || {
   echo "ABORT: CLAUDE.md has no observability: metadata block."
   echo "Run 'claude /add-observability init' first to scaffold observability,"
   echo "then re-run /update-agenticapps-workflow."
+  echo ""
+  echo "(NOTE: projects on workflow v1.11.0+ get this handled automatically"
+  echo " by migration 0013's Step 2 — upgrade via /update-agenticapps-workflow"
+  echo " when you reach v1.12.0+. This abort path is the v1.9.3 → v1.10.0"
+  echo " transition only.)"
   exit 3
 }
 
