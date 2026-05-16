@@ -32,6 +32,12 @@
 
 import * as Sentry from "@sentry/react";
 
+// Re-export the React error boundary so consumers can import both `init`
+// and `ObservabilityErrorBoundary` from this module (per INIT.md Phase 5
+// detail line 632-634 and the canonical post-init shape at INIT.md
+// line 605-619). The boundary itself is implemented in ./ErrorBoundary.tsx.
+export { ObservabilityErrorBoundary } from "./ErrorBoundary";
+
 // ─── Types ─────────────────────────────────────────────────────────────────
 
 export type Severity = "debug" | "info" | "warn" | "error" | "fatal";
