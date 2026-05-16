@@ -12,7 +12,7 @@
 //   DESTINATION=sentry
 //   DEBUG_SAMPLE_RATE=0.1
 //   TRACE_SAMPLE_RATE=0.1
-//   REDACTED_KEYS=["password","token","api_key","card_number","cvv","ssn"]
+//   REDACTED_KEYS=["password","token","api_key","card_number","cvv","ssn","secret","client_secret","refresh_token","access_token"]
 //
 // Fixture stub — the real init produces ~15k of token-substituted template
 // content (see add-observability/templates/go-fly-http/observability.go).

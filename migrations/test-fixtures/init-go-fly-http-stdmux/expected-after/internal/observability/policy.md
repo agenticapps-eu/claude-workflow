@@ -24,6 +24,10 @@ they leave the service.
 - card_number
 - cvv
 - ssn
+- secret
+- client_secret
+- refresh_token
+- access_token
 
 ## Project event names
 

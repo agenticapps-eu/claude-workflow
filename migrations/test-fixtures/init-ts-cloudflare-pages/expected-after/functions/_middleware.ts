@@ -10,7 +10,7 @@
 //   DESTINATION=sentry
 //   DEBUG_SAMPLE_RATE=0.1
 //   TRACE_SAMPLE_RATE=0.1
-//   REDACTED_KEYS=["password","token","api_key","card_number","cvv","ssn"]
+//   REDACTED_KEYS=["password","token","api_key","card_number","cvv","ssn","secret","client_secret","refresh_token","access_token"]
 //
 // Cloudflare Pages auto-loads functions/_middleware.ts before any matching
 // onRequest* handler. This file IS the mount point — no per-route wrap

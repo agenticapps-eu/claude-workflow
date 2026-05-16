@@ -99,6 +99,10 @@ parameters:
       - card_number
       - cvv
       - ssn
+      - secret
+      - client_secret
+      - refresh_token
+      - access_token
   DEBUG_SAMPLE_RATE:
     default: 0.1
   TRACE_SAMPLE_RATE:
