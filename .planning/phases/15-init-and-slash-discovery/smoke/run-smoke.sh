@@ -92,15 +92,13 @@ else
 fi
 
 # ─── Regression guard: full migration suite — no NEW failures ────────────
-# The full suite has 9 known pre-existing failures (tracked as carry-over
-# work in session-handoff.md's open questions): 8 step-idempotency failures
-# in test_migration_0001 (Phase 17 target) + 1 in test_migration_0007's
-# 03-no-gitnexus fixture (Phase 18 target, fnm-PATH leak). Phase 15 is
-# load-bearing on "no NEW regressions", not "all historical failures are
-# fixed". We assert (a) PASS count is at least 122 (the baseline at the
-# start of this session — phase 15 added fixtures so it should grow), and
-# (b) FAIL count is at most 9 (the known pre-existing set), and (c) every
-# failing test is in the known-fail list (no surprises).
+# After Phase 17 landed the test_migration_0001 baseline-anchor fix, the only
+# remaining known carry-over failure is test_migration_0007's 03-no-gitnexus
+# fixture (Phase 18 target, fnm-PATH leak). Phase 15's smoke locks in the
+# post-17 baseline: (a) PASS count is at least 130, (b) FAIL count is at most
+# 1, and (c) the single allowed failure is the 03-no-gitnexus one. Any new
+# failure (or any regression that drops PASS below 130 / lifts FAIL above 1)
+# trips the guard.
 
 hdr "Regression guard: full migration suite — no NEW failures"
 
@@ -114,15 +112,14 @@ echo "    full-suite counts: PASS=$pass_count FAIL=$fail_count"
 if [ -z "$pass_count" ] || [ -z "$fail_count" ]; then
   tail -40 "$SANDBOX_HOME/m-all.log"
   fail "could not parse PASS/FAIL counts from full suite output"
-elif [ "$pass_count" -ge 122 ] && [ "$fail_count" -le 9 ]; then
-  pass "full suite within baseline (PASS≥122 FAIL≤9)"
+elif [ "$pass_count" -ge 130 ] && [ "$fail_count" -le 1 ]; then
+  pass "full suite within baseline (PASS≥130 FAIL≤1)"
 
   # Verify every failure is in the known-pre-existing set (no surprises).
   unknown_fails=0
   while IFS= read -r line; do
     case "$line" in
-      *"Step "*" idempotency: needs apply on v1.2.0"*) : ;;  # 0001 carry-over
-      *"03-no-gitnexus — exit 0, expected 1"*)        : ;;  # 0007 carry-over
+      *"03-no-gitnexus — exit 0, expected 1"*) : ;;  # 0007 carry-over (Phase 18)
       *)
         unknown_fails=$((unknown_fails + 1))
         echo "    UNKNOWN FAIL: $line"
@@ -131,13 +128,13 @@ elif [ "$pass_count" -ge 122 ] && [ "$fail_count" -le 9 ]; then
   done < <(grep -E '^\s*✗' "$SANDBOX_HOME/m-all.log")
 
   if [ "$unknown_fails" -eq 0 ]; then
-    pass "all failures are known carry-over (Phase 17 + Phase 18 targets)"
+    pass "all failures are known carry-over (Phase 18 target only)"
   else
     fail "found $unknown_fails NEW failure(s) outside the known-fail set"
   fi
 else
   tail -40 "$SANDBOX_HOME/m-all.log"
-  fail "full suite drifted from baseline: PASS=$pass_count (expected ≥122) FAIL=$fail_count (expected ≤9)"
+  fail "full suite drifted from baseline: PASS=$pass_count (expected ≥130) FAIL=$fail_count (expected ≤1)"
 fi
 
 # ─── Final scaffolder-version asserts ─────────────────────────────────────
