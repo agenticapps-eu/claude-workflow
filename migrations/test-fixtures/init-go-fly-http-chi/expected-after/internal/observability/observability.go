@@ -49,8 +49,9 @@ type Status int
 const (
 	StatusOK Status = iota
 	StatusError
-	SeverityFatal = "fatal"
 )
+
+const SeverityFatal = "fatal"
 
 func ParseTraceparent(_ string) (TraceContext, bool) { return TraceContext{}, false }
 func NewRootContext() TraceContext                   { return TraceContext{} }

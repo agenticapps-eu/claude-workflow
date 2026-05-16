@@ -83,11 +83,13 @@ grep -oiE '\./[a-zA-Z/_-]+\.md' add-observability/SKILL.md | sort -u | while rea
 done
 ```
 
-All four routed paths (`./init/INIT.md`, `./scan/SCAN.md`,
-`./scan-apply/APPLY.md`, `./enforcement/README.md`) resolve as of
-v0.3.1. The `./init/INIT.md` path was historically MISSING at v0.3.0
-(issue #26); shipping that file structurally closes #26 and is the
-load-bearing piece of this version bump.
+All three routed dispatch paths (`./init/INIT.md`, `./scan/SCAN.md`,
+`./scan-apply/APPLY.md`) resolve as of v0.3.1. The `./init/INIT.md`
+path was historically MISSING at v0.3.0 (issue #26); shipping that
+file structurally closes #26 and is the load-bearing piece of this
+version bump. `./enforcement/README.md` is referenced in this skill's
+top-level description as documentation but is not a routed dispatch
+target — it is outside the invariant's scope by design.
 
 ## Resolution rules
 

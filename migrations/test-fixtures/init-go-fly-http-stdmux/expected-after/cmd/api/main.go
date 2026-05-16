@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"net/http"
 
 	// agenticapps:observability:start
@@ -18,6 +19,8 @@ func main() {
 		w.Write([]byte("ok"))
 	})
 	// agenticapps:observability:start
-	http.ListenAndServe(":8080", observability.Middleware(mux))
+	if err := http.ListenAndServe(":8080", observability.Middleware(mux)); err != nil {
+		log.Fatal(err)
+	}
 	// agenticapps:observability:end
 }
