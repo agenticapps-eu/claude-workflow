@@ -1,112 +1,141 @@
-# Session Handoff — 2026-05-16 (Phase 18 committed locally, pre-push)
+# Session Handoff — 2026-05-16 (Phase 19 committed locally, pre-push)
 
-On branch `feat/test-0007-fnm-path-fix-phase18`, branched from `main` at
-`eb91216`. Phase 18 changes are committed (atomic stack) but not yet pushed
-to origin. Test-suite hygiene fix, no scaffolder semantics moved.
+On branch `feat/strict-preflight-phase19`, branched from `main` at
+`61e53c2`. Phase 19 changes are committed (atomic stack) but not yet
+pushed to origin. Test-harness feature add (no scaffolder semantics
+moved, no version bump) — Phase 13's deferred `--strict-preflight`
+follow-up landed.
 
 ## Accomplished
 
-- **Phase 17 fully shipped + merged** (carried from prior turn) — PR #28
-  squash-merged as `eb91216`. Suite went from `PASS=122 FAIL=9` to
-  `PASS=130 FAIL=1`; only `03-no-gitnexus` carry-over remained.
-- **Phase 18 implemented on branch** — `test_migration_0007` hermetic
-  sandbox fix in `migrations/run-tests.sh`. Root cause: the legacy
-  `PATH="$fake_home/bin:$PATH"` invocation leaked the host's full PATH
-  into the sandbox, so the developer's fnm-managed `gitnexus`
-  (`$HOME/.local/state/fnm_multishells/.../bin/gitnexus`) shadowed the
-  missing-stub case in the `03-no-gitnexus` fixture. Install script's
-  `command -v gitnexus` found the host binary, proceeded with exit 0,
-  and broke the assertion. Replaced with `env -i HOME=… PATH=… bash …`
-  for both the install invocation and the verify.sh invocation.
-- **Phase 15 smoke regression-guard tightened** in lockstep —
-  `PASS≥130 FAIL≤1` → `PASS≥131 FAIL=0`. Known-fail allowlist branch
-  collapsed (no fixture is allowed to fail any more). `FAIL: 0` parser
-  fallback added because `run-tests.sh` elides the line when zero.
-- **`CHANGELOG.md`** — `### Fixed` entry added under `[1.11.0]` (above
-  the Phase 17 entry).
-- **Phase 18 scaffolding** — `.planning/phases/18-test-0007-hermetic-sandbox/`
+- **Phase 17 + Phase 18 shipped this session** (carried) — Phase 17 PR
+  #28 `eb91216` (test_migration_0001 baseline anchor, suite 122/9 →
+  130/1); Phase 18 PR #29 `61e53c2` (test_migration_0007 hermetic
+  sandbox, suite 130/1 → 131/0 clean baseline).
+- **Phase 19 implemented on branch** — `migrations/run-tests.sh` gains
+  `--strict-preflight` flag + `STRICT_PREFLIGHT=1` env-var alias.
+  Default (loose) mode unchanged — audit failures still print
+  informationally but don't affect exit code, so dev machines with
+  partial host deps aren't false-positive failed. Strict mode rolls
+  the audit's `audit_fail` into global `FAIL`, so CI environments with
+  parity to dev environments can gate merges on verify-path rot (the
+  issue-#18 bug class).
+- **PyYAML-missing path is strict-aware** — loose mode keeps the `~`
+  warning + clean return; strict mode emits `✗ python3 with PyYAML not
+  available — audit cannot run (strict)` and increments `FAIL` by 1.
+- **`--help` flag** prints the usage block from the script header;
+  unknown flags exit 2 (distinct from FAIL → exit 1).
+- **Flag parser** is order-agnostic — `--strict-preflight 0007` and
+  `0007 --strict-preflight` both work. Replaces the legacy single-
+  positional `FILTER="${1:-}"` line.
+- **`migrations/README.md`** — new "Preflight-correctness audit"
+  section between "Test fixtures" and "Adding a new migration",
+  documenting the audit + both invocation modes + when to use which.
+- **`CHANGELOG.md`** — `### Added` entry under `[1.11.0]`, placed at
+  the top of the Added block.
+- **Phase 19 scaffolding** — `.planning/phases/19-strict-preflight/`
   with `PLAN.md` + `VERIFICATION.md` (10-row evidence ledger).
-  `.planning/current-phase` repointed from phase 17 to phase 18.
+  `.planning/current-phase` repointed phase 18 → phase 19.
 
 ## Decisions
 
-- **`env -i` over per-var `env -u`** — strips the host environment
-  wholesale, immune to whichever env var the install script next reads.
-  Re-injecting `HOME` / `PATH` / `REPO_ROOT` is explicit at the call site.
-- **Hermetic PATH = `$fake_home/bin:/usr/bin:/bin`** — sandbox stubs
-  first, then coreutils + system jq. Verified against
-  `install-gitnexus.sh`'s tool dependencies (`command, jq, grep, node,
-  mv, rm`) and against every verify.sh's tool list. Works on macOS
-  (which keeps coreutils in `/usr/bin` + `/bin`) and on Linux equivalents.
-- **Test-only PR; no scaffolder version bump.** Same shape as Phase 17 —
-  CHANGELOG `### Fixed` under `[1.11.0]`, no migration semantics, no
-  template, no installer touched.
-- **Tightened smoke thresholds in the same PR.** Locking in PASS=131
-  FAIL=0 prevents a regression sliding back under the now-stale
-  PASS≥130 FAIL≤1 ceiling. Pattern matches Phase 17.
+- **Flag + env-var, both supported** — CLI flag is idiomatic, env-var
+  is CI-friendly. Cost is one `${STRICT_PREFLIGHT:-0}` defaulting line
+  + an additional case in the parser.
+- **Order-agnostic flag parser** — replaces the previous
+  `FILTER="${1:-}"`. New `while [ $# -gt 0 ]` loop handles flag-before-
+  positional and flag-after-positional uniformly.
+- **Strict-mode `audit_fail` rolls into global `FAIL`, not its own
+  separate counter** — keeps the suite's exit-code contract simple
+  (`[ $FAIL -gt 0 ] && exit 1`).
+- **`--help` parses the script-header comment** rather than maintaining
+  a separate `print_usage()` function. Single source of truth; comment
+  block has been formatted to render cleanly under `sed -n
+  '2,/^$/p' | sed 's/^# \{0,1\}//'`.
+- **Unknown flag → exit 2** distinct from FAIL → exit 1. CI can tell
+  user error from genuine test failure.
+- **Smoke unchanged** — Phase 15's smoke runs `bash run-tests.sh` with
+  no flag, so it stays in loose mode. The smoke's PASS/FAIL awk parser
+  doesn't read the audit's disclaimer line.
 
 ## Files modified
 
-- `migrations/run-tests.sh` — `run_0007_fixture` install + verify.sh
-  invocations switched to `env -i` form (lines ~1039 + ~1079).
-- `.planning/phases/15-init-and-slash-discovery/smoke/run-smoke.sh` —
-  regression-guard thresholds + FAIL=0 fallback + allowlist removal.
-- `CHANGELOG.md` — `### Fixed` entry under `[1.11.0]`.
-- `.planning/phases/18-test-0007-hermetic-sandbox/PLAN.md` (NEW).
-- `.planning/phases/18-test-0007-hermetic-sandbox/VERIFICATION.md` (NEW).
-- `.planning/current-phase` symlink → `phases/18-test-0007-hermetic-sandbox`.
+- `migrations/run-tests.sh` — usage comment block expanded; flag parser
+  (replaces line `FILTER="${1:-}"`); `test_preflight_verify_paths`
+  gains mode-aware header + PyYAML-missing branch + strict-mode FAIL
+  rollup at the audit-summary line.
+- `migrations/README.md` — new "Preflight-correctness audit" section.
+- `CHANGELOG.md` — `### Added` entry under `[1.11.0]`.
+- `.planning/phases/19-strict-preflight/PLAN.md` (NEW).
+- `.planning/phases/19-strict-preflight/VERIFICATION.md` (NEW).
+- `.planning/current-phase` symlink → `phases/19-strict-preflight`.
 - `session-handoff.md` — this file.
 
 ## Verification
 
-- `bash migrations/run-tests.sh | tail -3` → `PASS: 131` (FAIL line elided).
-- `bash migrations/run-tests.sh | grep -cE '^[[:space:]]*✗'` → `0`.
-- All 18 `test_migration_0007` fixtures PASS (was 17/18).
-- `bash .planning/phases/15-init-and-slash-discovery/smoke/run-smoke.sh` →
-  Passed: 9 / Failed: 0 (one fewer assert because the allowlist branch
-  collapsed).
-- Manual: pre-fix reproducer with `PATH=…:$PATH` → exit=0 (bug); post-fix
-  with `env -i PATH=…/bin:/usr/bin:/bin` → exit=1 + "gitnexus not installed".
+- `bash migrations/run-tests.sh` → `PASS: 131`, exit `0`, audit
+  disclaimer reads `(NOT counted in suite totals — pass
+  --strict-preflight to gate.)`.
+- `bash migrations/run-tests.sh --strict-preflight` → `PASS: 131`,
+  exit `0` on clean audit, disclaimer reads `(counted in suite totals
+  — strict mode: 0 audit FAIL to roll in.)`.
+- `STRICT_PREFLIGHT=1 bash migrations/run-tests.sh` → identical to
+  flag form.
+- Synthetic regression (broke 0005 verify path temporarily):
+  - Loose: exit `0`, audit `FAIL=1`, global `FAIL=0`.
+  - Strict: exit `1`, audit `FAIL=1`, global `FAIL=1`, `FAIL: 1` line
+    appears in suite summary.
+  - Env-var: identical to strict flag.
+  - Restored cleanly; current `main` content unchanged.
+- `bash migrations/run-tests.sh --help` → prints usage; exit `0`.
+- `bash migrations/run-tests.sh --does-not-exist` → stderr `unknown
+  flag: --does-not-exist`; exit `2`.
+- Phase 15 smoke still `Passed: 9 / Failed: 0`.
 
 ## Next session: start here
 
 Commits are local; not yet pushed. Pick up by:
 
-1. `git status` — confirm the 4 modified + 2 new files listed above.
+1. `git status` — confirm 3 modified + 2 new files.
 2. Atomic commits per phase convention. Suggested split:
-   - Commit A: `migrations/run-tests.sh` fix (load-bearing).
-   - Commit B: Phase 15 smoke threshold tighten + FAIL=0 fallback.
-   - Commit C: CHANGELOG `### Fixed` entry.
-   - Commit D: Phase 18 scaffolding (PLAN + VERIFICATION).
+   - Commit A: `migrations/run-tests.sh` flag + strict-mode branches
+     (load-bearing).
+   - Commit B: `migrations/README.md` audit documentation.
+   - Commit C: CHANGELOG `### Added` entry.
+   - Commit D: Phase 19 scaffolding (PLAN + VERIFICATION).
    - Commit E: session-handoff refresh.
-3. `git push -u origin feat/test-0007-fnm-path-fix-phase18` and
-   `gh pr create` against `main`. PR body: link Phase 17 as the immediate
-   precedent + note test-only / no-version-bump scope.
-4. After merge: repoint `.planning/current-phase` to phase 19 (or leave
-   dangling) and refresh handoff.
+3. `git push -u origin feat/strict-preflight-phase19` and
+   `gh pr create` against `main`. PR body: link Phase 13 RESEARCH.md
+   line 105 as the deferred-follow-up source + note no scaffolder
+   semantics moved.
+4. After merge: repoint `.planning/current-phase` to phase 20 (or
+   leave dangling). Refresh handoff.
 
 ## Open questions (carried forward)
 
-- **Phase 19** — `--strict-preflight` flag for Phase 13 audit. Lifts the
-  per-migration preflight audit from advisory to enforced.
 - **Issue #24** — spec v0.3.0 adoption stays OPEN until upstream
-  `agenticapps-workflow-core/reference-implementations/README.md` row is
-  updated. Cross-repo task.
-- **Issue #5** — older v0.1.0 bootstrap issue, probably subsumable by #24.
-  Triage candidate.
-- **Init harness expansion** — VERIFICATION.md F4 (phase 15) flagged the 7
-  init fixture pairs as reference-only at v1.11.0. A future phase could add
-  `test_init_fixtures()` to `run-tests.sh`.
+  `agenticapps-workflow-core/reference-implementations/README.md` row
+  is updated. Cross-repo task; closes #24.
+- **Issue #5** — older v0.1.0 bootstrap issue, probably subsumable by
+  #24. Triage candidate.
+- **Init harness expansion** — Phase 15 VERIFICATION F4 flagged the
+  7 init fixture pairs as reference-only at v1.11.0. A future phase
+  could add `test_init_fixtures()` to `run-tests.sh`.
 - **Cross-tree `applies_to` framework hardening** — migration 0012's
   `~/.claude/skills/...` reference flagged as a new precedent worth a
   framework-level `host_paths:` allowlist.
 - **REDACTED_KEYS default expansion** — defer to a v0.3.2 minor of
   `add-observability`.
-- **Anchor-comment threat-model documentation** — one-paragraph addition
-  to INIT.md "Important rules".
+- **Anchor-comment threat-model documentation** — one-paragraph
+  addition to INIT.md "Important rules".
+- **CI workflow wiring for `--strict-preflight`** — the flag is now
+  available, but no GitHub Actions workflow yet runs it. Phase 19
+  intentionally stopped at the primitive; project-policy decision when
+  to wire it.
 - **Hermetic-sandbox pattern reuse** — if future migration tests grow
-  shell-execution fixtures, carry the `env -i HOME=… PATH=…/bin:/usr/bin:/bin`
-  pattern forward by default; never `PATH=…:$PATH`.
+  shell-execution fixtures, carry the `env -i HOME=…
+  PATH=…/bin:/usr/bin:/bin` pattern forward by default; never
+  `PATH=…:$PATH`.
 - **Carried from prior sessions** (unchanged): fx-signal-agent v1.10.0
   adoption verification; helper-script license consent for
   `index-family-repos.sh --all`; canonical install command for
