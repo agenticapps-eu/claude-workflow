@@ -279,6 +279,39 @@ user input via `AskUserQuestion`; its correctness is validated by running
 
 ---
 
+## Preflight-correctness audit
+
+Beyond per-migration fixtures, `run-tests.sh` also walks every migration's
+`requires[*].verify` shell command and executes it against the host
+environment. This catches the issue-#18 bug class: a verify path that points
+at a location which doesn't exist on any system. The audit runs after the
+per-migration stanzas and emits its own `PASS / FAIL / SKIP` summary line.
+
+By default the audit is **informational**: failures print to the labeled
+section but do NOT add to the suite's global `FAIL` counter or affect the
+exit code. This avoids false positives on dev machines that may be missing
+some of the host-side dependencies a migration's `verify` reaches for.
+
+Strict mode rolls audit failures into the global `FAIL` count, so non-zero
+audit FAIL → non-zero exit. Two equivalent ways to enable it:
+
+```bash
+bash migrations/run-tests.sh --strict-preflight   # CLI flag
+STRICT_PREFLIGHT=1 bash migrations/run-tests.sh   # env var (CI-friendly)
+```
+
+Use strict mode in CI environments that have parity with author dev
+environments — e.g., a CI runner that has every host skill installed and
+the same `claude` CLI version — to gate merges on verify-path rot. Use the
+default loose mode on dev machines so a missing local dependency doesn't
+trip the harness while you're iterating on something unrelated.
+
+`run-tests.sh --help` documents both modes; the smoke tests in
+`.planning/phases/*/smoke/` use loose mode intentionally so they keep
+working on minimal CI images that lack the full skill tree.
+
+---
+
 ## Adding a new migration
 
 1. Pick the next sequential ID (`ls migrations/[0-9]*.md | tail -1`).
