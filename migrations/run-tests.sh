@@ -115,9 +115,27 @@ test_migration_0001() {
   echo ""
   echo "${YELLOW}━━━ Migration 0001 — Wire Go + impeccable + database-sentinel ━━━${RESET}"
 
-  # Fetch origin/main to avoid stale-clone surprises before computing merge-base.
+  # Anchor before_ref to the v1.2.0 baseline — the parent of the commit that
+  # first introduced migration 0001's marker into templates/workflow-config.md.
+  # The legacy `git merge-base HEAD origin/main` resolved to HEAD when running
+  # on main (post-merge), so both fixtures got the post-0001 template state and
+  # every "needs apply on v1.2.0" assertion failed. Anchoring to the marker
+  # commit's parent works regardless of branch: on a feature branch testing
+  # 0001 itself the historical pre-0001 commit on main is still the v1.2.0
+  # baseline we want to compare against.
   git fetch --quiet origin main 2>/dev/null || true
-  local before_ref="$(git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main 2>/dev/null || git rev-parse main)"
+  local marker_commit
+  marker_commit="$(git log --reverse --format=%H -S '## Backend language routing' -- templates/workflow-config.md 2>/dev/null | head -1)"
+  local before_ref=""
+  if [ -n "$marker_commit" ]; then
+    before_ref="$(git rev-parse "${marker_commit}^" 2>/dev/null || true)"
+  fi
+  # Fallback for stripped clones or future history rewrites that lose the marker
+  # commit: the legacy merge-base chain still gives a sensible answer on feature
+  # branches that haven't merged 0001 yet.
+  if [ -z "$before_ref" ]; then
+    before_ref="$(git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main 2>/dev/null || git rev-parse main)"
+  fi
   local after_ref="HEAD"
 
   echo "  before ref: $before_ref ($(git log -1 --format='%h %s' "$before_ref"))"
