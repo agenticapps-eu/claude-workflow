@@ -3,10 +3,26 @@
 # against known before / after reference states extracted from git.
 #
 # Usage:
-#   migrations/run-tests.sh                # run all testable migrations
-#   migrations/run-tests.sh 0001           # run only migration 0001
+#   migrations/run-tests.sh                       # run all testable migrations
+#   migrations/run-tests.sh 0001                  # run only migration 0001
+#   migrations/run-tests.sh --strict-preflight    # roll the preflight audit
+#                                                 # into the global FAIL count
+#                                                 # (CI gating mode)
+#   STRICT_PREFLIGHT=1 migrations/run-tests.sh    # env-var equivalent
 #
-# See migrations/test-fixtures/README.md for the contract.
+# In default (non-strict) mode the preflight-correctness audit is purely
+# informational: failures print to a labeled section but do NOT change the
+# exit code. This lets developers run the harness on dev machines that may
+# be missing some host dependencies without false-positive failures.
+#
+# In strict mode (--strict-preflight or STRICT_PREFLIGHT=1) audit failures
+# DO add to the global FAIL counter and propagate to the exit code. Intended
+# for CI environments that have parity with author dev environments and want
+# verify-path rot to gate merges (the issue-#18 bug class).
+#
+# See migrations/test-fixtures/README.md for the per-migration fixture
+# contract; see "Preflight-correctness audit" section of migrations/README.md
+# for the audit's role + CI guidance.
 
 set -uo pipefail
 
@@ -25,8 +41,32 @@ FAIL=0
 SKIP=0
 RAN_AUDIT=0
 
-# Filter (optional first arg)
-FILTER="${1:-}"
+# Flag + filter parsing. Order-agnostic: --strict-preflight may appear before
+# or after the optional <filter> positional. Unknown flags reject with exit 2.
+STRICT_PREFLIGHT="${STRICT_PREFLIGHT:-0}"
+FILTER=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --strict-preflight) STRICT_PREFLIGHT=1; shift ;;
+    -h|--help)
+      sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0
+      ;;
+    --*)
+      echo "unknown flag: $1" >&2
+      echo "run \`$0 --help\` for usage" >&2
+      exit 2
+      ;;
+    *)
+      if [ -z "$FILTER" ]; then
+        FILTER="$1"; shift
+      else
+        echo "unexpected positional arg: $1 (filter already set to '$FILTER')" >&2
+        exit 2
+      fi
+      ;;
+  esac
+done
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
@@ -1309,17 +1349,27 @@ test_preflight_verify_paths() {
   local audit_pass=0 audit_fail=0 audit_skip=0
   RAN_AUDIT=1
 
+  local mode_label="informational"
+  [ "$STRICT_PREFLIGHT" = "1" ] && mode_label="strict — failures gate exit"
+
   echo ""
-  echo "${YELLOW}━━━ Preflight-correctness audit (informational) ━━━${RESET}"
+  echo "${YELLOW}━━━ Preflight-correctness audit ($mode_label) ━━━${RESET}"
   echo "  Exercises each migration's requires.verify against THIS machine."
   echo "  Failures may mean either a broken verify path (real bug) OR a"
   echo "  missing local dependency (expected on fresh machines)."
   echo ""
 
   # Sanity-check that python3 + pyyaml are available; skip the whole audit
-  # cleanly if not (degrades gracefully on minimal CI images).
+  # cleanly if not (degrades gracefully on minimal CI images). In strict
+  # mode this is a real failure — CI should install PyYAML or accept
+  # missing audit coverage as a regression.
   if ! python3 -c 'import yaml' 2>/dev/null; then
-    echo "  ${YELLOW}~${RESET} python3 with PyYAML not available — preflight audit skipped"
+    if [ "$STRICT_PREFLIGHT" = "1" ]; then
+      echo "  ${RED}✗${RESET} python3 with PyYAML not available — audit cannot run (strict)"
+      FAIL=$((FAIL+1))
+    else
+      echo "  ${YELLOW}~${RESET} python3 with PyYAML not available — preflight audit skipped"
+    fi
     return 0
   fi
 
@@ -1369,7 +1419,16 @@ PY
   echo ""
   printf "  Audit summary: ${GREEN}PASS=%d${RESET} ${RED}FAIL=%d${RESET} ${YELLOW}SKIP=%d${RESET}\n" \
     "$audit_pass" "$audit_fail" "$audit_skip"
-  echo "  (NOT counted in suite totals — see disclaimer above.)"
+  if [ "$STRICT_PREFLIGHT" = "1" ]; then
+    if [ "$audit_fail" -gt 0 ]; then
+      FAIL=$((FAIL + audit_fail))
+      echo "  (counted in suite totals — strict mode: $audit_fail FAIL rolled into global FAIL.)"
+    else
+      echo "  (counted in suite totals — strict mode: 0 audit FAIL to roll in.)"
+    fi
+  else
+    echo "  (NOT counted in suite totals — pass --strict-preflight to gate.)"
+  fi
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
