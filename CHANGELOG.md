@@ -13,6 +13,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Anchor-comment threat-model documentation in `INIT.md` "Important rules"** — captures the Phase 15 /cso S2 recommendation (REVIEW.md lines 253-256): the anchor pair is structurally fail-safe (denial-of-init, not silent conformance bypass) and future refactors MUST preserve the Phase 2 strict-first-run and Phase 6 POLICY_PATH self-check under "improve UX of re-init" pressure. Cross-references the full S2 threat assessment for maintainers.
+- **`implements_spec: 0.3.0` on `skill/SKILL.md` frontmatter** (closes #31) — declarative-only field, immediately after `version:`. Mirrors the same field on `add-observability/SKILL.md` so the spec-conformance assertion is machine-verifiable on the canonical scaffolder skill itself (not only on the observability sub-skill). The `reference-implementations/README.md` row in `agenticapps-workflow-core` already declares this repo at `0.3.0 / full`; this change lets drift-detection tooling find and verify that assertion locally without leaving the repo. No migration: scaffolder-only declarative-doc change per #31's "out of scope if treated as scaffolder-only" option. Installed projects' `.claude/skills/agentic-apps-workflow/SKILL.md` is unaffected at v1.11.0.
 - **`--strict-preflight` flag for `migrations/run-tests.sh`** (phase 19) — rolls the Phase 13 preflight-correctness audit's `FAIL` count into the global `FAIL` count when set, so CI environments with parity to author dev environments can gate merges on verify-path rot (the issue-#18 bug class). Also accepts `STRICT_PREFLIGHT=1` as an env-var alias for CI-runner ergonomics. Default (loose) mode is unchanged: audit failures still print but don't affect exit code, so dev machines with partial host dependencies aren't false-positive failed. In strict mode the audit's mode-aware header reads `Preflight-correctness audit (strict — failures gate exit)` and the disclaimer reports `(counted in suite totals — strict mode: N FAIL rolled into global FAIL.)`. PyYAML-missing is also strict-aware: loose mode skips with a `~` warning, strict mode emits `✗ python3 with PyYAML not available — audit cannot run (strict)` and increments `FAIL` by 1. New `--help` flag prints the usage block; unknown flags exit 2 (distinct from FAIL → exit 1 so CI can distinguish user error from test failure). Phase 15 smoke runs without the flag and remains unaffected. `migrations/README.md` gains a "Preflight-correctness audit" section documenting both modes.
 - **`add-observability/init/INIT.md` shipped** (phase 15) — closes #26 + spec §10.7 obligations (1) wrapper scaffold and (2) middleware/trace-propagation wiring. Nine-phase init flow with three consent gates (consent-1 plan, consent-2 entry-rewrite, consent-3 CLAUDE.md metadata), idempotent re-detection via anchor comments, and per-stack subsections for all five supported stacks (`ts-cloudflare-worker`, `ts-cloudflare-pages`, `ts-supabase-edge`, `ts-react-vite`, `go-fly-http`). Decline paths preserve partial work + print rollback hints instead of half-applying.
 - **Slash-discovery via global `~/.claude/skills/` symlink** — closes #22 on both code paths: fresh install via `install.sh` LINKS row (Step T1) and existing installs via migration 0012 Step 4 (1.10.0 → 1.11.0 upgrade path). After either path, `claude /add-observability …` resolves directly without prefixing the project skill directory.
@@ -60,7 +62,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 - **Backward compatibility**: projects that do NOT run migration 0011 keep working at v1.9.3 — no breaking changes in scan/init/scan-apply behaviour at v0.3.0.
 - **Init-blocker (resolved in v1.11.0)**: migration 0011's hard pre-flight aborted with "run init first" when observability metadata or `policy.md` was missing, but `add-observability/init/` was not yet shipped at v1.10.0. Projects starting at v1.9.3 with no prior observability state had no walkable path forward at v1.10.0 alone. **Resolved in v1.11.0** by shipping `add-observability/init/INIT.md` + per-stack templates; the v1.10.0 pre-flight messages now point at a real init command (see `[1.11.0]` above).
 
-## [1.9.3] — Unreleased
+## [1.9.3] — 2026-05-13
 
 ### Added
 
@@ -81,7 +83,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 - **Scope reduction**: original draft of migration 0007 (in carry-over PR #12) ran `npm install -g gitnexus` + `gitnexus setup` + per-repo `gitnexus analyze` (30-90 min of LLM work) during apply. Phase 10 strips that to setup-only. Per-repo indexing becomes user-initiated.
 - **Fixture count**: 16 (originally 18 — dropped 01-no-node and 17-no-jq because the harness can't sandbox missing-binary-on-host scenarios cleanly; those pre-flight checks are simple `command -v` lines verified by inspection).
 
-## [1.9.2] — Unreleased
+## [1.9.2] — 2026-05-13
 
 ### Added
 
@@ -97,7 +99,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 - **Scope reach**: migration 0006 touches three scope levels — host (`~/.claude/plugins/` symlink), family (`<family>/`-rooted scaffolding), per-project (SKILL.md version). This is intentional and follows the precedent of migration 0001 (global plugin installs).
 - **Self-contained**: earlier draft of this migration assumed an old draft of 0005 had scaffolded `.knowledge/{raw,wiki}/` first. The shipped 0005 (multi-AI review enforcement) is unrelated; migration 0006 now owns the entire scaffolding chain.
 
-## [1.9.1] — Unreleased
+## [1.9.1] — 2026-05-13
 
 ### Added
 
@@ -114,7 +116,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 - **Subtractive TDD pattern**: hook script was drafted in the PR #12 carry-over and cherry-picked into phase 08. The RED→GREEN sequence proves the hook (existing) matches the fixture decision matrix (new). Same pattern as migration 0010.
 - **Bash 3.2 compatibility**: hook script + harness target macOS bash 3.2.57 explicitly. Empty-array expansion guarded with `${env_args[@]+"${env_args[@]}"}`. Latency benchmark uses python3 brackets around N=100 batches to amortize timing overhead.
 
-## [1.9.0] — Unreleased
+## [1.9.0] — 2026-05-13
 
 ### Added
 
@@ -131,7 +133,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 - **Real cparx (647L)** end-to-end projection: 647 → 0009 → ~496L → 0010 → ~270L. The remaining ~70L gap to the user's stated ~165L target is non-GSD content (gstack skill table, anti-patterns list, repo-structure ASCII diagram, project-specific notes — ~232L of non-marker content). Closing the gap requires a follow-up phase trimming non-GSD content; out of scope for 0010.
 - **Upstream patch recommended as follow-up** — ADR 0022 captures the rationale for shipping the downstream post-processor first while leaving a TODO for an upstream PR to `pi-agentic-apps-workflow` adding a `--reference-mode` flag to `gsd-tools generate-claude-md`. After upstream lands, 0010's post-processor becomes defense-in-depth.
 
-## [1.8.0] — Unreleased
+## [1.8.0] — 2026-05-13
 
 ### Added
 
@@ -169,7 +171,7 @@ integration that was once planned to ship as migration 0007 at
 rebase, GitNexus actually shipped via migration 0007 at `1.9.2 → 1.9.3`.
 See **[1.9.3]** for the content that landed.
 
-## [1.6.0] — Unreleased
+## [1.6.0] — 2026-05-13
 
 ### Added
 
@@ -202,7 +204,7 @@ enforcement gate that was once planned to ship as migration 0005 at
 migration 0005 at `1.9.0 → 1.9.1`. See **[1.9.1]** for the content that
 landed.
 
-## [1.5.0] — Unreleased
+## [1.5.0] — 2026-05-13
 
 ### Fixed
 
