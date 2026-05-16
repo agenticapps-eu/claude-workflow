@@ -18,7 +18,7 @@ branch take it from workflow `v1.9.3 / no observability` to `v1.11.0
 / spec §10 conformant`. Backend (chi) and frontend (Vite) both
 compile clean post-adoption.
 
-```
+```text
 5c29da44 chore: migrate AgenticApps workflow 1.10.0 → 1.11.0 (migration 0012)
 022c6680 chore: migrate AgenticApps workflow 1.9.3 → 1.10.0 (migration 0011 Steps 2-4)
 cfc15d74 feat(observability): migration 0011 Step 1 — author .observability/baseline.json
@@ -91,7 +91,7 @@ Without the re-export line in the template, the materialized
 `src/lib/observability/index.ts` exports `init` but NOT
 `ObservabilityErrorBoundary`, and `main.tsx` fails type-check:
 
-```
+```text
 Module './lib/observability' has no exported member 'ObservabilityErrorBoundary'
 ```
 
@@ -100,10 +100,10 @@ Module './lib/observability' has no exported member 'ObservabilityErrorBoundary'
 
 **Upstream fix**: add the line to
 `add-observability/templates/ts-react-vite/lib-observability.ts`
-between the JSDoc header and the rest of the module body. Ship as
-**v0.3.3** of the skill — patch release since it's a bug fix that
-breaks a documented integration path. No migration needed; the fix
-only affects future `init` runs.
+between the JSDoc header and the rest of the module body. Shipped as
+**v0.3.2** of the skill (this PR) — patch release since it's a bug
+fix that breaks a documented integration path. No migration needed;
+the fix only affects future `init` runs.
 
 The init fixture at
 `migrations/test-fixtures/init-ts-react-vite/expected-after/src/lib/observability/index.ts`
@@ -201,7 +201,7 @@ preserved.
 | # | Finding | Action | Target version |
 |---|---------|--------|----------------|
 | F1 | Stale vendored skill blocker | Detection in pre-flight + remediation message, OR a `0013-stale-vendored-cleanup.md` migration | scaffolder v1.12.0 |
-| F2 | ts-react-vite missing re-export | Add `export { ObservabilityErrorBoundary } from "./ErrorBoundary";` to template | `add-observability` v0.3.3 |
+| F2 | ts-react-vite missing re-export | Add `export { ObservabilityErrorBoundary } from "./ErrorBoundary";` to template | `add-observability` v0.3.2 (this PR) |
 | F3 | Multi-binary Go entry-file detection | Post-candidate-selection HTTP-shape verification | `add-observability` v0.3.4 or v0.4.0 |
 
 ### Suggested test additions
@@ -234,7 +234,8 @@ fx-signal-agent (the originally-listed target):
    commit-message pattern from this branch. The same dual-stack
    verification approach applies (fx-signal-agent has Go + Vite).
 
-3. Apply F2's manual fix until v0.3.3 of the skill ships.
+3. F2 is fixed in v0.3.2 (this PR). Ensure the consuming Claude Code
+   session resolves the global skill at v0.3.2+ — no manual patch needed.
 
 The 14-gap fresh-init baseline.json on cparx is hand-authored
 (commit `cfc15d74`); fx-signal-agent should run
