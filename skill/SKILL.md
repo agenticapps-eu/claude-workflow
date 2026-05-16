@@ -1,6 +1,7 @@
 ---
 name: agentic-apps-workflow
 version: 1.11.0
+implements_spec: 0.3.0
 description: |
   Enforces the spec-first development workflow using Superpowers + GSD + gstack
   for any AgenticApps project. This skill MUST activate whenever Claude is asked
