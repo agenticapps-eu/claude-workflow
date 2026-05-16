@@ -6,6 +6,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [1.11.0] — Unreleased
 
+### Fixed
+
+- **`test_migration_0001` baseline-anchor regression** (phase 17) — the test extracted its "before" fixture from `git merge-base HEAD origin/main`, which resolves to HEAD itself when running on `main` post-merge. Both fixtures then carried the post-0001 template state and all 8 "needs apply on v1.2.0" assertions failed (8 of the 9 known carry-over failures since v1.3.0). The fix anchors `before_ref` to the parent of the commit that first introduced migration 0001's `## Backend language routing` marker in `templates/workflow-config.md` — a self-locating lookup that resolves to the v1.2.0 baseline (`7dafa63`) regardless of branch. The legacy merge-base chain is retained as a fallback for stripped clones or feature branches that haven't merged 0001 yet. Full migration suite now reports **PASS=130 FAIL=1** (only Phase 18's `03-no-gitnexus` carry-over remains). Phase 15 smoke regression-guard thresholds tightened in lockstep from `PASS≥122 FAIL≤9` to `PASS≥130 FAIL≤1`. Test-only change; no scaffolder semantics moved.
+
 ### Added
 
 - **`add-observability/init/INIT.md` shipped** (phase 15) — closes #26 + spec §10.7 obligations (1) wrapper scaffold and (2) middleware/trace-propagation wiring. Nine-phase init flow with three consent gates (consent-1 plan, consent-2 entry-rewrite, consent-3 CLAUDE.md metadata), idempotent re-detection via anchor comments, and per-stack subsections for all five supported stacks (`ts-cloudflare-worker`, `ts-cloudflare-pages`, `ts-supabase-edge`, `ts-react-vite`, `go-fly-http`). Decline paths preserve partial work + print rollback hints instead of half-applying.
