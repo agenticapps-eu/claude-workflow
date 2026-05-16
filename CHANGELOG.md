@@ -62,7 +62,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 - **Backward compatibility**: projects that do NOT run migration 0011 keep working at v1.9.3 — no breaking changes in scan/init/scan-apply behaviour at v0.3.0.
 - **Init-blocker (resolved in v1.11.0)**: migration 0011's hard pre-flight aborted with "run init first" when observability metadata or `policy.md` was missing, but `add-observability/init/` was not yet shipped at v1.10.0. Projects starting at v1.9.3 with no prior observability state had no walkable path forward at v1.10.0 alone. **Resolved in v1.11.0** by shipping `add-observability/init/INIT.md` + per-stack templates; the v1.10.0 pre-flight messages now point at a real init command (see `[1.11.0]` above).
 
-## [1.9.3] — Unreleased
+## [1.9.3] — 2026-05-13
 
 ### Added
 
@@ -83,7 +83,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 - **Scope reduction**: original draft of migration 0007 (in carry-over PR #12) ran `npm install -g gitnexus` + `gitnexus setup` + per-repo `gitnexus analyze` (30-90 min of LLM work) during apply. Phase 10 strips that to setup-only. Per-repo indexing becomes user-initiated.
 - **Fixture count**: 16 (originally 18 — dropped 01-no-node and 17-no-jq because the harness can't sandbox missing-binary-on-host scenarios cleanly; those pre-flight checks are simple `command -v` lines verified by inspection).
 
-## [1.9.2] — Unreleased
+## [1.9.2] — 2026-05-13
 
 ### Added
 
@@ -99,7 +99,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 - **Scope reach**: migration 0006 touches three scope levels — host (`~/.claude/plugins/` symlink), family (`<family>/`-rooted scaffolding), per-project (SKILL.md version). This is intentional and follows the precedent of migration 0001 (global plugin installs).
 - **Self-contained**: earlier draft of this migration assumed an old draft of 0005 had scaffolded `.knowledge/{raw,wiki}/` first. The shipped 0005 (multi-AI review enforcement) is unrelated; migration 0006 now owns the entire scaffolding chain.
 
-## [1.9.1] — Unreleased
+## [1.9.1] — 2026-05-13
 
 ### Added
 
@@ -116,7 +116,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 - **Subtractive TDD pattern**: hook script was drafted in the PR #12 carry-over and cherry-picked into phase 08. The RED→GREEN sequence proves the hook (existing) matches the fixture decision matrix (new). Same pattern as migration 0010.
 - **Bash 3.2 compatibility**: hook script + harness target macOS bash 3.2.57 explicitly. Empty-array expansion guarded with `${env_args[@]+"${env_args[@]}"}`. Latency benchmark uses python3 brackets around N=100 batches to amortize timing overhead.
 
-## [1.9.0] — Unreleased
+## [1.9.0] — 2026-05-13
 
 ### Added
 
@@ -133,7 +133,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 - **Real cparx (647L)** end-to-end projection: 647 → 0009 → ~496L → 0010 → ~270L. The remaining ~70L gap to the user's stated ~165L target is non-GSD content (gstack skill table, anti-patterns list, repo-structure ASCII diagram, project-specific notes — ~232L of non-marker content). Closing the gap requires a follow-up phase trimming non-GSD content; out of scope for 0010.
 - **Upstream patch recommended as follow-up** — ADR 0022 captures the rationale for shipping the downstream post-processor first while leaving a TODO for an upstream PR to `pi-agentic-apps-workflow` adding a `--reference-mode` flag to `gsd-tools generate-claude-md`. After upstream lands, 0010's post-processor becomes defense-in-depth.
 
-## [1.8.0] — Unreleased
+## [1.8.0] — 2026-05-13
 
 ### Added
 
@@ -171,7 +171,7 @@ integration that was once planned to ship as migration 0007 at
 rebase, GitNexus actually shipped via migration 0007 at `1.9.2 → 1.9.3`.
 See **[1.9.3]** for the content that landed.
 
-## [1.6.0] — Unreleased
+## [1.6.0] — 2026-05-13
 
 ### Added
 
@@ -204,7 +204,7 @@ enforcement gate that was once planned to ship as migration 0005 at
 migration 0005 at `1.9.0 → 1.9.1`. See **[1.9.1]** for the content that
 landed.
 
-## [1.5.0] — Unreleased
+## [1.5.0] — 2026-05-13
 
 ### Fixed
 
