@@ -103,6 +103,10 @@ parameters:
       - card_number
       - cvv
       - ssn
+      - secret
+      - client_secret
+      - refresh_token
+      - access_token
   DEBUG_SAMPLE_RATE:
     description: Sample rate for severity=debug events. 0.0–1.0.
     default: 0.1

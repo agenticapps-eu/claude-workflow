@@ -10,7 +10,7 @@
 //   DESTINATION=sentry
 //   DEBUG_SAMPLE_RATE=0.1
 //   TRACE_SAMPLE_RATE=0.1
-//   REDACTED_KEYS=["password","token","api_key","card_number","cvv","ssn","credit_card"]
+//   REDACTED_KEYS=["password","token","api_key","card_number","cvv","ssn","credit_card","secret","client_secret","refresh_token","access_token"]
 //
 // Fixture stub — the real init produces ~12k of token-substituted template
 // content (see add-observability/templates/ts-react-vite/lib-observability.ts).

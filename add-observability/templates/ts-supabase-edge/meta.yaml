@@ -88,7 +88,7 @@ parameters:
   ENV_VAR_ENV: { default: DEPLOY_ENV }
   ENV_VAR_SERVICE: { default: SERVICE_NAME }
   REDACTED_KEYS:
-    default: [password, token, api_key, card_number, cvv, ssn]
+    default: [password, token, api_key, card_number, cvv, ssn, secret, client_secret, refresh_token, access_token]
   DEBUG_SAMPLE_RATE: { default: 0.1 }
   TRACE_SAMPLE_RATE: { default: 0.1 }
   DESTINATION:

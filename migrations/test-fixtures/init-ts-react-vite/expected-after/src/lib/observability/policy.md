@@ -24,6 +24,10 @@ they leave the browser.
 - cvv
 - ssn
 - credit_card
+- secret
+- client_secret
+- refresh_token
+- access_token
 
 ## Project event names
 
