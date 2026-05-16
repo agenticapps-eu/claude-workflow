@@ -122,7 +122,8 @@ opens:
 
 ## PR
 
-Branch pushed to `origin/feat/init-and-slash-discovery-v1.11.0` and
-PR opened at T17. See `gh pr list --head feat/init-and-slash-discovery-v1.11.0`
-for the URL (the prior session's handoff did not have this section
-because the PR did not yet exist at T12's snapshot point).
+**https://github.com/agenticapps-eu/claude-workflow/pull/27** — opened
+at T17 against `main`. Branch pushed to
+`origin/feat/init-and-slash-discovery-v1.11.0`. PR description
+references #22, #26, #24 and includes the full verification + review
+summary. Test plan checklist at the bottom for the reviewer.
