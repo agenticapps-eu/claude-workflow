@@ -92,13 +92,11 @@ else
 fi
 
 # ─── Regression guard: full migration suite — no NEW failures ────────────
-# After Phase 17 landed the test_migration_0001 baseline-anchor fix, the only
-# remaining known carry-over failure is test_migration_0007's 03-no-gitnexus
-# fixture (Phase 18 target, fnm-PATH leak). Phase 15's smoke locks in the
-# post-17 baseline: (a) PASS count is at least 130, (b) FAIL count is at most
-# 1, and (c) the single allowed failure is the 03-no-gitnexus one. Any new
-# failure (or any regression that drops PASS below 130 / lifts FAIL above 1)
-# trips the guard.
+# After Phase 18 landed the test_migration_0007 hermetic-sandbox fix, the
+# migration suite reaches PASS=131 FAIL=0 (no known carry-over failures
+# remain). The smoke locks the new floor: PASS≥131 and any failure at all
+# trips the guard. run-tests.sh suppresses `FAIL: 0` in its summary block,
+# so the parser defaults a missing FAIL line to 0.
 
 hdr "Regression guard: full migration suite — no NEW failures"
 
@@ -106,35 +104,23 @@ bash migrations/run-tests.sh > "$SANDBOX_HOME/m-all.log" 2>&1 || true
 
 pass_count="$(awk '/^[[:space:]]*PASS:/{print $2; exit}' "$SANDBOX_HOME/m-all.log")"
 fail_count="$(awk '/^[[:space:]]*FAIL:/{print $2; exit}' "$SANDBOX_HOME/m-all.log")"
+# run-tests.sh elides the `FAIL: 0` line — treat a missing count as zero.
+[ -z "$fail_count" ] && fail_count=0
 
 echo "    full-suite counts: PASS=$pass_count FAIL=$fail_count"
 
-if [ -z "$pass_count" ] || [ -z "$fail_count" ]; then
+if [ -z "$pass_count" ]; then
   tail -40 "$SANDBOX_HOME/m-all.log"
-  fail "could not parse PASS/FAIL counts from full suite output"
-elif [ "$pass_count" -ge 130 ] && [ "$fail_count" -le 1 ]; then
-  pass "full suite within baseline (PASS≥130 FAIL≤1)"
-
-  # Verify every failure is in the known-pre-existing set (no surprises).
-  unknown_fails=0
-  while IFS= read -r line; do
-    case "$line" in
-      *"03-no-gitnexus — exit 0, expected 1"*) : ;;  # 0007 carry-over (Phase 18)
-      *)
-        unknown_fails=$((unknown_fails + 1))
-        echo "    UNKNOWN FAIL: $line"
-        ;;
-    esac
-  done < <(grep -E '^[[:space:]]*✗' "$SANDBOX_HOME/m-all.log")
-
-  if [ "$unknown_fails" -eq 0 ]; then
-    pass "all failures are known carry-over (Phase 18 target only)"
-  else
-    fail "found $unknown_fails NEW failure(s) outside the known-fail set"
-  fi
+  fail "could not parse PASS count from full suite output"
+elif [ "$pass_count" -ge 131 ] && [ "$fail_count" -eq 0 ]; then
+  pass "full suite at clean baseline (PASS≥131 FAIL=0)"
 else
   tail -40 "$SANDBOX_HOME/m-all.log"
-  fail "full suite drifted from baseline: PASS=$pass_count (expected ≥130) FAIL=$fail_count (expected ≤1)"
+  if [ "$fail_count" -gt 0 ]; then
+    echo "    failing lines:"
+    grep -E '^[[:space:]]*✗' "$SANDBOX_HOME/m-all.log" | sed 's/^/      /'
+  fi
+  fail "full suite drifted from baseline: PASS=$pass_count (expected ≥131) FAIL=$fail_count (expected 0)"
 fi
 
 # ─── Final scaffolder-version asserts ─────────────────────────────────────
