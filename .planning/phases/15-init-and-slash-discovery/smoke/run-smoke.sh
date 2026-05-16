@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run-smoke.sh — Phase 15 end-to-end smoke (v1.9.3 → v1.10.0 → v1.11.0).
+# run-smoke.sh — Phase 15 end-to-end smoke (v1.9.3 → v1.10.0 → v1.11.0 → v1.12.0).
 #
 # Exercises the chain that v1.11.0 closes:
 #   1. install.sh produces a discoverable add-observability skill (closes #22 fresh path).
@@ -93,10 +93,11 @@ fi
 
 # ─── Regression guard: full migration suite — no NEW failures ────────────
 # After Phase 18 landed the test_migration_0007 hermetic-sandbox fix, the
-# migration suite reaches PASS=131 FAIL=0 (no known carry-over failures
-# remain). The smoke locks the new floor: PASS≥131 and any failure at all
-# trips the guard. run-tests.sh suppresses `FAIL: 0` in its summary block,
-# so the parser defaults a missing FAIL line to 0.
+# migration suite reached PASS=131 FAIL=0. Migration 0013 added 5 new
+# fixtures, lifting the floor to PASS=136 FAIL=0. The smoke locks this:
+# PASS≥136 and any failure at all trips the guard. run-tests.sh suppresses
+# `FAIL: 0` in its summary block, so the parser defaults a missing FAIL
+# line to 0.
 
 hdr "Regression guard: full migration suite — no NEW failures"
 
@@ -112,15 +113,15 @@ echo "    full-suite counts: PASS=$pass_count FAIL=$fail_count"
 if [ -z "$pass_count" ]; then
   tail -40 "$SANDBOX_HOME/m-all.log"
   fail "could not parse PASS count from full suite output"
-elif [ "$pass_count" -ge 131 ] && [ "$fail_count" -eq 0 ]; then
-  pass "full suite at clean baseline (PASS≥131 FAIL=0)"
+elif [ "$pass_count" -ge 136 ] && [ "$fail_count" -eq 0 ]; then
+  pass "full suite at clean baseline (PASS≥136 FAIL=0)"
 else
   tail -40 "$SANDBOX_HOME/m-all.log"
   if [ "$fail_count" -gt 0 ]; then
     echo "    failing lines:"
     grep -E '^[[:space:]]*✗' "$SANDBOX_HOME/m-all.log" | sed 's/^/      /'
   fi
-  fail "full suite drifted from baseline: PASS=$pass_count (expected ≥131) FAIL=$fail_count (expected 0)"
+  fail "full suite drifted from baseline: PASS=$pass_count (expected ≥136) FAIL=$fail_count (expected 0)"
 fi
 
 # ─── Final scaffolder-version asserts ─────────────────────────────────────
@@ -129,10 +130,10 @@ hdr "Scaffolder versions at HEAD"
 scaffolder_version="$(awk -F': ' '/^version:/{print $2; exit}' skill/SKILL.md)"
 addobs_version="$(awk -F': ' '/^version:/{print $2; exit}' add-observability/SKILL.md)"
 
-if [ "$scaffolder_version" = "1.11.0" ]; then
-  pass "skill/SKILL.md at v1.11.0"
+if [ "$scaffolder_version" = "1.12.0" ]; then
+  pass "skill/SKILL.md at v1.12.0"
 else
-  fail "skill/SKILL.md at v$scaffolder_version (expected 1.11.0)"
+  fail "skill/SKILL.md at v$scaffolder_version (expected 1.12.0)"
 fi
 
 if [ "$addobs_version" = "0.3.2" ]; then
@@ -153,7 +154,7 @@ if [ "$FAIL" -gt 0 ]; then
   exit 1
 fi
 
-echo "PASS — end-to-end chain v1.9.3 → v1.10.0 → v1.11.0 verified via fixture harness."
+echo "PASS — end-to-end chain v1.9.3 → v1.10.0 → v1.11.0 → v1.12.0 verified via fixture harness."
 echo ""
 echo "─── Manual procedural steps (PLAN T14 steps 2-3, require real claude CLI) ───"
 echo ""

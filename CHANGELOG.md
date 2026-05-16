@@ -4,7 +4,23 @@ All notable changes to the AgenticApps Claude Workflow scaffolder are
 documented here. The format follows [Keep a Changelog](https://keepachangelog.com/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
-## [1.11.0] — Unreleased
+## [1.12.0] — 2026-05-16
+
+### Added
+
+- **Migration `0013-auto-init-and-stale-vendored-cleanup.md`** — promotes 1.11.0 → 1.12.0 in 3 steps. Closes two adopter-side frictions surfaced by the cparx v1.10.0+v1.11.0 adoption verification (PR #34's `.planning/cparx-v1.10.0-adoption-verification/REPORT.md`): (1) stale project-local `.claude/skills/add-observability/` copies at v0.2.x silently shadow the global v0.3.2+ skill installed by 0012, producing "unknown subcommand: init" when adopters run `claude /add-observability init`; (2) the two-`/update-agenticapps-workflow` flow for projects that haven't yet run init — 0011's pre-flight aborts on missing `observability:` metadata, the user runs init manually, then re-runs `/update-agenticapps-workflow`. 0013 detects and removes the stale vendored copy (Step 1), chains the init procedure inline when metadata is missing (Step 2, delegates to `add-observability/init/INIT.md` via the same LLM-driven idiom as 0011 Step 1 → `scan/SCAN.md`), and bumps the scaffolder to v1.12.0 (Step 3). Pre-flight refuses the confused state where the project-local copy matches the global version (would mean someone hand-vendored the current skill — Step 1's remove-and-defer heuristic is no longer safe).
+- **Migration 0013 test fixtures** — `migrations/test-fixtures/0013/` with 5 sandboxed scenarios (fresh-apply-no-vendored-no-init, fresh-apply-stale-vendored-no-init, fresh-apply-no-vendored-with-init, current-vendored-refuses, idempotent-reapply). `test_migration_0013()` stanza added to `migrations/run-tests.sh`. **5/5 pass.**
+
+### Changed
+
+- **Migration 0011 pre-flight abort message** — adds a NOTE pointing v1.11.0+ adopters at migration 0013's auto-init for the missing-`observability:`-metadata case. Existing v1.9.3 → v1.10.0 transition behaviour unchanged.
+
+### Notes
+
+- **F2 from cparx report was fixed in v1.11.0's `[1.11.0]` window** (skill v0.3.2 re-export of `ObservabilityErrorBoundary`). 0013 closes F1 (stale vendored cleanup) + the implicit two-update friction; F3 (go-fly-http multi-binary entry detection) remains deferred to a future scaffolder version.
+- **Step 2 of 0013 is LLM-driven by design** — `init` requires three consent gates (scaffold, entry-rewrite, CLAUDE.md metadata) which the migration framework's pure-shell model can't surface. The consuming agent (Claude Code session running `/update-agenticapps-workflow`) follows the same chain-to-procedure idiom 0011 Step 1 uses for `scan/SCAN.md`. Decline paths exit migration cleanly with exit 3 and the same rollback hints as a direct init invocation.
+
+## [1.11.0] — 2026-05-16
 
 ### Fixed
 
@@ -38,7 +54,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 - **T6-T9 bundled commit**: the four per-stack init subsections + their fixtures landed as a single commit (`047b963`) rather than the per-task atomic pattern T1-T5 / T10-T12 followed. Rationale: shared Phase 5 contract, per-stack subsection headers + named fixture dirs preserve traceability without ~470-line edit-revert ping-pong. Flagged as a one-off precedent; future phases default back to atomic-per-task unless the PLAN explicitly bundles.
 - **Out of scope, deferred to future versions**: init harness function in `run-tests.sh` exercising the 7 init fixture pairs (currently reference-only); standalone Node scanner port (carry-over from 1.10.0 deferred list); pre-commit hook template (§10.9.4 MAY); GitLab / CircleCI workflows; retroactive enforcement on fx-signal-agent.
 
-## [1.10.0] — Unreleased
+## [1.10.0] — 2026-05-15
 
 ### Added
 
