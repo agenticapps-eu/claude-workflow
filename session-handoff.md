@@ -1,57 +1,128 @@
-# Session Handoff — 2026-05-15 (Phase 14 shipped v1.10.0; Phase 15 planned, awaiting review)
+# Session Handoff — 2026-05-16 (Phase 15 SHIPPED: T1-T17 complete, PR open)
 
-## Accomplished
+Branch: `feat/init-and-slash-discovery-v1.11.0`. HEAD: `0e8b01c` (or
+post-PR-push). 15 commits this session on top of `2fecb34` baseline.
+PR opened against `main` at T17 (see URL in this file's PR section
+below or `gh pr list`).
 
-**Phase 14 (v1.10.0) — shipped + merged.** PR #25 merged as `e587741`. Local `main` synced.
-- spec §10.9 observability enforcement at scaffolder 1.10.0; skill `add-observability` 0.2.1 → 0.3.0 (`implements_spec: 0.3.0`)
-- §10.9.1 + §10.9.2 (MUSTs) fully implemented; §10.9.3 (SHOULD) ships as opt-in example at `add-observability/enforcement/observability.yml.example`, NOT auto-installed
-- Migration 0011 (1.9.3 → 1.10.0) ships **local-first** after post-review Option-4 pivot (no Claude-in-CI dependency)
-- Multi-AI plan review BLOCK → APPROVE; CodeRabbit post-merge surfaced 15 findings → 10 fixed in commit `900b282`, 2 false positives explained on PR thread, 3 cosmetic MD040 deferred
-- 6/6 migration-0011 fixtures green; 61 v0.2.1 contract tests regression-guarded by zero template diff
+## Accomplished (this session)
 
-**Phase 15 (v1.11.0) — planning landed, execution not yet started.** Branch `feat/init-and-slash-discovery-v1.11.0`, commit `6d8cce7`. Closes issues #22 (slash-discovery) + #26 (init/INIT.md missing) — both block the documented v1.9.3 → v1.10.0 upgrade path. Commented on #26 acknowledging v1.10.0 shipped over the gap.
+- **T1-T12** — shipped in earlier sub-session (see git log
+  `ef5d681..68acf93`); previous handoff documented in detail.
+- **T13** (`2e56177`) — scaffolder `skill/SKILL.md` 1.10.0 → 1.11.0;
+  CHANGELOG `[1.11.0] — Unreleased` section above `[1.10.0]` with
+  full release notes; `[1.10.0]` now has an "Init-blocker (resolved
+  in v1.11.0)" line cross-referencing v1.11.0.
+- **T14** (`cc2c1e0`) — `.planning/phases/15-init-and-slash-discovery/smoke/`
+  with `run-smoke.sh` (automated) + `output.txt` (capture). 10/10 PASS.
+  Exercises install.sh fresh-install symlink + migrations 0011 / 0012
+  via fixture harness + full-suite "no NEW failures" regression guard
+  (PASS=122, FAIL=9 — all pre-existing carry-over). Manual claude-CLI
+  init + scan smoke documented in the script trailer.
+- **T15** (`31f6546`) — `VERIFICATION.md` 12-row evidence ledger.
+  Every spec §10.7 / §10.8 obligation has a concrete grep/test/awk
+  evidence command; one row (chain-hint fixture variant) covered by
+  INIT.md Phase 8 contract inspection. Procedural consent-decline
+  rows pointed at INIT.md Phase 4/5/6 contracts.
+- **T16** (`0e8b01c`) — combined `REVIEW.md` (R section) + SECURITY
+  (S section) artifact. No CRITICAL findings. Four INFORMATIONAL
+  findings (F1-F5); F1 (migration 0012 rationalization comment) and
+  F2 (Phase 5→6 cross-phase skip rule prose-only) auto-fixed in the
+  same commit. /cso four S-findings (REDACTED_KEYS gaps, anchor
+  injection fail-safe analysis, symlink-discovery trust-boundary
+  analysis, cross-tree applies_to precedent flag) all
+  recommendations-only — no blocking issues.
+- **T17** — this handoff refresh + PR open against `main`.
 
-## Decisions
+## Decisions (this session)
 
-- **Pivot to local-first (Option 4) post-review.** Phase 14 originally shipped a CI workflow; user picked local-only ("we don't need claude in CI now"). The CI workflow preserved as `enforcement/observability.yml.example` (opt-in for self-hosted runners or v1.11.0+ Node-port adopters). Spec §10.9.3 is SHOULD; "example-only" conformance level is defensible. Rationale codified in CHANGELOG and CONTRACT-VERIFICATION.
-- **Slash-discovery fix = option C** (promote scaffolder layout; user-confirmed in Phase 15 RESEARCH). `~/.claude/skills/add-observability` becomes a symlink to `~/.claude/skills/agenticapps-workflow/add-observability/` (the scaffolder's nested copy). Closes both upstream discovery and per-project install gaps in one move. Fallback to option A (symlink at install only) if option C's surface area is materially larger than estimated.
-- **Phase 14 lesson codified**: multi-AI review missed that `SKILL.md` routes to non-existent `init/INIT.md`. New structural check Q8 in `/gsd-review` prompt going forward: every manifest- or routing-table-referenced path MUST resolve on disk.
-- **v1.11.0 unblocks v1.10.0 adoption.** Until Phase 15 lands, no fresh v1.9.3 project can reach v1.10.0 (migration 0011 requires init, init is missing). fx-signal-agent already has observability scaffolded so it may upgrade — confirm before promising. The Node-scanner-port follow-up I'd ranked top-priority post-Phase-14 is **downgraded** since we don't need claude-in-CI under Option 4.
+- **/review skill scoped down** — bypassed the gstack /review's
+  specialist-army + codex orchestration. Rationale: diff is ~85%
+  docs/fixtures/templates; load-bearing code surface is small (3
+  files); PLAN.md already went through multi-AI review with 20-item
+  v1→v2 revision applied. Single-reviewer pass with focus areas
+  per PLAN T16 is proportionate. Documented at the bottom of REVIEW.md.
+- **Smoke regression guard = "no NEW failures"** — full suite has 9
+  pre-existing failures (8 from test_migration_0001 step-idempotency
+  + 1 from test_migration_0007's 03-no-gitnexus fixture). These are
+  Phase 17 / Phase 18 carry-over targets, explicitly out of scope for
+  phase 15. Smoke parses PASS/FAIL counts, asserts PASS≥122 + FAIL≤9,
+  and verifies every failing line matches one of the two known
+  patterns. New failures would flip it red.
+- **Auto-fixed F1 + F2 in the T16 commit** — both are documentation
+  polishes (rationalization-comment trim + Phase 6 prerequisite
+  line). Trivial, no behavioural change; better to land them now
+  than carry the technical debt into the merged artifact.
 
-## Files modified
+## Files modified (this sub-session, T13-T17)
 
-### Phase 14 — already merged in `e587741` (main)
-Full ledger in pre-merge handoff at `e587741`'s session-handoff.md. Plus `900b282` (CodeRabbit fixes) covering 10 files.
+Highlights — full diff: `git log 68acf93..HEAD --stat`.
 
-### Phase 15 — branch `feat/init-and-slash-discovery-v1.11.0` (commit `6d8cce7`)
-- `.planning/phases/15-init-and-slash-discovery/CONTEXT.md` (133 lines) — gaps, why we shipped over them, §10.7 obligations, per-stack init data already in `meta.yaml`, 8 open questions for RESEARCH
-- `.planning/phases/15-init-and-slash-discovery/RESEARCH.md` (164 lines) — 8 design decisions D1-D8 with options + recommendations
-- `.planning/phases/15-init-and-slash-discovery/PLAN.md` (445 lines) — 17 tasks across 7 phases; wave dependency graph; risk register
+- `skill/SKILL.md` — version 1.10.0 → 1.11.0 (T13).
+- `CHANGELOG.md` — `[1.11.0] — Unreleased` section added; `[1.10.0]`
+  cross-reference line added (T13).
+- `.planning/phases/15-init-and-slash-discovery/smoke/{run-smoke.sh,output.txt}` — NEW (T14).
+- `.planning/phases/15-init-and-slash-discovery/VERIFICATION.md` — NEW (T15).
+- `.planning/phases/15-init-and-slash-discovery/REVIEW.md` — NEW (T16, REVIEW + SECURITY combined).
+- `migrations/0012-slash-discovery.md` — F1 auto-fix (rationalization-comment trim, T16).
+- `add-observability/init/INIT.md` — F2 auto-fix (Phase 6 prerequisite line, T16).
+- `session-handoff.md` — this file (T17).
 
 ## Next session: start here
 
-**First action**: spawn multi-AI review against `.planning/phases/15-init-and-slash-discovery/PLAN.md` per the Phase 14 pattern — codex + gemini + Claude self-review. Use the existing `.review-prompt.md` template as the starting prompt; **add Q8 (the new structural existence check)**. Capture into `15-REVIEWS.md`. Revise PLAN.md if BLOCK or REQUEST-CHANGES surfaces, then start T1 (scaffolder layout refactor — the symlink that closes #22).
+**Phase 15 is shipped.** The PR is open against `main`. The first
+action depends on whether the PR has merged when the next session
+opens:
 
-Concretely:
-```bash
-git checkout feat/init-and-slash-discovery-v1.11.0
-# Draft the review prompt with the new Q8 structural check; reuse phase 14's prompt as starting point
-# Run codex + gemini in parallel against PLAN.md
-# Consolidate into 15-REVIEWS.md
-# Start T1
-```
+- **If PR merged** → run `/gsd-complete-milestone` for milestone 15
+  (or whichever milestone phase 15 lives under in the roadmap),
+  archive `.planning/phases/15-init-and-slash-discovery/` to the
+  milestone's archive directory, refresh `.planning/current-phase`
+  to point at phase 16 (or the next active phase), pick the next
+  phase from `.planning/ROADMAP.md`.
+- **If PR awaiting review** → respond to reviewer comments. The
+  load-bearing pieces a reviewer might flag: (a) T6-T9 bundled-commit
+  precedent (flagged in REVIEW.md but explained — shared Phase 5
+  contract justifies it), (b) the four /cso recommendations
+  (REDACTED_KEYS default, anchor-injection threat model
+  documentation, framework-level cross-tree applies_to enforcement —
+  all deferred to v0.3.2 / framework hardening phase, not blocking),
+  (c) fresh-install path verification (T14 smoke step 0 covers it).
+- **If PR closed without merge** → revisit phase 15's scope; the
+  spec gap (#22 + #26) remains open until something equivalent ships.
 
-If you'd rather skip the review gate and start T1 directly (since the PLAN is heavily derived from RESEARCH which surfaced the alternatives), that's the user's call. Phase 14 demonstrated codex catches things; recommend running it.
+## Open questions (carried forward)
 
-## Open questions
-
-- **fx-signal-agent v1.10.0 adoption** — issue's blocked on Phase 15 if init is required. Verify whether fx-signal-agent ran init at v0.2.x somehow (maybe Donald scaffolded the wrapper manually). If yes, migration 0011 should apply now even without Phase 15. Worth a quick check before promising the v1.11.0 timeline.
-- **PR split with issue-26 author** — DonaldVl offered in #26 to PR INIT.md contributions. Decide split before T5-T9 starts: I land slash-discovery refactor + migration 0012 + INIT.md skeleton; author contributes one or more per-stack procedure sections + fixtures.
-- **Carried from prior sessions** (still open):
-  - Phase 17 — fix 8 pre-existing `test_migration_0001` failures (`git merge-base` resolution).
-  - Phase 18 — fix `test_migration_0007` fixture `03-no-gitnexus` fnm-PATH leak on this dev machine.
-  - Phase 19 — `--strict-preflight` flag for the Phase 13 audit.
+- **Phase 17** — `test_migration_0001` step-idempotency failures
+  (`git merge-base` resolution). 8 carry-over failures in full
+  migration suite.
+- **Phase 18** — `test_migration_0007` fixture `03-no-gitnexus`
+  fnm-PATH leak. 1 carry-over failure.
+- **Phase 19** — `--strict-preflight` flag for Phase 13 audit.
+- **Init harness expansion** — VERIFICATION.md F4 flags that the
+  7 init fixture pairs are reference-only at v1.11.0. A future
+  phase could add `test_init_fixtures()` to `run-tests.sh`; the
+  Vite fixture stub would need either inflation to full template
+  output or structural-only comparison semantics in the harness.
+- **Cross-tree applies_to framework hardening** — /cso S4 flagged
+  the new precedent in migration 0012. Consider a `host_paths:`
+  explicit allow-list at the migration-framework level.
+- **REDACTED_KEYS default expansion** — /cso S1: add `secret`,
+  `client_secret`, `refresh_token`, `access_token` to the default.
+  Defer to a v0.3.2 minor of `add-observability`.
+- **Anchor-comment threat-model documentation** — /cso S2: one-paragraph
+  addition to INIT.md "Important rules" so future maintainers don't
+  relax fail-safe semantics under a re-init-UX refactor.
+- **Carried from prior sessions** (unchanged):
+  - fx-signal-agent v1.10.0 adoption — pre-v1.10.0 manual scaffold
+    needs verification before promising v1.11.0 timeline.
   - Helper-script license consent for `index-family-repos.sh --all`.
   - Canonical install command for `/gsd-review` skill.
   - CHANGELOG hygiene: stamp `[1.9.3]` as released.
-  - coderabbit + opencode CLI install docs (carried; multi-AI reviewer floor met without them).
+
+## PR
+
+Branch pushed to `origin/feat/init-and-slash-discovery-v1.11.0` and
+PR opened at T17. See `gh pr list --head feat/init-and-slash-discovery-v1.11.0`
+for the URL (the prior session's handoff did not have this section
+because the PR did not yet exist at T12's snapshot point).
