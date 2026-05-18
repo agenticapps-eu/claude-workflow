@@ -10,7 +10,9 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // ─── §10.3 traceparent roundtrip ──────────────────────────────────────────
@@ -212,4 +214,68 @@ func TestCaptureErrorAttachesErrorMessage(t *testing.T) {
 		Severity: SeverityError,
 		Attrs:    map[string]any{"k": "v"},
 	})
+}
+
+// ─── §10.5 Flush — drain emission goroutines before SDK Flush ──────────────
+
+// TestFlushDrainsInFlightEmissions verifies the Flush contract: any
+// safeFireAndForget goroutine launched before Flush() is called MUST have
+// run to completion before Flush returns true. This is the core invariant
+// the Flush primitive exists for — without it, short-lived processes lose
+// events because sentry.Flush races against unscheduled emission goroutines.
+//
+// Witness: cparx 2026-05-18 adoption verification — direct sentry.CaptureException
+// arrived in Sentry; wrapper-routed events did not. Diagnosis pointed at the
+// safeFireAndForget-vs-sentry.Flush race; Flush primitive added; this test
+// regression-guards.
+func TestFlushDrainsInFlightEmissions(t *testing.T) {
+	var ran atomic.Int32
+	const n = 50
+	for i := 0; i < n; i++ {
+		safeFireAndForget(func() {
+			// Simulate the small but nonzero work an emission goroutine
+			// does between launch and SDK-enqueue (event marshaling,
+			// scope manipulation in sentry-go).
+			time.Sleep(10 * time.Millisecond)
+			ran.Add(1)
+		})
+	}
+	if ok := Flush(2 * time.Second); !ok {
+		t.Fatal("Flush returned false within 2s — emission WG drain or SDK flush stalled")
+	}
+	if got := ran.Load(); got != n {
+		t.Errorf("after Flush, only %d/%d emission goroutines completed — Flush did not drain WG", got, n)
+	}
+}
+
+// TestFlushReturnsTrueWithNoEmissions is the trivial-case baseline:
+// Flush with zero in-flight goroutines must return promptly and report
+// success, since the WaitGroup is already zero and sentry-go's transport
+// buffer is empty.
+func TestFlushReturnsTrueWithNoEmissions(t *testing.T) {
+	start := time.Now()
+	if ok := Flush(2 * time.Second); !ok {
+		t.Fatal("Flush(2s) returned false on an idle wrapper")
+	}
+	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
+		t.Errorf("Flush on idle wrapper took %v — should be near-instant", elapsed)
+	}
+}
+
+// TestFlushTimesOutOnStuckEmission verifies Flush returns false when an
+// emission goroutine hangs past the timeout, instead of blocking forever.
+// Real-world manifestation: a recover()-eaten panic during sentry-go's
+// internal enqueue, or a permanently-stuck transport worker.
+func TestFlushTimesOutOnStuckEmission(t *testing.T) {
+	// stuck goroutine — joins emissionWG but never returns within our budget
+	emissionWG.Add(1)
+	defer emissionWG.Done() // release after the test so subsequent tests aren't poisoned
+	go func() {
+		// hold the WG occupied for longer than Flush's timeout
+		time.Sleep(500 * time.Millisecond)
+	}()
+
+	if ok := Flush(100 * time.Millisecond); ok {
+		t.Error("Flush should have timed out with a stuck emission goroutine, got ok=true")
+	}
 }

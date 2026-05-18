@@ -61,6 +61,7 @@ Side-by-side check that both wrappers expose the same semantic contract.
 | Sentry breadcrumb on every event | ✓ | ✓ | ✓ |
 | Init idempotency | `if (initialized) return` | `sync.Once` | ✓ |
 | Service name resolution from env | `env.{{ENV_VAR_SERVICE}}` | `os.Getenv("{{ENV_VAR_SERVICE}}")` | ✓ |
+| Drain-before-flush primitive (short-lived processes; added v0.3.3 per spec §10.5) | Host runtime drains microtasks (Worker `ctx.waitUntil`, browser long-lifecycle) | Explicit `Flush(timeout)` waiting on `emissionWG sync.WaitGroup` before `sentry.Flush` | ✓ (idiomatic per runtime) |
 
 ## Deliberate divergences
 
@@ -70,6 +71,7 @@ Side-by-side check that both wrappers expose the same semantic contract.
 | `startSpan` returns | `Span` only | `(ctx, *Span)` | Go callers need the child context to propagate; TS callers get it implicitly via ALS. |
 | Outbound interceptor | `instrumentedFetch(originalFetch)` returning a wrapped fetch | `TracingTransport` http.RoundTripper | Each language's HTTP-client extension point. |
 | Error type | `unknown` (TS) | `error` (Go) | Each language's error idiom. |
+| Flush exposure | Implicit — Worker runtime awaits all pending promises via `ctx.waitUntil`; browser SPA has no exit | Explicit `Flush(timeout) bool` — Go has no equivalent runtime-await mechanism for short-lived processes | Symmetric obligation, asymmetric mechanism. Both satisfy spec §10.5. |
 
 ## Known gaps (deferred to v0.3.0)
 
