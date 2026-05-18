@@ -176,6 +176,10 @@ func Init() {
 		}
 		dsn := os.Getenv("{{ENV_VAR_DSN}}")
 		if dsn != "" {
+			// SENTRY_DEBUG=1 turns on sentry-go's verbose logging so the
+			// background HTTP transport surfaces send failures to stderr.
+			// Useful during initial DSN-wiring verification; leave unset in
+			// production.
 			err := sentry.Init(sentry.ClientOptions{
 				Dsn:              dsn,
 				Environment:      deployEnv,
@@ -183,6 +187,7 @@ func Init() {
 				EnableTracing:    true,
 				TracesSampleRate: traceSampleRate,
 				SendDefaultPII:   false,
+				Debug:            os.Getenv("SENTRY_DEBUG") == "1",
 			})
 			if err != nil {
 				logger.Warn("observability: sentry init failed", "err", err.Error())
@@ -429,10 +434,25 @@ func sentryLevel(s Severity) sentry.Level {
 	}
 }
 
+// emissionWG tracks in-flight emission goroutines so Flush can wait for
+// them to call into sentry-go's transport before draining the SDK's own
+// buffer. Without this, short-lived processes (CLI tools, tests) can
+// reach sentry.Flush before any goroutine has enqueued its event,
+// returning success on an empty buffer and losing the event. (Per spec
+// §10.5 Flush primitive — added v0.3.0.)
+//
+// In the long-running HTTP server this race is benign (goroutines run
+// to completion between requests). The WaitGroup makes both call sites
+// reliable.
+var emissionWG sync.WaitGroup
+
 // safeFireAndForget runs fn in a goroutine and recovers any panic so
-// observability errors never bubble out to the request path.
+// observability errors never bubble out to the request path. The
+// goroutine joins emissionWG so Flush can wait for it.
 func safeFireAndForget(fn func()) {
+	emissionWG.Add(1)
 	go func() {
+		defer emissionWG.Done()
 		defer func() {
 			if r := recover(); r != nil {
 				logger.Warn("observability: emission panic recovered", "err", fmt.Sprint(r))
@@ -440,6 +460,44 @@ func safeFireAndForget(fn func()) {
 		}()
 		fn()
 	}()
+}
+
+// Flush waits for in-flight emission goroutines to enqueue their events
+// into sentry-go's transport, then drains the SDK transport's HTTP
+// buffer. Use this from short-lived processes (CLI tools, tests) before
+// exit. Returns true if both stages completed within timeout.
+//
+// The long-running HTTP server does not need to call Flush — the
+// per-request goroutines have time to complete before the next request
+// arrives, and the SDK transport's worker keeps the buffer drained.
+//
+// Satisfies spec §10.5 "Flush primitive" obligation for short-lived
+// processes.
+func Flush(timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	done := make(chan struct{})
+	go func() {
+		emissionWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		// Emission goroutines completed. If sentry-go is unconfigured
+		// (no DSN at Init), there's no SDK transport to flush — the
+		// emission-WG drain is the only contract Flush has, and it
+		// succeeded. Reporting true here is what tests and CLI tools
+		// running without a DSN expect.
+		if !sentryReady {
+			return true
+		}
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return false
+		}
+		return sentry.Flush(remaining)
+	case <-time.After(timeout):
+		return false
+	}
 }
 
 // ─── Redaction ────────────────────────────────────────────────────────────
