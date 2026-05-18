@@ -1,7 +1,7 @@
 ---
 name: add-observability
 version: 0.3.3
-implements_spec: 0.3.0
+implements_spec: 0.3.2
 description: |
   Generate or audit an observability wrapper that satisfies AgenticApps
   core spec §10 for the project's tech stack. Three subcommands:
