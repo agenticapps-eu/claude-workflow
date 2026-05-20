@@ -194,19 +194,52 @@ within a repo are permitted.
 
 ## Refusals
 
-The skill REFUSES to proceed when:
+The skill checks three integrity conditions whenever it's invoked.
+Any triggering refusal routes the operator back to the relevant
+phase with a recovery instruction; the skill re-checks on the next
+invocation. The diagram is the decision skeleton; the prose below
+it carries the recovery instructions and the *why* of each refusal.
 
-- An operator attempts to land Phase 1 and Phase 3 in a single
-  commit. The atomic-three-commit shape is the §06 evidence of the
-  discipline; one commit collapses it. The skill instructs the
-  operator to split the work.
-- The declare file contains implementation. The skill instructs
-  the operator to move bodies into Phase 3's impl file.
-- The Phase-2 tests pass on first run (no observed RED state).
-  This indicates either:
-  - the impl was written before the test (TDD violation), OR
-  - the test does not actually exercise the declared surface.
-  The skill instructs the operator to investigate and re-author.
+```mermaid
+flowchart TD
+  invoke[Skill invoked: author new TS module]
+  invoke --> check{Three concurrent integrity checks}
+  check -->|all pass| proceed[Continue Phase 1 → Phase 2 → Phase 3 procedure]
+  check -->|single commit bundles Phase 1 + Phase 3| r_collapse[REFUSE — collapse erases §06 atomic-commit evidence]
+  check -->|declare file contains implementation body| r_impl[REFUSE — declare-only per §13 Phase 1]
+  check -->|Phase 2 tests pass on first run| r_no_red[REFUSE — no observed RED state]
+  r_collapse --> recover_collapse[Operator splits into three atomic commits, re-invokes]
+  r_impl --> recover_impl[Operator moves bodies to Phase 3 impl file, re-invokes]
+  r_no_red --> recover_no_red[Operator investigates: impl exists already? OR test doesn't exercise declared surface? Re-author the failing case.]
+  recover_collapse --> check
+  recover_impl --> check
+  recover_no_red --> check
+  proceed --> done[Three atomic commits land — §06 evidence satisfied]
+```
+
+Recovery details per refusal:
+
+- **Collapsed-commits refusal.** The atomic three-commit shape is
+  the §06 structural evidence the declare-first discipline was
+  followed; collapsing it erases the evidence even if the resulting
+  code is correct. Operator splits the work into three commits
+  matching the Phase 1 / 2 / 3 shape above and re-invokes the skill.
+
+- **Implementation-in-declare-file refusal.** §13 Phase 1 MUST NOT
+  contain executable code. Function bodies, class method bodies,
+  and expression initialisers for `declare const` all violate the
+  contract. Operator moves the offending code into the Phase 3 impl
+  file and re-invokes.
+
+- **No-observed-RED refusal.** §13 Phase 2 MUST be observable as
+  failing in the expected way at the moment of authoring. Tests
+  passing on first run means either the impl was written before
+  the test (a TDD-discipline violation that erases the contract
+  evidence) OR the test does not actually exercise the declared
+  surface (the test passes for unrelated reasons, which means the
+  contract isn't being tested). Either case requires investigation
+  and re-authoring — the skill cannot distinguish them, only the
+  operator can.
 
 ## Templates
 
