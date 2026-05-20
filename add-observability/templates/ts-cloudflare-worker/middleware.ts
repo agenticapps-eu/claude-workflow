@@ -70,7 +70,7 @@ export function withObservability<Env extends Record<string, unknown>>(
 // ─── Scheduled handler ─────────────────────────────────────────────────────
 
 type ScheduledHandler<Env = unknown> = (
-  event: ScheduledEvent,
+  controller: ScheduledController,
   env: Env,
   ctx: ExecutionContext,
 ) => void | Promise<void>;

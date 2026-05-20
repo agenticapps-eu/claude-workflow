@@ -136,10 +136,10 @@ else
   fail "skill/SKILL.md at v$scaffolder_version (expected 1.12.0)"
 fi
 
-if [ "$addobs_version" = "0.3.2" ]; then
-  pass "add-observability/SKILL.md at v0.3.2"
+if [ "$addobs_version" = "0.4.0" ]; then
+  pass "add-observability/SKILL.md at v0.4.0"
 else
-  fail "add-observability/SKILL.md at v$addobs_version (expected 0.3.2)"
+  fail "add-observability/SKILL.md at v$addobs_version (expected 0.4.0)"
 fi
 
 # ─── Summary ──────────────────────────────────────────────────────────────

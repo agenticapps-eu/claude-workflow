@@ -252,10 +252,18 @@ matching candidate and rewrites the `export default { ... }` object.
 |---------|------|
 | `fetch: handler` | `fetch: withObservability(handler)` |
 | `scheduled: handler` | `scheduled: withObservabilityScheduled(handler)` |
+| Entire `export default { ... }` object | `withSentry((env) => ({ dsn: env.{{ENV_VAR_DSN}}, environment: env.{{ENV_VAR_ENV}}, release: env.{{ENV_VAR_SERVICE}}, tracesSampleRate: {{TRACE_SAMPLE_RATE}}, sendDefaultPii: false }), { ... })` |
 
-The wrapping is applied to whichever handlers the default export
-actually defines — projects with only `fetch` get only the fetch
-wrap; projects with `{ fetch, scheduled }` get both wraps.
+The per-handler `withObservability*` wraps go on individual handlers;
+the outermost `withSentry` wrap binds the Sentry SDK's per-request
+initialisation to the same ExportedHandler object. `@sentry/cloudflare`
+v8 requires `withSentry` because `Sentry.init` is no longer exported
+on the Cloudflare SDK (the Worker-isolate model needs per-request
+initialisation, which `withSentry` provides automatically). The
+wrapping is applied to whichever handlers the default export actually
+defines — projects with only `fetch` get only the fetch wrap;
+projects with `{ fetch, scheduled }` get both wraps. The outer
+`withSentry` wraps the whole object either way.
 
 **Queue handler — explicitly out of scope at v0.3.1.** The template's
 queue wrapper at `templates/ts-cloudflare-worker/middleware.ts:130-138`
@@ -303,14 +311,24 @@ export default {
 After:
 ```typescript
 // agenticapps:observability:start
+import { withSentry } from "@sentry/cloudflare";
 import { withObservability } from "./lib/observability";
 // agenticapps:observability:end
 import { handler } from "./handler";
 
 // agenticapps:observability:start
-export default {
-  fetch: withObservability(handler),
-} satisfies ExportedHandler<Env>;
+export default withSentry(
+  (env) => ({
+    dsn: env.{{ENV_VAR_DSN}},
+    environment: env.{{ENV_VAR_ENV}},
+    release: env.{{ENV_VAR_SERVICE}},
+    tracesSampleRate: {{TRACE_SAMPLE_RATE}},
+    sendDefaultPii: false,
+  }),
+  {
+    fetch: withObservability(handler),
+  } satisfies ExportedHandler<Env>,
+);
 // agenticapps:observability:end
 ```
 
@@ -318,21 +336,31 @@ Before (multi-handler):
 ```typescript
 export default {
   fetch: async (request, env, ctx) => new Response("ok"),
-  scheduled: async (event, env, ctx) => { /* cron */ },
+  scheduled: async (controller, env, ctx) => { /* cron */ },
 } satisfies ExportedHandler<Env>;
 ```
 
 After:
 ```typescript
 // agenticapps:observability:start
+import { withSentry } from "@sentry/cloudflare";
 import { withObservability, withObservabilityScheduled } from "./lib/observability";
 // agenticapps:observability:end
 
 // agenticapps:observability:start
-export default {
-  fetch: withObservability(async (request, env, ctx) => new Response("ok")),
-  scheduled: withObservabilityScheduled(async (event, env, ctx) => { /* cron */ }),
-} satisfies ExportedHandler<Env>;
+export default withSentry(
+  (env) => ({
+    dsn: env.{{ENV_VAR_DSN}},
+    environment: env.{{ENV_VAR_ENV}},
+    release: env.{{ENV_VAR_SERVICE}},
+    tracesSampleRate: {{TRACE_SAMPLE_RATE}},
+    sendDefaultPii: false,
+  }),
+  {
+    fetch: withObservability(async (request, env, ctx) => new Response("ok")),
+    scheduled: withObservabilityScheduled(async (controller, env, ctx) => { /* cron */ }),
+  } satisfies ExportedHandler<Env>,
+);
 // agenticapps:observability:end
 ```
 
