@@ -132,42 +132,68 @@ elif grep -qE '<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 --
   # the idempotency check above would have returned 0 and we wouldn't be
   # here. So the provenance is STALE — replace the managed section.
   #
-  # Replacement range: from the provenance line, through the existing
-  # block, up to (but not including) the next ## heading. The §11 block
-  # has only ### sub-headings internally, so the next `## ` line is the
-  # natural terminator.
+  # Replacement range: from the provenance line through ALL of the old
+  # block body, up to (but not including) the NEXT `## ` heading AFTER
+  # the block's own `## Coding Discipline (NON-NEGOTIABLE)` heading. We
+  # need the "after our own H2" qualifier because the §11 block contains
+  # exactly one `## ` line (its own heading); naïvely terminating on the
+  # first `## ` after the provenance would fire on that own-heading line
+  # and leave the rest of the old block body in place — the bug fixture
+  # 07-byte-identity-replace was written to catch.
   awk -v prov="$PROVENANCE" -v block_file="$SPEC_BLOCK" '
-    BEGIN { in_block = 0; replaced = 0 }
+    BEGIN { in_block = 0; replaced = 0; swallowed_own_h2 = 0 }
     /<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->/ && !replaced {
       print prov
       while ((getline line < block_file) > 0) print line
       close(block_file)
+      print ""
       in_block = 1
       replaced = 1
       next
     }
-    in_block && /^## / { in_block = 0; print; next }
+    in_block && !swallowed_own_h2 && /^## Coding Discipline \(NON-NEGOTIABLE\)$/ {
+      swallowed_own_h2 = 1
+      next
+    }
+    in_block && swallowed_own_h2 && /^## / {
+      in_block = 0
+      print
+      next
+    }
+    in_block { next }
     !in_block { print }
   ' CLAUDE.md > CLAUDE.md.0014.tmp && mv CLAUDE.md.0014.tmp CLAUDE.md
   echo "INFO: migration 0014 Step 1 — replaced stale §11 block with @0.4.0 canonical."
 else
   # No provenance present. Pre-flight #3 already refused the
   # heading-without-provenance conflict case, so we're safe to insert.
-  # Insertion point: after the first H1 line + the first blank line that
-  # follows it (places §11 near the top per §12 placement advisory).
-  # Fallback: append at EOF if the file has no H1+blank shape.
+  # Insertion point: IMMEDIATELY BEFORE the first `## ` (level-2) heading
+  # in the file. This is "near the top" per §12's placement advisory (the
+  # block sits before all sections) AND guarantees the block is followed
+  # by a `## ` line — which makes the replace/rollback "terminate at next
+  # ## " logic structurally robust to projects that have preamble content
+  # between the H1 and the first section.
+  #
+  # Fallback (END block): no `## ` heading in the file at all — append at
+  # EOF. Extraction parsers treat EOF as a valid terminator.
+  #
+  # Fixture 07-byte-identity-replace catches this design: the prior
+  # "after H1 + first blank" placement produced post-apply files where
+  # the next `## ` was further down (past any preamble paragraphs),
+  # so extracting "everything from provenance to next ##" captured the
+  # block plus preamble-tail. Moving placement to "before first ##"
+  # makes the boundary unambiguous.
   awk -v prov="$PROVENANCE" -v block_file="$SPEC_BLOCK" '
-    BEGIN { inserted = 0; saw_h1 = 0 }
-    !inserted && saw_h1 && /^$/ {
-      print
+    BEGIN { inserted = 0 }
+    !inserted && /^## / {
       print prov
       while ((getline line < block_file) > 0) print line
       close(block_file)
       print ""
       inserted = 1
+      print
       next
     }
-    /^# / { saw_h1 = 1 }
     { print }
     END {
       if (!inserted) {
@@ -178,19 +204,36 @@ else
       }
     }
   ' CLAUDE.md > CLAUDE.md.0014.tmp && mv CLAUDE.md.0014.tmp CLAUDE.md
-  echo "INFO: migration 0014 Step 1 — injected §11 block at @0.4.0 (after H1 + blank)."
+  echo "INFO: migration 0014 Step 1 — injected §11 block at @0.4.0 (before first ## heading)."
 fi
 ```
 
 **Rollback:**
 
 ```bash
-# Remove the provenance line through the end of the managed block (the
-# next ## heading is the natural terminator, same as the replace path).
+# Remove the provenance line through the end of the managed block. The
+# block has exactly one `## ` line (its own heading), so we swallow it
+# explicitly then terminate on the NEXT `## ` heading (or EOF). Same
+# shape as Step 1's replace logic — fixture 07-byte-identity-replace
+# was added after the initial commit when the naïve "stop at first ##"
+# logic was discovered to leave the old block body in place.
 if [ -f CLAUDE.md ]; then
   awk '
-    /<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->/ { in_block = 1; next }
-    in_block && /^## / { in_block = 0 }
+    BEGIN { in_block = 0; swallowed_own_h2 = 0 }
+    /<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->/ {
+      in_block = 1
+      next
+    }
+    in_block && !swallowed_own_h2 && /^## Coding Discipline \(NON-NEGOTIABLE\)$/ {
+      swallowed_own_h2 = 1
+      next
+    }
+    in_block && swallowed_own_h2 && /^## / {
+      in_block = 0
+      print
+      next
+    }
+    in_block { next }
     !in_block { print }
   ' CLAUDE.md > CLAUDE.md.0014.tmp && mv CLAUDE.md.0014.tmp CLAUDE.md
 fi
