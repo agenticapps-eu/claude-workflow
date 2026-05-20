@@ -1424,6 +1424,102 @@ test_migration_0013() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Migration 0014 — Inject spec §11 canonical block (closes spec 0.4.0 §11)
+# ─────────────────────────────────────────────────────────────────────────────
+# Same state-comparison pattern as 0013. Each fixture builds a sandboxed
+# $HOME with the scaffolder skill tree + a stub vendored §11 block (the
+# migration's requires.verify checks for the latter), a per-project workflow
+# SKILL.md at v1.12.0 (or v1.14.0 for re-apply), and a fixture-specific
+# CLAUDE.md state (§11 anchor present/absent, provenance current/stale,
+# heading-without-provenance for the conflict-refuse case).
+# verify.sh asserts pre-flight + step idempotency checks return what they
+# should for that state.
+
+test_migration_0014() {
+  echo ""
+  echo "${YELLOW}━━━ Migration 0014 — Inject spec §11 canonical block ━━━${RESET}"
+
+  local fixtures="$REPO_ROOT/migrations/test-fixtures/0014"
+
+  if [ ! -d "$fixtures" ]; then
+    echo "  ${RED}SKIP${RESET}: fixtures directory missing"
+    SKIP=$((SKIP+1))
+    return
+  fi
+
+  # Sanity-check that the scaffolder ships the vendored §11 block the
+  # migration's Step 1 reads bytes from. (We use a STUB copy inside the
+  # sandbox to keep tests hermetic, but the real file must exist in the
+  # scaffolder repo for `requires.verify` to mean anything.)
+  local scaffolder_block="$REPO_ROOT/templates/spec-mirrors/11-coding-discipline-0.4.0.md"
+  if [ ! -f "$scaffolder_block" ]; then
+    echo "  ${RED}✗${RESET} scaffolder source missing: $scaffolder_block — RED state"
+    FAIL=$((FAIL+1))
+    return
+  fi
+
+  # Sanity-check that migration 0014's file itself exists. Until the GREEN
+  # commit lands the migration body, this check fails — that's the RED state
+  # the TDD discipline requires (test before unit-under-test).
+  local migration_file="$REPO_ROOT/migrations/0014-inject-spec-11-coding-discipline.md"
+  if [ ! -f "$migration_file" ]; then
+    echo "  ${RED}✗${RESET} migration file missing: $migration_file — RED state"
+    FAIL=$((FAIL+1))
+    return
+  fi
+
+  run_0014_fixture() {
+    local fixname="$1"
+    local fixdir="$fixtures/$fixname"
+    local tmp; tmp="$(mktemp -d -t "migration-0014-${fixname}-XXXXXX")"
+    local fake_home="$tmp/home"
+    mkdir -p "$fake_home"
+
+    if [ -x "$fixdir/setup.sh" ]; then
+      (
+        cd "$tmp" && \
+        HOME="$fake_home" REPO_ROOT="$REPO_ROOT" FIXTURES_ROOT="$fixtures" \
+          "$fixdir/setup.sh" >/dev/null 2>&1
+      ) || {
+        echo "  ${RED}✗${RESET} $fixname — setup.sh failed"
+        FAIL=$((FAIL+1))
+        rm -rf "$tmp"
+        return
+      }
+    fi
+
+    local verify_out verify_exit
+    verify_out=$(
+      cd "$tmp" && \
+      HOME="$fake_home" REPO_ROOT="$REPO_ROOT" \
+        bash "$fixdir/verify.sh" 2>&1
+    )
+    verify_exit=$?
+
+    local expected_exit
+    expected_exit=$(tr -d '\n' < "$fixdir/expected-exit")
+    if [ "$verify_exit" != "$expected_exit" ]; then
+      echo "  ${RED}✗${RESET} $fixname — verify exit $verify_exit, expected $expected_exit"
+      echo "      verify output:"
+      printf '%s\n' "$verify_out" | sed 's/^/        /' | head -10
+      FAIL=$((FAIL+1))
+      rm -rf "$tmp"
+      return
+    fi
+
+    echo "  ${GREEN}✓${RESET} $fixname"
+    PASS=$((PASS+1))
+    rm -rf "$tmp"
+  }
+
+  for fix in "$fixtures"/[0-9]*-*/; do
+    local name
+    name="$(basename "${fix%/}")"
+    run_0014_fixture "$name"
+  done
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Preflight-correctness audit (Phase 13)
 # ─────────────────────────────────────────────────────────────────────────────
 # Walks every migration and executes each `requires[*].verify` shell command
@@ -1559,6 +1655,10 @@ fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "0013" ]; then
   test_migration_0013
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "0014" ]; then
+  test_migration_0014
 fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "preflight" ]; then
