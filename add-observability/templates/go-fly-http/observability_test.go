@@ -216,6 +216,29 @@ func TestCaptureErrorAttachesErrorMessage(t *testing.T) {
 	})
 }
 
+// TestSentryTraceStatusMapping pins the Severity → Sentry trace-context
+// status mapping used by CaptureError's SetContext("trace", ...) call.
+// Sentry's Trace UI uses this field to colour the span's status; errors
+// must map to a failure state so the Trace tab renders correctly.
+func TestSentryTraceStatusMapping(t *testing.T) {
+	cases := []struct {
+		sev  Severity
+		want string
+	}{
+		{SeverityDebug, "ok"},
+		{SeverityInfo, "ok"},
+		{SeverityWarn, "ok"},
+		{SeverityError, "internal_error"},
+		{SeverityFatal, "internal_error"},
+	}
+	for _, c := range cases {
+		got := sentryTraceStatus(c.sev)
+		if got != c.want {
+			t.Errorf("sentryTraceStatus(%q) = %q, want %q", c.sev, got, c.want)
+		}
+	}
+}
+
 // ─── §10.5 Flush — drain emission goroutines before SDK Flush ──────────────
 
 // TestFlushDrainsInFlightEmissions verifies the Flush contract: any

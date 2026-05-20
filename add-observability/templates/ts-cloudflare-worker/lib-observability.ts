@@ -87,6 +87,14 @@ export interface InitEnv {
 /**
  * Initialize the wrapper. Called once per Worker invocation by the
  * `withObservability` middleware (see middleware.ts). Idempotent.
+ *
+ * Sentry SDK initialisation is handled by `withSentry(optionsFactory, handler)`
+ * at the entry-file site (see INIT.md Phase 5 detail). `@sentry/cloudflare`
+ * v8 removed `Sentry.init`; the per-request `withSentry` wrap is the
+ * canonical setup point. This function only sets local module state
+ * (service name, deploy env, waitUntil binding) and records whether a
+ * DSN was present so downstream `Sentry.withScope` / `captureException`
+ * / `addBreadcrumb` calls in this module can be gated on the same flag.
  */
 export function init(env: InitEnv, ctx: ExecutionContext): void {
   serviceName = env.{{ENV_VAR_SERVICE}} ?? SERVICE_DEFAULT;
@@ -102,17 +110,12 @@ export function init(env: InitEnv, ctx: ExecutionContext): void {
   }
 
   if (initialized) return;
-  const dsn = env.{{ENV_VAR_DSN}};
-  if (dsn) {
-    Sentry.init({
-      dsn,
-      environment: deployEnv,
-      release: serviceName,
-      tracesSampleRate: TRACE_SAMPLE_RATE,
-      sendDefaultPii: false,
-    });
-  }
-  initialized = true;
+  // `withSentry` at the entry-file site populates the Sentry hub when
+  // a DSN is configured; the wrapper just records the same DSN-present
+  // signal so `captureError` / `emit` know whether Sentry.* calls are
+  // safe. If no DSN, withSentry is a passthrough and these calls are
+  // skipped.
+  initialized = Boolean(env.{{ENV_VAR_DSN}});
 }
 
 // ─── traceparent helpers (W3C Trace Context Level 1) ──────────────────────

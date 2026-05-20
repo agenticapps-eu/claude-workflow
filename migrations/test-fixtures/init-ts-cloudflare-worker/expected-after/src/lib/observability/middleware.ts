@@ -14,8 +14,8 @@ export function withObservability<Env extends Record<string, unknown>>(
 }
 
 export function withObservabilityScheduled<Env extends Record<string, unknown>>(
-  handler: (event: ScheduledEvent, env: Env, ctx: ExecutionContext) => void | Promise<void>,
-): (event: ScheduledEvent, env: Env, ctx: ExecutionContext) => Promise<void> {
+  handler: (event: ScheduledController, env: Env, ctx: ExecutionContext) => void | Promise<void>,
+): (event: ScheduledController, env: Env, ctx: ExecutionContext) => Promise<void> {
   return async (event, env, ctx) => { await handler(event, env, ctx); };
 }
 // agenticapps:observability:end

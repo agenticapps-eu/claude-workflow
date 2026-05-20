@@ -327,6 +327,23 @@ func CaptureError(ctx context.Context, err error, env Envelope) {
 				scope.SetTag("service", serviceName)
 				scope.SetTag("env", deployEnv)
 				if tc != nil {
+					// Native Sentry trace context — populates the Trace tab in
+					// the event UI and makes `trace:<hex>` queries match in
+					// Discover search. The wrapper's W3C TraceContext maps
+					// 1:1 onto Sentry's trace-context schema. Keep the
+					// SetTag pair below for free-form `trace_id:<hex>`
+					// search ergonomics (additive — no behaviour change for
+					// projects that already searched by tag).
+					traceCtx := map[string]any{
+						"trace_id": tc.TraceID,
+						"span_id":  tc.SpanID,
+						"op":       env.Event,
+						"status":   sentryTraceStatus(env.Severity),
+					}
+					if tc.ParentSpanID != "" {
+						traceCtx["parent_span_id"] = tc.ParentSpanID
+					}
+					scope.SetContext("trace", traceCtx)
 					scope.SetTag("trace_id", tc.TraceID)
 					scope.SetTag("span_id", tc.SpanID)
 				}
@@ -431,6 +448,19 @@ func sentryLevel(s Severity) sentry.Level {
 		return sentry.LevelFatal
 	default:
 		return sentry.LevelInfo
+	}
+}
+
+// sentryTraceStatus maps wrapper Severity onto the Sentry trace-context
+// `status` field per the W3C-style status taxonomy Sentry's UI accepts.
+// Errors get "internal_error" so the Trace tab renders the span in its
+// failure colour; everything else maps to "ok".
+func sentryTraceStatus(s Severity) string {
+	switch s {
+	case SeverityError, SeverityFatal:
+		return "internal_error"
+	default:
+		return "ok"
 	}
 }
 
