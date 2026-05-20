@@ -1520,6 +1520,99 @@ test_migration_0014() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Migration 0015 — Scaffold ts-declare-first skill (closes spec 0.4.0 §13)
+# ─────────────────────────────────────────────────────────────────────────────
+# Same state-comparison pattern as 0013/0014. Each fixture builds a
+# sandboxed $HOME with the scaffolder skill tree containing a stub
+# ts-declare-first/SKILL.md (the migration's requires.verify checks for
+# the latter), and a fixture-specific $HOME/.claude/skills/ts-declare-first
+# state (absent, correct symlink, non-symlink directory, redirected
+# symlink). verify.sh asserts pre-flight + Step 1 idempotency checks
+# behave as expected for that state.
+
+test_migration_0015() {
+  echo ""
+  echo "${YELLOW}━━━ Migration 0015 — Scaffold ts-declare-first skill ━━━${RESET}"
+
+  local fixtures="$REPO_ROOT/migrations/test-fixtures/0015"
+
+  if [ ! -d "$fixtures" ]; then
+    echo "  ${RED}SKIP${RESET}: fixtures directory missing"
+    SKIP=$((SKIP+1))
+    return
+  fi
+
+  # Sanity-check that the scaffolder ships the ts-declare-first skill
+  # the migration's Step 1 symlinks to. (Stub copy in sandbox keeps
+  # tests hermetic; the real file must exist in the scaffolder repo for
+  # `requires.verify` to mean anything.)
+  local scaffolder_skill="$REPO_ROOT/ts-declare-first/SKILL.md"
+  if [ ! -f "$scaffolder_skill" ]; then
+    echo "  ${RED}✗${RESET} scaffolder source missing: $scaffolder_skill — RED state"
+    FAIL=$((FAIL+1))
+    return
+  fi
+
+  # Sanity-check that migration 0015's file itself exists.
+  local migration_file="$REPO_ROOT/migrations/0015-add-ts-declare-first-skill.md"
+  if [ ! -f "$migration_file" ]; then
+    echo "  ${RED}✗${RESET} migration file missing: $migration_file — RED state"
+    FAIL=$((FAIL+1))
+    return
+  fi
+
+  run_0015_fixture() {
+    local fixname="$1"
+    local fixdir="$fixtures/$fixname"
+    local tmp; tmp="$(mktemp -d -t "migration-0015-${fixname}-XXXXXX")"
+    local fake_home="$tmp/home"
+    mkdir -p "$fake_home"
+
+    if [ -x "$fixdir/setup.sh" ]; then
+      (
+        cd "$tmp" && \
+        HOME="$fake_home" REPO_ROOT="$REPO_ROOT" FIXTURES_ROOT="$fixtures" \
+          "$fixdir/setup.sh" >/dev/null 2>&1
+      ) || {
+        echo "  ${RED}✗${RESET} $fixname — setup.sh failed"
+        FAIL=$((FAIL+1))
+        rm -rf "$tmp"
+        return
+      }
+    fi
+
+    local verify_out verify_exit
+    verify_out=$(
+      cd "$tmp" && \
+      HOME="$fake_home" REPO_ROOT="$REPO_ROOT" \
+        bash "$fixdir/verify.sh" 2>&1
+    )
+    verify_exit=$?
+
+    local expected_exit
+    expected_exit=$(tr -d '\n' < "$fixdir/expected-exit")
+    if [ "$verify_exit" != "$expected_exit" ]; then
+      echo "  ${RED}✗${RESET} $fixname — verify exit $verify_exit, expected $expected_exit"
+      echo "      verify output:"
+      printf '%s\n' "$verify_out" | sed 's/^/        /' | head -10
+      FAIL=$((FAIL+1))
+      rm -rf "$tmp"
+      return
+    fi
+
+    echo "  ${GREEN}✓${RESET} $fixname"
+    PASS=$((PASS+1))
+    rm -rf "$tmp"
+  }
+
+  for fix in "$fixtures"/[0-9]*-*/; do
+    local name
+    name="$(basename "${fix%/}")"
+    run_0015_fixture "$name"
+  done
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Preflight-correctness audit (Phase 13)
 # ─────────────────────────────────────────────────────────────────────────────
 # Walks every migration and executes each `requires[*].verify` shell command
@@ -1659,6 +1752,10 @@ fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "0014" ]; then
   test_migration_0014
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "0015" ]; then
+  test_migration_0015
 fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "preflight" ]; then
