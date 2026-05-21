@@ -45,11 +45,16 @@ spec 0.4.0 absorption; 0015 rides on it (no further version change).
 ```bash
 SKILL_FILE=.claude/skills/agentic-apps-workflow/SKILL.md
 
-# 1. Workflow SKILL.md is at 1.14.0 (post-0014 state). 0014 is the
-#    sole bumper of 1.12.0 → 1.14.0; 0015 expects 0014 to have run.
-grep -qE '^version: 1\.14\.0$' "$SKILL_FILE" || {
+# 1. Workflow SKILL.md is at full post-0014 state (version 1.14.0 AND
+#    implements_spec 0.4.0). 0014 is the sole bumper of both lines;
+#    0015 rides on 0014's full state, so we assert both here rather
+#    than just version (otherwise a partial-0014 state where version
+#    bumped but implements_spec did not could slip through).
+grep -qE '^version: 1\.14\.0$' "$SKILL_FILE" \
+  && grep -qE '^implements_spec: 0\.4\.0$' "$SKILL_FILE" || {
   INSTALLED=$(grep -E '^version:' "$SKILL_FILE" 2>/dev/null | sed 's/version: //')
-  echo "ABORT: workflow scaffolder version is $INSTALLED (need 1.14.0)."
+  SPEC=$(grep -E '^implements_spec:' "$SKILL_FILE" 2>/dev/null | sed 's/implements_spec: //')
+  echo "ABORT: workflow scaffolder state is version=${INSTALLED:-<missing>} implements_spec=${SPEC:-<missing>} (need 1.14.0 / 0.4.0)."
   echo "       Apply migration 0014 first via /update-agenticapps-workflow."
   exit 3
 }
