@@ -269,6 +269,13 @@ SKILL_FILE=.claude/skills/agentic-apps-workflow/SKILL.md
 sed -i.0014.bak -E 's/^version: 1\.12\.0$/version: 1.14.0/' "$SKILL_FILE"
 if grep -q '^implements_spec:' "$SKILL_FILE"; then
   sed -i.0014.bak -E 's/^implements_spec: 0\.3\.[0-9]+$/implements_spec: 0.4.0/' "$SKILL_FILE"
+else
+  echo "ABORT: $SKILL_FILE is missing 'implements_spec:'; refusing partial 0014 apply."
+  echo "       Step 2 bumps both version and implements_spec; a SKILL.md without"
+  echo "       the implements_spec line would land in a non-conformant state."
+  echo "       Hand-add 'implements_spec: 0.3.2' below the version line, then re-run."
+  rm -f "$SKILL_FILE.0014.bak"
+  exit 3
 fi
 rm -f "$SKILL_FILE.0014.bak"
 echo "INFO: migration 0014 Step 2 — workflow scaffolder bumped to 1.14.0 / implements_spec 0.4.0."
