@@ -3,7 +3,9 @@
 # "already applied"; the migration would no-op on re-run.
 set -eu
 
-# Pre-flight #1: version is 1.14.0 (re-apply path) → pass
+# Pre-flight #1: version is 1.12.0 OR 1.14.0 → pass. Fixture 02's
+# concrete state is 1.14.0 (the re-apply path); the regex is the
+# migration's actual pre-flight regex, kept identical across fixtures.
 grep -qE '^version: 1\.(12\.0|14\.0)$' .claude/skills/agentic-apps-workflow/SKILL.md \
   || { echo "PRE-FLIGHT 1 should pass on re-apply (1.14.0)"; exit 1; }
 

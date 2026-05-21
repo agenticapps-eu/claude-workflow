@@ -4,7 +4,10 @@
 # REPLACE the §11 section. Step 2 still needs to apply.
 set -eu
 
-# Pre-flight #1: version is 1.12.0 → pass
+# Pre-flight #1: version is 1.12.0 OR 1.14.0 → pass. Fixture 03's
+# concrete state is 1.12.0 (pre-bump, stale §11 anchor); the regex
+# is the migration's actual pre-flight regex, kept identical across
+# fixtures. Step 2 idempotency below hard-asserts the concrete 1.12.0.
 grep -qE '^version: 1\.(12\.0|14\.0)$' .claude/skills/agentic-apps-workflow/SKILL.md \
   || { echo "PRE-FLIGHT 1 should pass"; exit 1; }
 
