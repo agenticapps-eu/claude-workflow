@@ -100,7 +100,7 @@ npx tsc --noEmit --strict path/to/<module>.declare.ts
 
 Commit shape:
 
-```
+```text
 declare(ts): <module> — Phase 1 surface contract (declare-only)
 ```
 
@@ -150,7 +150,7 @@ npm test -- path/to/<module>.test.ts > /tmp/phase-2-expected-failure.log
 
 Commit shape:
 
-```
+```text
 test(ts): <module> — Phase 2 contract tests (RED, expected-fail)
 ```
 
@@ -173,7 +173,7 @@ npm test -- path/to/<module>.test.ts
 
 Commit shape:
 
-```
+```text
 feat(ts): <module> — Phase 3 implementation (GREEN)
 ```
 

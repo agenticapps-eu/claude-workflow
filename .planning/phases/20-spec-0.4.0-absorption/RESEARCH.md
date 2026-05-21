@@ -194,7 +194,7 @@ section moves**. Migration 0014 does not reflow surrounding text.
 migration's apply step must:
 
 1. Extract bytes from `spec/11-coding-discipline.md` between
-   `## Canonical block` heading and the next `## ` heading. (The
+   `## Canonical block` heading and the next `##` (level-2) heading. (The
    §11 file uses `````` quad-backtick fence around the block, so the
    apply step extracts inside-fence content.)
 2. Inject without modification — no whitespace normalisation, no
