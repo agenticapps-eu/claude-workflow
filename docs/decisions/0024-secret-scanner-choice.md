@@ -60,7 +60,8 @@ Fixture: `vercel-labs/deepsec/fixtures/vulnerable-app/` at commit
 secrets in `src/config.ts`). cparx was the A2-preferred fixture but
 had no documented seeded-secret catalogue, so the benchmark fell back
 to A2's named alternative — recorded in
-`/Users/donald/Documents/Claude/Projects/agentic-workflow/scanner-eval-2026-05-20/fixture-meta.md`.
+`<host-local>/scanner-eval-2026-05-20/fixture-meta.md` (off-repo by
+design — see RESEARCH.md §A5).
 
 The most informative non-deciding signal: **criterion 4 inverted vs
 RESEARCH.md A1's prediction.** A1 named "recursive encoded decoding"
@@ -133,9 +134,10 @@ signal for keeping the incumbent.
 - Cross-repo: `agenticapps-workflow-core/adrs/0015-secret-scanner.md` —
   the upstream ADR this local ADR ratifies. Cross-repo PR captured in
   Phase 20 P4.6 commit message.
-- Benchmark artifacts:
-  `/Users/donald/Documents/Claude/Projects/agentic-workflow/scanner-eval-2026-05-20/`
-  (tool-versions, fixture-meta, criterion-1..7, DECISION).
+- Benchmark artifacts: `<host-local>/scanner-eval-2026-05-20/`
+  (tool-versions, fixture-meta, criterion-1..7, DECISION). Intentionally
+  off-repo — see RESEARCH.md §A5 for the rationale (error logs may
+  contain real secret material).
 - `.planning/phases/20-spec-0.4.0-absorption/RESEARCH.md` §§A1–A6 —
   pre-benchmark methodology lock.
 - `.planning/phases/20-spec-0.4.0-absorption/PLAN.md` §P4 — the plan

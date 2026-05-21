@@ -79,8 +79,8 @@ fragment added".
 
 All raw outputs to:
 
-```
-/Users/donald/Documents/Claude/Projects/agentic-workflow/scanner-eval-2026-05-20/
+```text
+<host-local>/scanner-eval-2026-05-20/
 ├── fixture-meta.md             # which fixture, why, sha
 ├── gitleaks-version.txt
 ├── betterleaks-version.txt
