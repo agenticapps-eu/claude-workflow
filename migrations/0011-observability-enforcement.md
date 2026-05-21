@@ -11,7 +11,7 @@ applies_to:
 requires:
   - skill: add-observability
     install: "(skill ships in scaffolder repo; no separate install)"
-    verify: "test -f ~/.claude/skills/agenticapps-workflow/add-observability/scan/SCAN.md && grep -q '^implements_spec: 0.3.0' ~/.claude/skills/agenticapps-workflow/add-observability/SKILL.md"
+    verify: "test -f ~/.claude/skills/agenticapps-workflow/add-observability/scan/SCAN.md && grep -qE '^implements_spec: 0\\.[3-9]\\.[0-9]+$' ~/.claude/skills/agenticapps-workflow/add-observability/SKILL.md"
   - tool: claude
     install: "Claude Code CLI; install separately (https://claude.ai/code)"
     verify: "command -v claude >/dev/null"
