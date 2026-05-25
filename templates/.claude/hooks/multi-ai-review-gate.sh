@@ -11,14 +11,16 @@
 #
 # Fires on PreToolUse matcher: Edit|Write|MultiEdit
 # Exit 2 = BLOCK; Exit 0 = ALLOW.
-# Latency budget: sub-100ms (measured 22-48ms avg on bash 3.2/arm64).
+# Latency budget: sub-100ms on the common path (symlink + STATE.md awk parse).
+# The gsd-tools (node) step is a fallback that fires only when neither resolves;
+# it can add node cold-start latency, so STATE.md is tried before it.
 #
 # Override (emergency / non-phase work):
 #   export GSD_SKIP_REVIEWS=1
 # Or place a sentinel:
 #   touch .planning/current-phase/multi-ai-review-skipped
 #
-# Source: ADR 0018, migration 0005.
+# Source: ADR 0018 (gate), ADR 0025 (hybrid phase resolver), migrations 0005 + 0016.
 
 set -e
 
@@ -57,21 +59,89 @@ case "$FILE" in
     ;;
 esac
 
-# Resolve current phase directory.
-CURRENT_PHASE=$(readlink .planning/current-phase 2>/dev/null || true)
+# Resolve the active phase directory. The historical resolver assumed
+# `.planning/current-phase` was a SYMLINK to the phase dir. But the
+# design-shotgun and database-sentinel gates use `.planning/current-phase/`
+# as a DIRECTORY holding approval sentinels, so in practice readlink returns
+# empty and the gate never fired (ADR 0025). Resolver is now a fail-open
+# chain: symlink -> GSD state -> STATE.md -> newest PLAN -> allow.
+# resolver: hybrid (ADR 0025)
+
+# Match a phase number (e.g. "2" or "04.9") to a phases/<dir>. Tries the raw
+# value and a zero-padded-to-2 integer form. Echoes the dir or nothing.
+_match_phase_dir() {
+  local num="$1" d
+  [ -n "$num" ] || return 0
+  d=$(find .planning/phases -maxdepth 1 -type d -name "${num}-*" 2>/dev/null | sort | head -1)
+  [ -n "$d" ] && { echo "$d"; return 0; }
+  case "$num" in
+    [0-9]) d=$(find .planning/phases -maxdepth 1 -type d -name "0${num}-*" 2>/dev/null | sort | head -1)
+           [ -n "$d" ] && { echo "$d"; return 0; } ;;
+  esac
+  return 0
+}
+
+resolve_phase() {
+  local p cp d newest
+
+  # 1. Legacy symlink (back-compat for any repo that does symlink current-phase).
+  p=$(readlink .planning/current-phase 2>/dev/null || true)
+  if [ -n "$p" ]; then
+    [ -d "$p" ] && { echo "$p"; return 0; }
+    [ -d ".planning/$p" ] && { echo ".planning/$p"; return 0; }
+  fi
+
+  # 2. STATE.md '## Current Phase' — cheap awk parse, anchored on the Phase keyword.
+  if [ -f .planning/STATE.md ]; then
+    cp=$(awk '/^##[[:space:]]+Current Phase/{f=1; next}
+              f && match($0, /[Pp]hase[[:space:]]+[0-9]+(\.[0-9]+)?/){
+                s=substr($0, RSTART, RLENGTH); match(s, /[0-9]+(\.[0-9]+)?/);
+                print substr(s, RSTART, RLENGTH); exit}' \
+              .planning/STATE.md 2>/dev/null || true)
+    d=$(_match_phase_dir "$cp")
+    [ -n "$d" ] && { echo "$d"; return 0; }
+  fi
+
+  # 3. GSD state: gsd-tools.cjs state json -> .current_phase (fallback; spawns node).
+  if command -v node >/dev/null 2>&1 && [ -f "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" ]; then
+    cp=$(node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" state json 2>/dev/null \
+          | jq -r '.current_phase // empty' 2>/dev/null || true)
+    d=$(_match_phase_dir "$cp")
+    [ -n "$d" ] && { echo "$d"; return 0; }
+  fi
+
+  # 4. Newest *-PLAN.md by mtime -> its phase dir. NUL-safe for paths with spaces.
+  newest=$(find .planning/phases -maxdepth 2 -name '*-PLAN.md' -print0 2>/dev/null \
+            | xargs -0 ls -t 2>/dev/null | head -1 || true)
+  [ -n "$newest" ] && { dirname "$newest"; return 0; }
+
+  # 5. Nothing resolved.
+  return 0
+}
+
+CURRENT_PHASE=$(resolve_phase)
 if [ -z "$CURRENT_PHASE" ] || [ ! -d "$CURRENT_PHASE" ]; then
   # No active phase pointer — allow (workflow not in active phase execution).
   exit 0
 fi
 
-# If current phase has a skip sentinel, allow.
+# Skip sentinel — check both the documented override location (current-phase/)
+# and the resolved phase dir.
+[ -f ".planning/current-phase/multi-ai-review-skipped" ] && exit 0
 [ -f "$CURRENT_PHASE/multi-ai-review-skipped" ] && exit 0
 
 # If no PLAN.md exists yet, planning hasn't happened — allow.
 PLANS=$(find "$CURRENT_PHASE" -maxdepth 2 -name "*-PLAN.md" 2>/dev/null | head -1)
 [ -z "$PLANS" ] && exit 0
 
-# Plans exist. Check for REVIEWS.md.
+# Grandfather guard (ADR 0025): a phase that already produced a *-SUMMARY.md was
+# executed before this gate worked. Blocking it would brick repos that shipped
+# every phase without reviews (fx-signal-agent, callbot). Allow — enforcement is
+# go-forward only, on phases planned but not yet executed.
+SUMMARY=$(find "$CURRENT_PHASE" -maxdepth 2 -name "*-SUMMARY.md" 2>/dev/null | head -1)
+[ -n "$SUMMARY" ] && exit 0
+
+# Plans exist, phase not yet executed. Check for REVIEWS.md.
 REVIEWS=$(find "$CURRENT_PHASE" -maxdepth 2 -name "*-REVIEWS.md" 2>/dev/null | head -1)
 if [ -z "$REVIEWS" ]; then
   echo "❌ Multi-AI Plan Review Gate: blocked edit during execution" >&2
@@ -84,23 +154,15 @@ if [ -z "$REVIEWS" ]; then
   echo "   Run /gsd-review before continuing with execution." >&2
   echo "" >&2
   echo "   Override (emergency only): GSD_SKIP_REVIEWS=1 or touch" >&2
-  echo "   $CURRENT_PHASE/multi-ai-review-skipped" >&2
+  echo "   .planning/current-phase/multi-ai-review-skipped" >&2
   exit 2
 fi
 
-# CSO L1 fix: ensure REVIEWS.md is a regular file. A FIFO or socket at
-# that path would hang `wc -l` until the Claude Code hook timeout. With
-# `[ -f ... ]` the non-regular case treats REVIEWS as effectively absent
-# and proceeds to the allow path (no stub-warn message — the file isn't
-# really there in any meaningful sense).
+# Ensure REVIEWS.md is a regular file (a FIFO/socket would hang wc -l).
 [ -f "$REVIEWS" ] || exit 0
 
-# Validate REVIEWS.md isn't empty stub. FLAG-D advisory threshold:
-# < 5 lines is treated as a stub and triggers a warning, but still allows
-# the edit. The hook's stated trust-boundary (ADR 0018) is "REVIEWS.md
-# exists." Quality of content is gated by Stage 1 + Stage 2 post-execution
-# reviews, not by this hook. A bad-faith 5-line stub would be obvious in
-# the eventual review artifact and in git history of the REVIEWS.md file.
+# Advisory stub check: < 5 lines warns but still allows (trust boundary is
+# "REVIEWS.md exists"; content quality is gated by post-execution reviews).
 if [ "$(wc -l < "$REVIEWS" | tr -d ' ')" -lt 5 ]; then
   echo "⚠ Multi-AI Plan Review Gate: REVIEWS.md present but suspiciously empty" >&2
   echo "   Phase:    $CURRENT_PHASE" >&2

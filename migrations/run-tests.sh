@@ -888,7 +888,7 @@ test_migration_0005() {
     rm -rf "$tmp"
   }
 
-  # Run all 13 fixtures, sorted.
+  # Run all 16 fixtures, sorted.
   for fix in "$fixtures"/[0-9]*-*/; do
     local name
     name="$(basename "${fix%/}")"
@@ -1711,6 +1711,53 @@ PY
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# test_migration_0016 — Review gate phase-resolution fix (ADR 0025)
+# ─────────────────────────────────────────────────────────────────────────────
+# The resolver behavior is exercised in detail by fixtures 14/15/16 under
+# test-fixtures/0005 (run by test_migration_0005 — they share the hook script).
+# This function validates migration 0016's own guarantees: the template hook
+# carries the ADR-0025 marker (the idempotency anchor), and a directory-style
+# current-phase with an unreviewed/unexecuted plan blocks (the Verify smoke test).
+test_migration_0016() {
+  echo ""
+  echo "${YELLOW}━━━ Migration 0016 — Review gate phase-resolution fix (ADR 0025) ━━━${RESET}"
+
+  local script="$REPO_ROOT/templates/.claude/hooks/multi-ai-review-gate.sh"
+
+  if [ ! -x "$script" ]; then
+    echo "  ${RED}✗${RESET} hook missing or non-executable at $script"
+    FAIL=$((FAIL+1))
+    return
+  fi
+
+  # 1. Idempotency marker present (the string migration 0016 greps for).
+  if grep -q 'resolver: hybrid (ADR 0025)' "$script"; then
+    echo "  ${GREEN}✓${RESET} hook carries ADR-0025 resolver marker"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} hook missing 'resolver: hybrid (ADR 0025)' marker"
+    FAIL=$((FAIL+1))
+  fi
+
+  # 2. Verify smoke test: directory-style current-phase blocks (exit 2).
+  local tmp; tmp="$(mktemp -d -t "migration-0016-XXXXXX")"
+  ( cd "$tmp" \
+    && mkdir -p .planning/current-phase .planning/phases/01-x \
+    && touch .planning/phases/01-x/01-PLAN.md \
+    && echo '{"tool_name":"Edit","tool_input":{"file_path":"src/a.go"}}' \
+       | bash "$script" >/dev/null 2>&1 )
+  local rc=$?
+  if [ "$rc" = "2" ]; then
+    echo "  ${GREEN}✓${RESET} dir-style current-phase blocks (exit 2)"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} dir-style current-phase did not block (exit $rc, expected 2)"
+    FAIL=$((FAIL+1))
+  fi
+  rm -rf "$tmp"
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Dispatcher
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1756,6 +1803,10 @@ fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "0015" ]; then
   test_migration_0015
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "0016" ]; then
+  test_migration_0016
 fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "preflight" ]; then
