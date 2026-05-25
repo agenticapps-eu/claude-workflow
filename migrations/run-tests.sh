@@ -888,7 +888,7 @@ test_migration_0005() {
     rm -rf "$tmp"
   }
 
-  # Run all 13 fixtures, sorted.
+  # Run all 16 fixtures, sorted.
   for fix in "$fixtures"/[0-9]*-*/; do
     local name
     name="$(basename "${fix%/}")"
