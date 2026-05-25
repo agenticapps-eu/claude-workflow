@@ -72,7 +72,9 @@ echo "Migration 0016 applied successfully."
 ## Rollback
 
 ```bash
-# Restore the 0005-era hook from the workflow repo at the 1.14.0 tag, then:
+# Restore the pre-0016 hook from the workflow repo's 1.14.0 release commit
+# (the repo is not git-tagged; use the commit that was HEAD before this
+# migration's template change), then revert the version:
 sed -i.bak 's/^version: 1\.15\.0$/version: 1.14.0/' .claude/skills/agentic-apps-workflow/SKILL.md \
   && rm -f .claude/skills/agentic-apps-workflow/SKILL.md.bak
 ```
@@ -81,4 +83,7 @@ sed -i.bak 's/^version: 1\.15\.0$/version: 1.14.0/' .claude/skills/agentic-apps-
 
 - Settings wiring is unchanged (the hook command path is identical to 0005), so
   no `.claude/settings.json` edit is needed.
+- Apply order: this migration must run after 0005 (which installs the hook) and
+  after 0015. The migration runner applies migrations in ascending id order, so
+  0015 → 0016 is automatic; no manual sequencing needed.
 - Backfilling pre-existing unreviewed phases stays optional and out of scope.
