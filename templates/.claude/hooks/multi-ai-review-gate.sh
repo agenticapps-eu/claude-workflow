@@ -11,7 +11,9 @@
 #
 # Fires on PreToolUse matcher: Edit|Write|MultiEdit
 # Exit 2 = BLOCK; Exit 0 = ALLOW.
-# Latency budget: sub-100ms (measured 22-48ms avg on bash 3.2/arm64).
+# Latency budget: sub-100ms on the common path (symlink + STATE.md awk parse).
+# The gsd-tools (node) step is a fallback that fires only when neither resolves;
+# it can add node cold-start latency, so STATE.md is tried before it.
 #
 # Override (emergency / non-phase work):
 #   export GSD_SKIP_REVIEWS=1
@@ -70,17 +72,17 @@ esac
 _match_phase_dir() {
   local num="$1" d
   [ -n "$num" ] || return 0
-  d=$(find .planning/phases -maxdepth 1 -type d -name "${num}-*" 2>/dev/null | head -1)
+  d=$(find .planning/phases -maxdepth 1 -type d -name "${num}-*" 2>/dev/null | sort | head -1)
   [ -n "$d" ] && { echo "$d"; return 0; }
   case "$num" in
-    [0-9]) d=$(find .planning/phases -maxdepth 1 -type d -name "0${num}-*" 2>/dev/null | head -1)
+    [0-9]) d=$(find .planning/phases -maxdepth 1 -type d -name "0${num}-*" 2>/dev/null | sort | head -1)
            [ -n "$d" ] && { echo "$d"; return 0; } ;;
   esac
   return 0
 }
 
 resolve_phase() {
-  local p cp d
+  local p cp d newest
 
   # 1. Legacy symlink (back-compat for any repo that does symlink current-phase).
   p=$(readlink .planning/current-phase 2>/dev/null || true)
@@ -89,7 +91,18 @@ resolve_phase() {
     [ -d ".planning/$p" ] && { echo ".planning/$p"; return 0; }
   fi
 
-  # 2. GSD state: gsd-tools.cjs state json -> .current_phase
+  # 2. STATE.md '## Current Phase' — cheap awk parse, anchored on the Phase keyword.
+  if [ -f .planning/STATE.md ]; then
+    cp=$(awk '/^##[[:space:]]+Current Phase/{f=1; next}
+              f && match($0, /[Pp]hase[[:space:]]+[0-9]+(\.[0-9]+)?/){
+                s=substr($0, RSTART, RLENGTH); match(s, /[0-9]+(\.[0-9]+)?/);
+                print substr(s, RSTART, RLENGTH); exit}' \
+              .planning/STATE.md 2>/dev/null || true)
+    d=$(_match_phase_dir "$cp")
+    [ -n "$d" ] && { echo "$d"; return 0; }
+  fi
+
+  # 3. GSD state: gsd-tools.cjs state json -> .current_phase (fallback; spawns node).
   if command -v node >/dev/null 2>&1 && [ -f "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" ]; then
     cp=$(node "$HOME/.claude/get-shit-done/bin/gsd-tools.cjs" state json 2>/dev/null \
           | jq -r '.current_phase // empty' 2>/dev/null || true)
@@ -97,19 +110,9 @@ resolve_phase() {
     [ -n "$d" ] && { echo "$d"; return 0; }
   fi
 
-  # 3. Parse STATE.md '## Current Phase' — first phase-number-looking token after the heading.
-  if [ -f .planning/STATE.md ]; then
-    cp=$(awk '/^##[[:space:]]+Current Phase/{f=1; next}
-              f && match($0, /[0-9]+(\.[0-9]+)?/){print substr($0, RSTART, RLENGTH); exit}' \
-              .planning/STATE.md 2>/dev/null || true)
-    d=$(_match_phase_dir "$cp")
-    [ -n "$d" ] && { echo "$d"; return 0; }
-  fi
-
-  # 4. Newest *-PLAN.md by mtime -> its phase dir.
-  local newest
-  newest=$(find .planning/phases -maxdepth 2 -name '*-PLAN.md' 2>/dev/null \
-            | xargs ls -t 2>/dev/null | head -1 || true)
+  # 4. Newest *-PLAN.md by mtime -> its phase dir. NUL-safe for paths with spaces.
+  newest=$(find .planning/phases -maxdepth 2 -name '*-PLAN.md' -print0 2>/dev/null \
+            | xargs -0 ls -t 2>/dev/null | head -1 || true)
   [ -n "$newest" ] && { dirname "$newest"; return 0; }
 
   # 5. Nothing resolved.
