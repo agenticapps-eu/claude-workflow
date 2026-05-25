@@ -12,6 +12,7 @@ rather than silently picking one side. When you are confused, stop and
 ask — confusion is signal, not friction.
 
 Anti-patterns this rule prevents:
+
 - Diving into implementation without restating what was actually requested.
 - Picking one reading of an ambiguous instruction silently and shipping it.
 - Treating two contradictory requirements as if both can be satisfied without comment.
@@ -28,6 +29,7 @@ senior-engineer test: would a senior engineer reviewing this say it is
 overcomplicated for what was asked?
 
 Anti-patterns this rule prevents:
+
 - Adding a helper function "in case we need to call this from elsewhere later."
 - Introducing a configuration option for behavior that has one consumer.
 - Wrapping internal calls in try/catch when no internal caller throws.
@@ -44,6 +46,7 @@ change created. If you notice an unrelated improvement, leave it as a
 follow-up note, not a diff.
 
 Anti-patterns this rule prevents:
+
 - Reformatting untouched lines to "fix style" while editing nearby.
 - Refactoring a function that the task did not name.
 - Renaming a variable across the file because the new name is "better."
@@ -63,6 +66,7 @@ exists. "Done" is "the goal is verifiably satisfied," not "the code now
 exists."
 
 Anti-patterns this rule prevents:
+
 - "Fix the bug" without a failing test that reproduces it.
 - "Improve performance" without a measurement before and a measurement after.
 - "Make it work" without a definition of "work" the diff can be checked against.
