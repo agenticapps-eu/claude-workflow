@@ -4,6 +4,29 @@ All notable changes to the AgenticApps Claude Workflow scaffolder are
 documented here. The format follows [Keep a Changelog](https://keepachangelog.com/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.16.0] — 2026-05-26
+
+### Added (Axiom as logs destination — Sentry stays errors-only)
+
+- **Destination registry** across all 5 stack templates (`ts-cloudflare-worker`, `ts-cloudflare-pages`, `ts-supabase-edge`, `ts-react-vite`, `go-fly-http`): each wrapper gains `destinations/{registry,sentry,axiom}` adapters. `logEvent` routes to the logs destination; `captureError` routes to the errors destination. NO dual-ship: Sentry=errors, Axiom=logs by default. Spec §10.6/§10.8 — no spec change.
+- **Fail-closed `resolveConfig`** — role map baked at init (`DESTINATIONS_CONFIG`) + `OBS_DESTINATIONS` env override. Unsupported role mappings (e.g. `errors=axiom`, which declares only logs+analytics) are REJECTED at init; errors can never silently route to Axiom.
+- **Axiom adapter** — POSTs to `https://api.axiom.co/v1/datasets/<dataset>/ingest` (`AXIOM_INGEST_URL` override for all stacks). Never-throws into app code: try/catch + rate-limited warn + `ctx.waitUntil`/`EdgeRuntime.waitUntil`/Go goroutine drained by the existing `Flush()`. No-op when `AXIOM_TOKEN`+`AXIOM_DATASET` are absent.
+- **Browser (ts-react-vite) safety** — no ingest token in the browser; Axiom adapter is console-only unless `VITE_AXIOM_PROXY_URL` (same-origin proxy) is set. `VITE_AXIOM_TOKEN`/`VITE_AXIOM_DATASET` are never read.
+- **ts-cloudflare-pages full contract-test harness (D3)** — cf-pages shipped zero tests before this release; now has its own wrapper + ~16 contract tests + Axiom tests (27 total). Closes a pre-existing coverage gap.
+- **Materialize-and-test harness** `add-observability/templates/run-template-tests.sh` — runs each stack's tests by materializing the template into a temp project (vitest/deno/go). Reproduces the full baseline + new tests. **148 stack tests total green** (cf-worker 40, cf-pages 27, react-vite 34, supabase-edge 22, go-fly-http 25).
+- **`meta.yaml` `destinations:` block** (×5: available/defaults/roles_supported) + a `test_meta_destinations_consistency` check asserting meta `roles_supported` matches each adapter's role table.
+- **INIT.md** — `--destinations errors=sentry,logs=axiom` flag + "Destination role assignment" phase; copies only role-referenced adapters; writes the v0.4.0 `observability:` block.
+- **Migration `0017-add-axiom-logs-destination.md`** (from_version 1.15.0 → to_version 1.16.0) — adopts the registry shape on existing v0.3.x/v0.4.x projects via an executable engine. §10.7 consent: structural-masking hash detection refuses hand-modified wrappers (writes ZERO files on refuse by default; `--allow-partial` to apply clean roots only); auto-generates a `.observability-0017.patch` on refuse. Rewrites CLAUDE.md `observability:` v0.3.0→v0.4.0 via anchor-managed range. 7 test fixtures.
+
+### Changed
+
+- **`skill/SKILL.md`** version 1.15.0→1.16.0 (`implements_spec` stays 0.4.0). **`add-observability/SKILL.md`** 0.4.0→0.5.0 (`implements_spec` stays 0.3.2).
+- **Version-metadata note**: `add-observability`'s `version` bumps (0.4.0→0.5.0, new declarative destination surface) but its `implements_spec` stays `0.3.2` deliberately — the wrapper RUNTIME contract (§10.1–10.7) is unchanged; the multi-destination shape it now materialises is a §10.8 project-metadata concern already permitted at 0.3.x. Not a drift bug.
+
+### Notes / deferred to 1.17.0
+
+- Axiom span emission (analytics role), ingest batching, error mirroring to Axiom, destinations beyond Sentry+Axiom. Downstream adoption (cparx/fx-signal-agent/callbot) is separate post-1.16.0 work.
+
 ## [1.15.0] — 2026-05-25
 
 ### Fixed (ADR 0025 — multi-AI review gate phase resolution)
