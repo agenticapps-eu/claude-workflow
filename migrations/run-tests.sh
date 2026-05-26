@@ -1758,6 +1758,113 @@ test_migration_0016() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# meta.yaml ↔ adapter role-table consistency (Phase 21 / P4.3)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# `init` (add-observability/init/INIT.md) is an agent-followed markdown runbook,
+# not an executable binary, so there is no `add-observability init` command a
+# shell fixture can invoke. The automatable backstop for Phase 1.5's
+# destination role assignment is this consistency check: every stack's
+# meta.yaml `destinations.roles_supported` MUST exactly match that stack's
+# wrapper adapter role table (`ADAPTER_SUPPORTED_ROLES` for TS,
+# `adapterSupportedRoles` for Go). init reads `roles_supported` to validate
+# `--destinations` fail-closed; the wrapper's runtime `resolveConfig` reads the
+# adapter table. If they drift, init would accept/reject overrides differently
+# from the wrapper — this test makes that drift a failure.
+
+# Extract "sentry=errors,logs;axiom=logs,analytics" from a TS registry.ts
+# ADAPTER_SUPPORTED_ROLES block or a Go adapterSupportedRoles map.
+_roles_from_adapter() {
+  local file="$1"
+  # Scope to the role table ONLY (not the ADAPTER_FACTORIES map, which also has
+  # sentry:/axiom: keys). TS: ADAPTER_SUPPORTED_ROLES with [...] arrays;
+  # Go: adapterSupportedRoles with {...} maps.
+  #   TS:  sentry: ["errors", "logs"],   axiom: ["logs", "analytics"],
+  #   Go:  destSentry: {RoleErrors, RoleLogs},  destAxiom: {RoleLogs, RoleAnalytics},
+  awk '
+    function emit(dest, body,   n, parts, i, role, out) {
+      gsub(/[][{}"]/, "", body); gsub(/[ \t]/, "", body)
+      gsub(/Role/, "", body)            # Go: RoleErrors -> Errors
+      n = split(body, parts, ","); out = ""
+      for (i = 1; i <= n; i++) { role = tolower(parts[i]); if (role != "") out = out (out==""?"":",") role }
+      print dest "=" out
+    }
+    # Start ONLY at the declaration line (TS `const ... = {`, Go `var ... = map...{`),
+    # not at comment mentions of the constant name elsewhere in the file.
+    /(const ADAPTER_SUPPORTED_ROLES|var adapterSupportedRoles).*\{[ \t]*$/ { in_tbl = 1; next }
+    in_tbl && /^[ \t]*}/                            { in_tbl = 0 }
+    in_tbl && /^[ \t]*(sentry|destSentry)[ \t]*:/   { sub(/^[^:]*:/, ""); emit("sentry", $0) }
+    in_tbl && /^[ \t]*(axiom|destAxiom)[ \t]*:/     { sub(/^[^:]*:/, ""); emit("axiom",  $0) }
+  ' "$file" | sort | tr '\n' ';'
+}
+
+# Extract "sentry=errors,logs;axiom=logs,analytics" from a meta.yaml
+# destinations.roles_supported block.
+_roles_from_meta() {
+  local file="$1"
+  awk '
+    /^destinations:/            { in_d = 1; next }
+    in_d && /^[^[:space:]]/     { in_d = 0; in_r = 0 }      # left the top-level block
+    in_d && /roles_supported:/  { in_r = 1; next }
+    in_r && /^[^[:space:]]/     { in_r = 0 }
+    in_r && /^[ \t]+(sentry|axiom)[ \t]*:/ {
+      line = $0
+      split(line, kv, ":"); dest = kv[1]; gsub(/[ \t]/, "", dest)
+      body = substr(line, index(line, ":") + 1)
+      # strip trailing inline comment, brackets, quotes, whitespace
+      sub(/#.*/, "", body); gsub(/[]["]/, "", body); gsub(/[ \t]/, "", body)
+      n = split(body, parts, ","); out = ""
+      for (i = 1; i <= n; i++) { r = tolower(parts[i]); if (r != "") out = out (out==""?"":",") r }
+      print dest "=" out
+    }
+  ' "$file" | sort | tr '\n' ';'
+}
+
+test_meta_destinations_consistency() {
+  echo ""
+  echo "${YELLOW}━━━ Phase 21 / P4 — meta.yaml ↔ adapter role-table consistency ━━━${RESET}"
+
+  local tdir="$REPO_ROOT/add-observability/templates"
+  # stack -> adapter role-table source file (TS registry.ts / Go destinations.go)
+  local stacks="ts-cloudflare-worker ts-cloudflare-pages ts-supabase-edge ts-react-vite go-fly-http"
+
+  for s in $stacks; do
+    local meta="$tdir/$s/meta.yaml"
+    local adapter=""
+    if [ -f "$tdir/$s/destinations/registry.ts" ]; then
+      adapter="$tdir/$s/destinations/registry.ts"
+    elif [ -f "$tdir/$s/destinations.go" ]; then
+      adapter="$tdir/$s/destinations.go"
+    fi
+
+    if [ ! -f "$meta" ]; then
+      echo "  ${RED}✗${RESET} $s: meta.yaml missing"; FAIL=$((FAIL+1)); continue
+    fi
+    if [ -z "$adapter" ]; then
+      echo "  ${RED}✗${RESET} $s: adapter role-table source not found"; FAIL=$((FAIL+1)); continue
+    fi
+
+    local meta_roles adapter_roles
+    meta_roles="$(_roles_from_meta "$meta")"
+    adapter_roles="$(_roles_from_adapter "$adapter")"
+
+    # Expected canonical shape (guards against the awk silently emitting "").
+    local expected="axiom=logs,analytics;sentry=errors,logs;"
+    if [ "$meta_roles" != "$expected" ]; then
+      echo "  ${RED}✗${RESET} $s: meta roles_supported = '$meta_roles' (want '$expected')"
+      FAIL=$((FAIL+1)); continue
+    fi
+    if [ "$meta_roles" = "$adapter_roles" ]; then
+      echo "  ${GREEN}✓${RESET} $s: roles_supported matches adapter table ($meta_roles)"
+      PASS=$((PASS+1))
+    else
+      echo "  ${RED}✗${RESET} $s: meta '$meta_roles' != adapter '$adapter_roles'"
+      FAIL=$((FAIL+1))
+    fi
+  done
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Dispatcher
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1811,6 +1918,10 @@ fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "preflight" ]; then
   test_preflight_verify_paths
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "destinations" ]; then
+  test_meta_destinations_consistency
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────

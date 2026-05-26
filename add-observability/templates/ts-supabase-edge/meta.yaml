@@ -78,6 +78,25 @@ deno_imports:
   # is supported by Supabase's Edge Functions runtime via Deno's Node
   # compatibility layer.
 
+# ─── Destination role assignment ──────────────────────────────────────────
+# Phase 21 (P4.1) — spec §10.6 (destination independence) + §10.8 (project
+# metadata). Declares which destinations this stack ships and how each
+# observability ROLE (errors / logs / analytics) maps to a named adapter.
+# `init` reads `defaults` when no `--destinations` flag is given, validates
+# any override fail-closed against `roles_supported` (mirrors the wrapper's
+# `resolveConfig` rule — an unsupported mapping like `errors=axiom` is
+# rejected and the default kept), copies ONLY the role-referenced adapter
+# files, and substitutes the resolved map into the wrapper's baked
+# `DESTINATIONS_CONFIG` constant. `roles_supported` is the meta-level mirror
+# of the wrapper's `ADAPTER_SUPPORTED_ROLES` constant in destinations/registry.ts.
+
+destinations:
+  available: ["sentry", "axiom"]
+  defaults: { errors: sentry, logs: axiom, analytics: none }
+  roles_supported:
+    sentry: ["errors", "logs"]
+    axiom: ["logs", "analytics"]
+
 # ─── Generator parameter substitutions ────────────────────────────────────
 
 parameters:
