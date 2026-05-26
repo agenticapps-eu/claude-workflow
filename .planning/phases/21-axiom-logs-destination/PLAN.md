@@ -49,6 +49,50 @@ vitest / deno test / go test; bash migration harness.
 
 ---
 
+## P0.5 — Materialize-and-test harness (FOUNDATION — discovered blocker)
+
+The 5 templates have NO in-repo `package.json`/vitest/deno config; the 61 contract
+tests only run when a stack is "materialized" into a real project with its
+toolchain. There is no harness for this today (tests were verified ad-hoc). Every
+TDD step in P1–P5 depends on one existing. Build it first.
+
+**Files:** Create `add-observability/templates/run-template-tests.sh`.
+
+**read_first:** each stack's `meta.yaml` (`target.*` paths — template file →
+materialized path mapping, e.g. `lib-observability.ts` → `src/lib/observability/index.ts`),
+the existing test files (`lib-observability.test.ts`, `index.test.ts`,
+`observability_test.go`), `add-observability/CONTRACT-VERIFICATION.md` (runner per
+stack: vitest+jsdom / deno test / go test).
+
+**Action:** a script `run-template-tests.sh <stack>` (and `all`) that, per stack:
+1. Makes a temp dir; copies the template's source + test files to their
+   materialized paths (per `meta.yaml target.*`).
+2. Drops in the minimal toolchain config:
+   - TS (cf-worker, cf-pages, react-vite): `package.json` with `vitest` (+ `jsdom`
+     for browser stacks), a `tsconfig.json`, install via `npm i`/`npx`.
+   - supabase-edge: `deno.json`; run `deno test`.
+   - go-fly-http: `go.mod`; run `go test ./...`.
+3. Runs the stack's tests; prints PASS/FAIL; non-zero exit on failure.
+4. Cleans up the temp dir.
+
+**Proof-of-correctness (this is the TDD for the harness):** run it against the
+CURRENT templates (no new code) and confirm it reproduces the documented baseline —
+cf-worker 15, react-vite 22, supabase-edge 12, go-fly-http 12 (cf-pages has none
+yet). The harness is "GREEN" when those existing counts pass through it. This both
+builds the runner AND independently re-verifies the 61-test baseline.
+
+- [ ] **Step 1:** Write `run-template-tests.sh`; run `… cf-worker` → 15 pass.
+- [ ] **Step 2:** Extend to react-vite (22), supabase-edge (12), go-fly-http (12).
+- [ ] **Step 3:** `… all` runs every stack; cf-pages reports "no tests yet" (not a failure).
+- [ ] **Step 4:** Commit `feat(obs/templates): materialize-and-test harness`.
+
+**P0.5 gate:**
+- `bash add-observability/templates/run-template-tests.sh all` exits 0.
+- Existing baseline reproduced: 15 + 22 + 12 + 12 = 61 pass; cf-pages noted as
+  pending (filled by P2.3).
+
+---
+
 ## P1 — Destination registry + adapter interface (the contract)
 
 ### P1.1 — Define the `Destination` interface + `Registry` (TS reference: cf-worker)
