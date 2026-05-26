@@ -351,9 +351,20 @@ emit_refuse_artifacts() {
       echo "      diff vs known baseline (excerpt):" >&2
       diff -u "$tmpl" "$entry" 2>/dev/null | head -20 | sed 's/^/        /' >&2
       echo "      wrote recovery patch: $patch" >&2
+      echo "      *** SECURITY: this patch may contain secrets if your wrapper" >&2
+      echo "          embeds tokens or API keys. Delete it after use and do NOT" >&2
+      echo "          commit it to version control." >&2
+      # Idempotently add the patch filename to .gitignore (if one exists).
+      local gi="$dir/.gitignore"
+      if [ -f "$gi" ]; then
+        if ! grep -qF ".observability-0017.patch" "$gi"; then
+          printf '\n.observability-0017.patch\n' >> "$gi"
+        fi
+      fi
       echo "      recover: (a) git stash your wrapper changes;" >&2
       echo "               (b) re-run migration 0017 against the clean wrapper;" >&2
       echo "               (c) re-apply $patch onto the migrated wrapper." >&2
+      echo "               (d) delete $patch once done." >&2
     else
       echo "      (no baseline template available for stack '$stack' — manual splice required)" >&2
     fi

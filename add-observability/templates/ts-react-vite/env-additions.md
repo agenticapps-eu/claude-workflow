@@ -177,6 +177,12 @@ Set `AXIOM_TOKEN` and `AXIOM_DATASET` as server-side secrets (e.g. in
 `.env.server`, fly secrets, or a KV binding) — never in `.env` where Vite
 would bundle them.
 
+> **Hardening:** an open `/api/log` proxy is an abuse-amplification vector —
+> any browser tab (or script) can POST arbitrary payloads to your Axiom dataset.
+> The proxy SHOULD enforce: (a) a request body-size cap (e.g. `express.text({ limit: "64kb" })`
+> or Hono's `bodyLimit` middleware); (b) basic rate-limiting per IP; and (c) if
+> the app has authentication, require a valid session before forwarding.
+
 ## `.gitignore`
 
 The skill adds:
