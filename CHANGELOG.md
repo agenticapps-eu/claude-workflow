@@ -4,6 +4,19 @@ All notable changes to the AgenticApps Claude Workflow scaffolder are
 documented here. The format follows [Keep a Changelog](https://keepachangelog.com/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.15.0] — 2026-05-25
+
+### Fixed (ADR 0025 — multi-AI review gate phase resolution)
+
+- **Migration `0016-fix-multi-ai-review-gate-resolution.md`** — promotes 1.14.0 → 1.15.0. Replaces the `multi-ai-review-gate.sh` hook (installed by migration 0005 / ADR 0018) with the **ADR 0025 hybrid resolver**. Root cause: the prior hook resolved the active phase with `readlink .planning/current-phase`, assuming a symlink to the phase dir — but the design-shotgun and database-sentinel gates use `.planning/current-phase/` as a **directory** of approval sentinels. `readlink` on a directory returns empty, so the gate hit its allow-path and exited 0 on every edit. A 2026-05-25 audit found the gate installed and wired in cparx, fx-signal-agent, and callbot yet **firing in none of them** — a convention collision silent since migration 0005. The new resolver is a fail-open chain: (1) legacy symlink, (2) `STATE.md` `## Current Phase` (cheap awk parse, before node), (3) GSD `state json` `current_phase` (node fallback), (4) newest `*-PLAN.md` by mtime, (5) allow. Step 2 bumps the skill version 1.14.0 → 1.15.0. Idempotent; settings wiring unchanged (hook command path is identical to 0005, so no `.claude/settings.json` edit). Apply order is automatic (ascending id: 0015 → 0016).
+- **Grandfather guard on the block condition** — the gate now blocks **only** when the resolved phase has `*-PLAN.md` AND no `*-REVIEWS.md` AND no `*-SUMMARY.md`. The `!SUMMARY` guard prevents bricking repos that already shipped phases without reviews: enforcement is go-forward, so only new planned-but-unexecuted phases block. Per ADR 0018, already-shipped phases are never blocked; historical backfill stays optional and out of scope.
+- **ADR 0025 — Fix multi-AI review gate phase resolution (`docs/decisions/0025-fix-multi-ai-review-gate-resolution.md`, NEW)** — Status: Accepted, 2026-05-25. Related: ADR 0018, migrations 0005 + 0016. Alternatives rejected: GSD-state-only (`gsd-tools state json` returned `status: unknown` in callbot — unreliable as sole signal), newest-PLAN-only (mtime fragile across `git checkout`/clone — kept as last resort before fail-open, not primary), and block-all-unreviewed (would brick fx-signal-agent/callbot — forbidden by ADR 0018).
+- **Prettier-clean the vendored §11 block** (#44, no version change) — `templates/spec-mirrors/11-coding-discipline-0.4.0.md` gained blank lines around lists to satisfy prettier. Declarative/formatting-only; the byte-identity contract with workflow-core's canonical fence is unaffected.
+
+### Notes
+
+- **codex-workflow and pi-agentic-apps-workflow need the same resolver** — tracked as conformance follow-ups in workflow-core spec `02-hook-taxonomy.md`.
+
 ## [1.14.0] — 2026-05-21
 
 ### Added (spec 0.4.0 absorption)
