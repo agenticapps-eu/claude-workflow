@@ -174,27 +174,11 @@ func Init() {
 		if v := os.Getenv("{{ENV_VAR_ENV}}"); v != "" {
 			deployEnv = v
 		}
-		dsn := os.Getenv("{{ENV_VAR_DSN}}")
-		if dsn != "" {
-			// SENTRY_DEBUG=1 turns on sentry-go's verbose logging so the
-			// background HTTP transport surfaces send failures to stderr.
-			// Useful during initial DSN-wiring verification; leave unset in
-			// production.
-			err := sentry.Init(sentry.ClientOptions{
-				Dsn:              dsn,
-				Environment:      deployEnv,
-				Release:          serviceName,
-				EnableTracing:    true,
-				TracesSampleRate: traceSampleRate,
-				SendDefaultPII:   false,
-				Debug:            os.Getenv("SENTRY_DEBUG") == "1",
-			})
-			if err != nil {
-				logger.Warn("observability: sentry init failed", "err", err.Error())
-			} else {
-				sentryReady = true
-			}
-		}
+		// Build the destination registry from the resolved (fail-closed)
+		// role→destination map. Each configured adapter's Init() runs here
+		// (e.g. the Sentry adapter calls sentry.Init and sets sentryReady).
+		// emit/LogEvent/CaptureError dispatch through the registry by role.
+		activeRegistry = buildRegistry(resolveConfig())
 	})
 }
 
@@ -319,40 +303,10 @@ func CaptureError(ctx context.Context, err error, env Envelope) {
 	}
 	tc := FromContext(ctx)
 
-	if sentryReady {
-		safeFireAndForget(func() {
-			hub := sentry.CurrentHub().Clone()
-			hub.WithScope(func(scope *sentry.Scope) {
-				scope.SetTag("event", env.Event)
-				scope.SetTag("service", serviceName)
-				scope.SetTag("env", deployEnv)
-				if tc != nil {
-					// Native Sentry trace context — populates the Trace tab in
-					// the event UI and makes `trace:<hex>` queries match in
-					// Discover search. The wrapper's W3C TraceContext maps
-					// 1:1 onto Sentry's trace-context schema. Keep the
-					// SetTag pair below for free-form `trace_id:<hex>`
-					// search ergonomics (additive — no behaviour change for
-					// projects that already searched by tag).
-					traceCtx := map[string]any{
-						"trace_id": tc.TraceID,
-						"span_id":  tc.SpanID,
-						"op":       env.Event,
-						"status":   sentryTraceStatus(env.Severity),
-					}
-					if tc.ParentSpanID != "" {
-						traceCtx["parent_span_id"] = tc.ParentSpanID
-					}
-					scope.SetContext("trace", traceCtx)
-					scope.SetTag("trace_id", tc.TraceID)
-					scope.SetTag("span_id", tc.SpanID)
-				}
-				if env.Attrs != nil {
-					scope.SetContext("attrs", redactObject(env.Attrs))
-				}
-				hub.CaptureException(err)
-			})
-		})
+	// Dispatch to the errors-role destination adapter (sentry by default;
+	// nil when errors=none or the adapter is unconfigured — a safe no-op).
+	if d := activeRegistry.forRole(RoleErrors); d != nil {
+		d.CaptureException(err, env, tc)
 	}
 
 	sev := env.Severity
@@ -360,12 +314,26 @@ func CaptureError(ctx context.Context, err error, env Envelope) {
 		sev = SeverityError
 	}
 	merged := mergeAttrs(env.Attrs, map[string]any{"error": err.Error()})
-	emit(Envelope{Event: env.Event, Severity: sev, Attrs: merged}, tc)
+	// forwardLogs=false: the error already went to the errors-role
+	// destination above. Writing the stdout mirror is still required (it is
+	// `fly logs`), but re-forwarding to the logs-role sink would dual-ship
+	// the same event to two destinations — which the role model forbids.
+	emitCore(Envelope{Event: env.Event, Severity: sev, Attrs: merged}, tc, false)
 }
 
 // ─── Internal: emit ────────────────────────────────────────────────────────
 
+// emit writes the stdout mirror and forwards to the logs-role destination.
+// Kept as a 2-arg helper for the in-package contract tests and the span
+// lifecycle path; both want full logs forwarding.
 func emit(env Envelope, tc *TraceContext) {
+	emitCore(env, tc, true)
+}
+
+// emitCore writes the universal stdout mirror and, when forwardLogs is true,
+// dispatches the event to the logs-role destination adapter. CaptureError
+// passes forwardLogs=false so an error is not also shipped as a log.
+func emitCore(env Envelope, tc *TraceContext, forwardLogs bool) {
 	sev := env.Severity
 	if sev == "" {
 		sev = SeverityInfo
@@ -405,15 +373,13 @@ func emit(env Envelope, tc *TraceContext) {
 		emitJSON("info", event)
 	}
 
-	// Sentry breadcrumb so the next captureException carries this context.
-	if sentryReady && sev != SeverityDebug {
-		safeFireAndForget(func() {
-			sentry.AddBreadcrumb(&sentry.Breadcrumb{
-				Category: env.Event,
-				Level:    sentryLevel(sev),
-				Data:     redactObject(env.Attrs),
-			})
-		})
+	// Dispatch to the logs-role destination adapter (axiom by default; nil
+	// when logs=none or the adapter is unconfigured — a safe no-op). The
+	// adapter governs the destination SDK; debug events are not forwarded.
+	if forwardLogs && sev != SeverityDebug {
+		if d := activeRegistry.forRole(RoleLogs); d != nil {
+			d.Emit(Envelope{Event: env.Event, Severity: sev, Attrs: env.Attrs}, tc)
+		}
 	}
 }
 
