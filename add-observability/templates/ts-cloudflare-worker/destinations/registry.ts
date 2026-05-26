@@ -13,9 +13,9 @@
  * baked default — errors can NEVER be routed to the logs-only Axiom adapter.
  *
  * P1 ships lightweight stub adapters keyed by name so the registry contract
- * is testable now. P2 replaces the adapter bodies (sentry.ts / axiom.ts) with
- * the real SDK calls WITHOUT changing this file: real adapters drop into the
- * `ADAPTER_FACTORIES` map below.
+ * is testable now. P2 replaces the factory function bodies without touching
+ * `resolveConfig`, `buildRegistry`, the `Destination` interface, or
+ * `ADAPTER_SUPPORTED_ROLES`.
  */
 
 import type { Envelope, InitEnv } from "../index";
@@ -66,16 +66,29 @@ const DESTINATIONS_CONFIG: DestinationsConfig = {
 const ROLES: ReadonlyArray<Role> = ["errors", "logs", "analytics"];
 const DEST_NAMES: ReadonlyArray<DestName> = ["sentry", "axiom", "none"];
 
+// ─── Supported roles (single source of truth) ───────────────────────────────
+// Declared here — NOT inside factory functions — so the fail-closed resolver
+// can read roles without constructing an adapter (P2 factories will do real
+// SDK setup). Adapter factories reference this same constant so there is
+// exactly one place to update when roles change.
+const ADAPTER_SUPPORTED_ROLES: Record<"sentry" | "axiom", ReadonlyArray<Role>> = {
+  sentry: ["errors", "logs"],
+  // NOTE: NO "errors" for axiom — logs/analytics sink only. This is what
+  // makes resolveConfig reject `errors=axiom`.
+  axiom: ["logs", "analytics"],
+};
+
 // ─── Adapter factories (keyed by name) ──────────────────────────────────────
-// P1 uses minimal stubs so the registry is testable. The supportedRoles here
-// are the authoritative declaration the fail-closed resolver validates
-// against: sentry⇒errors+logs, axiom⇒logs+analytics (NO errors). P2 swaps
-// the factory bodies for real SDK adapters; the keys + supportedRoles stay.
+// P1 uses minimal stubs so the registry is testable. The supportedRoles
+// reference ADAPTER_SUPPORTED_ROLES as the authoritative declaration the
+// fail-closed resolver validates against: sentry⇒errors+logs,
+// axiom⇒logs+analytics (NO errors). P2 swaps the factory bodies for real
+// SDK adapters; the keys + ADAPTER_SUPPORTED_ROLES stay.
 
 function createSentryAdapter(): Destination {
   return {
     name: "sentry",
-    supportedRoles: ["errors", "logs"],
+    supportedRoles: ADAPTER_SUPPORTED_ROLES.sentry,
     isConfigured(env: InitEnv): boolean {
       return Boolean((env as Record<string, unknown>).SENTRY_DSN);
     },
@@ -94,9 +107,7 @@ function createSentryAdapter(): Destination {
 function createAxiomAdapter(): Destination {
   return {
     name: "axiom",
-    // NOTE: NO "errors" — Axiom is a logs/analytics sink only. This is what
-    // makes resolveConfig reject `errors=axiom`.
-    supportedRoles: ["logs", "analytics"],
+    supportedRoles: ADAPTER_SUPPORTED_ROLES.axiom,
     isConfigured(env: InitEnv): boolean {
       const e = env as Record<string, unknown>;
       return Boolean(e.AXIOM_TOKEN) && Boolean(e.AXIOM_DATASET);
@@ -118,10 +129,10 @@ const ADAPTER_FACTORIES: Record<"sentry" | "axiom", () => Destination> = {
   axiom: createAxiomAdapter,
 };
 
-// supportedRoles lookup used by the fail-closed resolver. Built from the
-// factory adapters so the declaration has a single source of truth.
+// supportedRoles lookup used by the fail-closed resolver — reads from the
+// module-level constant; no adapter instantiation required.
 function supportedRolesFor(name: "sentry" | "axiom"): ReadonlyArray<Role> {
-  return ADAPTER_FACTORIES[name]().supportedRoles;
+  return ADAPTER_SUPPORTED_ROLES[name];
 }
 
 // ─── buildRegistry ───────────────────────────────────────────────────────────
@@ -138,18 +149,20 @@ export function buildRegistry(
   env: InitEnv,
   ctx?: ExecutionContext,
 ): Registry {
-  // Construct each distinct named adapter once.
+  // Construct each distinct named adapter once; track only those that are
+  // configured+initialised so all() never returns uninitialised adapters.
   const adapters = new Map<"sentry" | "axiom", Destination>();
-  const configuredFlags = new Map<"sentry" | "axiom", boolean>();
+  const configuredAdapters = new Map<"sentry" | "axiom", Destination>();
 
   const ensureAdapter = (name: "sentry" | "axiom"): Destination => {
     let a = adapters.get(name);
     if (!a) {
       a = ADAPTER_FACTORIES[name]();
       adapters.set(name, a);
-      const configured = a.isConfigured(env);
-      configuredFlags.set(name, configured);
-      if (configured) a.init(env, ctx);
+      if (a.isConfigured(env)) {
+        a.init(env, ctx);
+        configuredAdapters.set(name, a);
+      }
     }
     return a;
   };
@@ -163,7 +176,7 @@ export function buildRegistry(
       continue;
     }
     const adapter = ensureAdapter(dest);
-    roleMap.set(role, configuredFlags.get(dest) ? adapter : null);
+    roleMap.set(role, configuredAdapters.has(dest) ? adapter : null);
   }
 
   return {
@@ -171,7 +184,7 @@ export function buildRegistry(
       return roleMap.get(role) ?? null;
     },
     all(): Destination[] {
-      return Array.from(adapters.values());
+      return Array.from(configuredAdapters.values());
     },
   };
 }
@@ -195,8 +208,8 @@ function isDestName(token: string): token is DestName {
  *
  *  - A dest is only accepted for a role if that adapter declares the role in
  *    its supportedRoles (sentry⇒errors+logs, axiom⇒logs+analytics). So
- *    `errors=axiom` is REJECTED, keeping the baked sentry default + warns once.
- *  - Unknown role / unknown dest token → ignore + warn once.
+ *    `errors=axiom` is REJECTED, keeping the baked sentry default + warns.
+ *  - Unknown role / unknown dest token → ignore + warn per rejected pair.
  *  - "none" is always a legal dest for any role (disables that role).
  *  - Malformed pair (no `=`, empty value) → ignore. Duplicate keys → last
  *    valid wins. Tokens are trimmed + lowercased before matching.
@@ -210,32 +223,29 @@ export function resolveConfig(env: InitEnv): DestinationsConfig {
   const raw = (env as Record<string, unknown>).OBS_DESTINATIONS;
   if (typeof raw !== "string" || raw.trim() === "") return resolved;
 
-  let warned = false;
-  const warnOnce = (msg: string): void => {
-    if (warned) return;
-    warned = true;
-    console.warn(`obs: OBS_DESTINATIONS ${msg}; falling back to baked defaults for invalid keys`);
+  const warnPair = (msg: string): void => {
+    console.warn(`obs: OBS_DESTINATIONS ${msg}; falling back to baked default for this key`);
   };
 
   for (const pair of raw.split(",")) {
     const eq = pair.indexOf("=");
     if (eq === -1) {
-      warnOnce(`ignored malformed pair "${pair.trim()}"`);
+      warnPair(`ignored malformed pair "${pair.trim()}"`);
       continue;
     }
     const roleToken = pair.slice(0, eq).trim().toLowerCase();
     const destToken = pair.slice(eq + 1).trim().toLowerCase();
 
     if (roleToken === "" || destToken === "") {
-      warnOnce(`ignored empty key/value in "${pair.trim()}"`);
+      warnPair(`ignored empty key/value in "${pair.trim()}"`);
       continue;
     }
     if (!isRole(roleToken)) {
-      warnOnce(`ignored unknown role "${roleToken}"`);
+      warnPair(`ignored unknown role "${roleToken}"`);
       continue;
     }
     if (!isDestName(destToken)) {
-      warnOnce(`ignored unknown destination "${destToken}"`);
+      warnPair(`ignored unknown destination "${destToken}"`);
       continue;
     }
     // "none" is always legal. A named adapter is only legal for the role if it
@@ -243,7 +253,7 @@ export function resolveConfig(env: InitEnv): DestinationsConfig {
     if (destToken !== "none") {
       const roles = supportedRolesFor(destToken);
       if (!roles.includes(roleToken)) {
-        warnOnce(`rejected unsupported mapping "${roleToken}=${destToken}" (adapter does not serve that role)`);
+        warnPair(`rejected unsupported mapping "${roleToken}=${destToken}" (adapter does not serve that role)`);
         continue;
       }
     }

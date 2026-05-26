@@ -66,6 +66,18 @@ describe("buildRegistry — role → adapter mapping", () => {
     expect(names).toContain("sentry");
     expect(names).toContain("axiom");
   });
+
+  it("all() returns only configured adapters — axiom unconfigured is excluded", () => {
+    // errors=sentry (configured via SENTRY_DSN), logs=axiom but AXIOM_TOKEN/AXIOM_DATASET unset.
+    // all() must return only [sentry]; forRole("logs") must be null.
+    const config: DestinationsConfig = { errors: "sentry", logs: "axiom", analytics: "none" };
+    const env = configuredEnv({ AXIOM_TOKEN: undefined, AXIOM_DATASET: undefined });
+    const reg = buildRegistry(config, env);
+    const all = reg.all();
+    expect(all).toHaveLength(1);
+    expect(all[0].name).toBe("sentry");
+    expect(reg.forRole("logs")).toBeNull();
+  });
 });
 
 describe("resolveConfig — fail-closed override resolution", () => {
