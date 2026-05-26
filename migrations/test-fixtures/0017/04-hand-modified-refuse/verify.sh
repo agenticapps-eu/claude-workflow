@@ -11,6 +11,16 @@ HASHES="$REPO_ROOT/migrations/test-fixtures/0017/known-wrapper-hashes.json"
 
 cp src/lib/observability/index.ts /tmp/0017f04-index.before
 
+# Precondition: the wrapper is REALISTICALLY SUBSTITUTED (no raw {{TOKENS}}
+# left) and carries the hand-edit. Refuse must therefore survive correct
+# canonicalisation — not be a side effect of an un-substituted template.
+grep -q '{{' src/lib/observability/index.ts \
+  && { echo "fixture 04 precondition: wrapper still has raw {{tokens}} — not a substituted wrapper"; exit 1; }
+grep -q 'HAND-EDIT' src/lib/observability/index.ts \
+  || { echo "fixture 04 precondition: hand-edit marker missing"; exit 1; }
+grep -q 'SENTRY_DSN' src/lib/observability/index.ts \
+  || { echo "fixture 04 precondition: expected substituted DSN env var name"; exit 1; }
+
 set +e
 bash "$SCRIPT" --templates-dir "$TEMPLATES" --hashes "$HASHES" --project-dir "$PWD" >/dev/null 2>&1
 rc=$?

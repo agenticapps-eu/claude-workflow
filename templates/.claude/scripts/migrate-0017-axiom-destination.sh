@@ -159,24 +159,119 @@ classify_stack() {
   echo "unknown"
 }
 
-# Canonicalise a materialised wrapper back toward template form, then hash.
-# Reverses the documented generator substitutions so a real (token-substituted)
-# wrapper can be compared against the template-byte baseline. Fixtures use
-# byte-identical template wrappers, so canonicalisation is a structural no-op
-# there. Reads the project's env-var-DSN name + service/env from its metadata
-# when available; falls back to the common defaults.
+# ─── canonicalisation (structural masking) ───────────────────────────────────
+# The recorded baseline in known-wrapper-hashes.json is the sha256 of the
+# CANONICAL (masked) form of each stack's OLD template wrapper — NOT the raw
+# template bytes. A real materialised wrapper has the generator tokens
+# substituted ({{SERVICE_NAME}}→"my-svc", {{DEBUG_SAMPLE_RATE}}→0.1,
+# env.{{ENV_VAR_DSN}}→env.SENTRY_DSN, {{REDACTED_KEYS}}→a list, …). To compare
+# a substituted wrapper against the template we mask EVERY token-substitution
+# site — in both the template and the candidate — down to a fixed placeholder,
+# then hash. So:
+#   canonical(unmodified template)            ==  canonical(unmodified substituted wrapper)
+#   canonical(hand-modified wrapper)          !=  canonical(template)        → refuse
+# The masking is purely STRUCTURAL: it collapses the VALUE at each known site
+# (service name, destination, sample rates, env-var identifiers, package name,
+# the redacted-keys array body). ANY byte OUTSIDE a recognised token site —
+# an added import, an altered function body, an extra statement, even a tweak
+# to the non-token text on a token-bearing line — survives masking and changes
+# the canonical hash. Direction of error is therefore toward REFUSE: an
+# unrecognised shape never collapses onto the baseline, so it is treated as
+# hand-modified. This implements the metadata-driven canonicalisation that
+# HASHING-NOTE.md describes (the substituted VALUES are immaterial; only the
+# structural shape is compared).
+#
+# The masking program (awk) is shared verbatim by the baseline-regeneration
+# step (migrations/test-fixtures/0017/regen-hashes.sh) so the recorded hashes
+# and the runtime check can never drift.
+canonicalize_awk() {
+  cat <<'CANON_AWK'
+BEGIN { P = "\x00TOK\x00"; in_redact = 0 }
+{
+  line = $0
+
+  # REDACTED_KEYS array body — collapse ONLY genuine list elements (quoted
+  # strings / the template token / blanks). Any non-element line inside the
+  # array is a hand modification and is emitted verbatim (alters the hash).
+  if (in_redact) {
+    if (line ~ /^[[:space:]]*\];[[:space:]]*$/ || line ~ /^[[:space:]]*\}[[:space:]]*$/) {
+      in_redact = 0; print line; next
+    }
+    if (line ~ /^[[:space:]]*$/) { next }
+    if (line ~ /^[[:space:]]*"[^"]*",?[[:space:]]*$/) { next }
+    if (line ~ /^[[:space:]]*\{\{REDACTED_KEYS\}\},?[[:space:]]*$/) { next }
+    print line; next
+  }
+  if (line ~ /REDACTED_KEYS.*=[[:space:]]*\[[[:space:]]*$/ \
+      || line ~ /redactedKeys[[:space:]]*=[[:space:]]*\[\]string\{[[:space:]]*$/) {
+    print line; print "  " P "REDACTED_KEYS" P; in_redact = 1; next
+  }
+
+  # header comment Service: / Destination:
+  if (line ~ /Service:[[:space:]]/) {
+    sub(/Service:[[:space:]].*$/, "Service: " P "SERVICE_NAME" P, line); print line; next
+  }
+  if (line ~ /Destination:[[:space:]]/) {
+    sub(/Destination:[[:space:]].*$/, "Destination: " P "DESTINATION" P, line); print line; next
+  }
+
+  # Go package declaration
+  if (line ~ /^package [A-Za-z0-9_{}]+[[:space:]]*$/) { print "package " P "PACKAGE_NAME" P; next }
+  if (line ~ /^\/\/ Package /) {
+    sub(/Package [A-Za-z0-9_{}]+/, "Package " P "PACKAGE_NAME" P, line); print line; next
+  }
+
+  # service-name literal
+  if (line ~ /^const SERVICE_DEFAULT = ".*";[[:space:]]*$/) {
+    print "const SERVICE_DEFAULT = \"" P "SERVICE_NAME" P "\";"; next
+  }
+  if (line ~ /^[[:space:]]*serviceName[[:space:]]*=[[:space:]]*".*"[[:space:]]*$/) {
+    sub(/=.*$/, "= \"" P "SERVICE_NAME" P "\"", line); print line; next
+  }
+
+  # sample-rate literals
+  if (line ~ /^const DEBUG_SAMPLE_RATE = .*;[[:space:]]*$/) {
+    print "const DEBUG_SAMPLE_RATE = " P "DEBUG_SAMPLE_RATE" P ";"; next
+  }
+  if (line ~ /^const TRACE_SAMPLE_RATE = .*;[[:space:]]*$/) {
+    print "const TRACE_SAMPLE_RATE = " P "TRACE_SAMPLE_RATE" P ";"; next
+  }
+  if (line ~ /^[[:space:]]*debugSampleRate[[:space:]]*=[[:space:]]*.*$/) {
+    sub(/=.*$/, "= " P "DEBUG_SAMPLE_RATE" P, line); print line; next
+  }
+  if (line ~ /^[[:space:]]*traceSampleRate[[:space:]]*=[[:space:]]*.*$/) {
+    sub(/=.*$/, "= " P "TRACE_SAMPLE_RATE" P, line); print line; next
+  }
+
+  # InitEnv interface fields: `  IDENT?: string;`
+  if (line ~ /^[[:space:]]+[A-Za-z_{}][A-Za-z0-9_{}]*\?: string;[[:space:]]*$/) {
+    sub(/[A-Za-z_{}][A-Za-z0-9_{}]*\?: string;/, P "ENV_VAR" P "?: string;", line); print line; next
+  }
+
+  # env-var access — quoted-getenv forms first so the generic env. rule below
+  # cannot clobber Deno.env.get(...) / os.Getenv(...).
+  if (line ~ /Deno\.env\.get\("[^"]*"\)/) {
+    gsub(/Deno\.env\.get\("[^"]*"\)/, "Deno.env.get(\"" P "ENV_VAR" P "\")", line)
+  }
+  if (line ~ /os\.Getenv\("[^"]*"\)/) {
+    gsub(/os\.Getenv\("[^"]*"\)/, "os.Getenv(\"" P "ENV_VAR" P "\")", line)
+  }
+  if (line ~ /env\.[A-Za-z_{}][A-Za-z0-9_{}]*[^A-Za-z0-9_{}(]/ || line ~ /env\.[A-Za-z_{}][A-Za-z0-9_{}]*$/) {
+    gsub(/env\.[A-Za-z_{}][A-Za-z0-9_{}]*\(/, "\x01KEEP\x01", line)
+    gsub(/env\.[A-Za-z_{}][A-Za-z0-9_{}]*/, "env." P "ENV_VAR" P, line)
+    gsub(/\x01KEEP\x01/, "env.get(", line)
+  }
+
+  print line
+}
+CANON_AWK
+}
+
+# Canonicalise a wrapper (template OR substituted) by structural masking, hash.
 canonical_hash() {
-  local f="$1" stack="$2"
-  # Best-effort de-substitution. Real projects bake SENTRY_DSN as the DSN env
-  # var name; the template token is {{ENV_VAR_DSN}}. We reverse only the
-  # known, deterministic tokens. Anything else that differs from the template
-  # is, by definition, a hand modification and SHOULD cause a mismatch.
-  local tmp
-  tmp=$(mktemp)
-  # Reverse common deterministic substitutions (idempotent on already-template).
-  sed -E \
-    -e 's/\benv\.SENTRY_DSN\b/env.{{ENV_VAR_DSN}}/g' \
-    "$f" > "$tmp" 2>/dev/null || cp "$f" "$tmp"
+  local f="$1" stack="$2"   # stack kept for signature stability / future use
+  local tmp; tmp=$(mktemp)
+  awk -f <(canonicalize_awk) "$f" > "$tmp" 2>/dev/null || cp "$f" "$tmp"
   sha256_of "$tmp"
   rm -f "$tmp"
 }

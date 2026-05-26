@@ -75,15 +75,27 @@ bash "$ENGINE" --templates-dir "$TEMPLATES" --hashes "$HASHES"
 
 The engine content-hashes **every file it will rewrite** — at minimum the
 wrapper entry file — and compares against the per-stack, per-version baseline in
-`migrations/test-fixtures/0017/known-wrapper-hashes.json` (sha256 of the OLD
-scaffolded wrapper bytes; see that file's sibling `HASHING-NOTE.md`).
+`migrations/test-fixtures/0017/known-wrapper-hashes.json` (sha256 of the
+**canonical / structurally-masked** form of the OLD scaffolded wrapper; see that
+file's sibling `HASHING-NOTE.md`).
 
-- A real materialised wrapper has the generator tokens substituted (DSN env-var
-  name, service name, deploy-env). The engine **canonicalises** the candidate
-  back toward template form (reversing the documented deterministic
-  substitutions) before hashing, so a genuinely un-modified-but-substituted
-  wrapper still matches. If canonicalisation cannot reconstruct the template
-  form, the root is treated as hand-modified — **fail-closed**.
+- A real materialised wrapper has the generator tokens substituted
+  (`{{SERVICE_NAME}}`, `{{DESTINATION}}`, the sample rates, the env-var
+  identifiers, `{{REDACTED_KEYS}}`, Go `{{PACKAGE_NAME}}`), so its bytes never
+  match the raw template. The engine **canonicalises** the candidate by
+  **structural masking** — replacing the substituted VALUE at every known token
+  site (anchored on the `const NAME =` / interface field / `package` / header /
+  array-literal it sits in) with a fixed placeholder, applying the identical
+  mask to the template, then hashing. A genuinely un-modified-but-substituted
+  wrapper canonicalises to the recorded baseline regardless of its values and is
+  classified CLEAN. The same masking program is shared by the baseline
+  regenerator (`regen-hashes.sh`) so the two cannot drift.
+- Masking is purely structural: any byte **outside** a recognised token site —
+  an added import, an altered function body, an extra statement inside the
+  redacted-keys array, even a tweak to the non-token text on a token-bearing
+  line — survives into the canonical form and changes the digest. An
+  unrecognised shape never collapses onto the baseline, so it is treated as
+  hand-modified — **fail-closed, never silently overwritten**.
 - CLAUDE.md and `.dev.vars` are edited only inside the anchor-managed
   `observability:` range / by appendation (migration 0014 idiom), so they don't
   need a per-file hash — but the `observability:` block must be present and in a
@@ -188,8 +200,10 @@ grep -q '^version: 1.16.0$' .claude/skills/agentic-apps-workflow/SKILL.md
   harness only probes idempotency-check correctness. 0017's risk is in the
   *apply* (overwriting a wrapper) and in *refusing correctly*, so — following
   the precedent of migrations 0005/0006/0010, which ship executable artefacts —
-  the apply is a script the harness runs end-to-end. The 6 fixtures assert the
-  full behaviour, including the "writes nothing on refuse / default-abort" gate.
+  the apply is a script the harness runs end-to-end. The 7 fixtures assert the
+  full behaviour, including the "writes nothing on refuse / default-abort" gate
+  and (fixture 07) that a realistically-substituted unmodified wrapper
+  canonicalises CLEAN and auto-applies.
 - **Version coverage of the hash baseline.** Only add-observability v0.4.x
   wrapper shapes are baselined (the shape every `from_version: 1.15.0` project
   carries). v0.3.x is documented as out-of-scope in `HASHING-NOTE.md`.
