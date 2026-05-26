@@ -82,7 +82,11 @@ function withSilencedConsole(): { axiomWarns: () => number; restore: () => void 
 
 // ─── Role dispatch (4 cases) ─────────────────────────────────────────────────
 
-Deno.test("case 1: errors=sentry,logs=axiom → logEvent POSTs to Axiom; captureError no-throw, no Axiom error", async () => {
+Deno.test({
+  name: "case 1: errors=sentry,logs=axiom → logEvent POSTs to Axiom; captureError no-throw, no Axiom error",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
   const fake = makeFakeFetch("ok");
   const c = withSilencedConsole();
   try {
@@ -116,9 +120,13 @@ Deno.test("case 1: errors=sentry,logs=axiom → logEvent POSTs to Axiom; capture
   } finally {
     c.restore();
   }
-});
+}});
 
-Deno.test("case 2: errors=sentry,logs=none → logEvent no POST; captureError no-throw", async () => {
+Deno.test({
+  name: "case 2: errors=sentry,logs=none → logEvent no POST; captureError no-throw",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
   const fake = makeFakeFetch("ok");
   const c = withSilencedConsole();
   try {
@@ -140,9 +148,13 @@ Deno.test("case 2: errors=sentry,logs=none → logEvent no POST; captureError no
   } finally {
     c.restore();
   }
-});
+}});
 
-Deno.test("case 3: errors=none,logs=axiom → logEvent POSTs to Axiom; captureError no-ops cleanly", async () => {
+Deno.test({
+  name: "case 3: errors=none,logs=axiom → logEvent POSTs to Axiom; captureError no-ops cleanly",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
   const fake = makeFakeFetch("ok");
   const c = withSilencedConsole();
   try {
@@ -164,9 +176,13 @@ Deno.test("case 3: errors=none,logs=axiom → logEvent POSTs to Axiom; captureEr
   } finally {
     c.restore();
   }
-});
+}});
 
-Deno.test("case 4: errors=none,logs=none → both no-op; no POST", async () => {
+Deno.test({
+  name: "case 4: errors=none,logs=none → both no-op; no POST",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
   const fake = makeFakeFetch("ok");
   const c = withSilencedConsole();
   try {
@@ -185,11 +201,15 @@ Deno.test("case 4: errors=none,logs=none → both no-op; no POST", async () => {
   } finally {
     c.restore();
   }
-});
+}});
 
 // ─── Ingest URL override ─────────────────────────────────────────────────────
 
-Deno.test("AXIOM_INGEST_URL override is used when set", async () => {
+Deno.test({
+  name: "AXIOM_INGEST_URL override is used when set",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
   const fake = makeFakeFetch("ok");
   const c = withSilencedConsole();
   const override = "https://api.eu.axiom.co/v1/datasets/test-ds/ingest";
@@ -210,11 +230,15 @@ Deno.test("AXIOM_INGEST_URL override is used when set", async () => {
   } finally {
     c.restore();
   }
-});
+}});
 
 // ─── Never-throw egress ──────────────────────────────────────────────────────
 
-Deno.test("fake fetch REJECTS → logEvent does not throw, one rate-limited warn", async () => {
+Deno.test({
+  name: "fake fetch REJECTS → logEvent does not throw, one rate-limited warn",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
   const fake = makeFakeFetch("reject");
   const c = withSilencedConsole();
   try {
@@ -234,9 +258,13 @@ Deno.test("fake fetch REJECTS → logEvent does not throw, one rate-limited warn
   } finally {
     c.restore();
   }
-});
+}});
 
-Deno.test("fake fetch returns non-2xx (500) → no throw, one warn", async () => {
+Deno.test({
+  name: "fake fetch returns non-2xx (500) → no throw, one warn",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
   const fake = makeFakeFetch("error500");
   const c = withSilencedConsole();
   try {
@@ -254,9 +282,13 @@ Deno.test("fake fetch returns non-2xx (500) → no throw, one warn", async () =>
   } finally {
     c.restore();
   }
-});
+}});
 
-Deno.test("isConfigured false (no AXIOM_TOKEN) → logEvent no POST, no throw", async () => {
+Deno.test({
+  name: "isConfigured false (no AXIOM_TOKEN) → logEvent no POST, no throw",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
   const fake = makeFakeFetch("ok");
   const c = withSilencedConsole();
   try {
@@ -272,11 +304,15 @@ Deno.test("isConfigured false (no AXIOM_TOKEN) → logEvent no POST, no throw", 
   } finally {
     c.restore();
   }
-});
+}});
 
 // ─── startSpan regression ────────────────────────────────────────────────────
 
-Deno.test("startSpan: valid span + idempotent end under SENTRY_DSN unset", () => {
+Deno.test({
+  name: "startSpan: valid span + idempotent end under SENTRY_DSN unset",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: () => {
   const c = withSilencedConsole();
   try {
     init(envWith({}));
@@ -288,9 +324,13 @@ Deno.test("startSpan: valid span + idempotent end under SENTRY_DSN unset", () =>
   } finally {
     c.restore();
   }
-});
+}});
 
-Deno.test("startSpan: valid span + idempotent end under errors=none,logs=axiom", async () => {
+Deno.test({
+  name: "startSpan: valid span + idempotent end under errors=none,logs=axiom",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
   const fake = makeFakeFetch("ok");
   const c = withSilencedConsole();
   try {
@@ -311,4 +351,4 @@ Deno.test("startSpan: valid span + idempotent end under errors=none,logs=axiom",
   } finally {
     c.restore();
   }
-});
+}});
