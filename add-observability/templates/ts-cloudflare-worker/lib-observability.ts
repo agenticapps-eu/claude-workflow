@@ -20,6 +20,7 @@
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import * as Sentry from "@sentry/cloudflare";
+import { buildRegistry, resolveConfig, type Registry } from "./destinations/registry";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -76,6 +77,11 @@ let serviceName: string = SERVICE_DEFAULT;
 let deployEnv: string = "dev";
 let waitUntilFn: ((p: Promise<unknown>) => void) | null = null;
 
+// Role-based destination registry, built once per invocation in `init`.
+// logEvent dispatches to the LOGS adapter; captureError to the ERRORS adapter.
+// Null until init runs (or when no destinations resolve).
+let registry: Registry | null = null;
+
 // ─── Initialization ───────────────────────────────────────────────────────
 
 export interface InitEnv {
@@ -108,6 +114,11 @@ export function init(env: InitEnv, ctx: ExecutionContext): void {
   } catch {
     waitUntilFn = null;
   }
+
+  // Build the role-based destination registry once per invocation. Each
+  // configured named adapter is init()-ed; logEvent/captureError dispatch by
+  // role. resolveConfig is fail-closed (errors can never resolve to Axiom).
+  registry = buildRegistry(resolveConfig(env), env, ctx);
 
   if (initialized) return;
   // `withSentry` at the entry-file site populates the Sentry hub when
@@ -240,7 +251,11 @@ export function startSpan(name: string, attributes: Record<string, unknown> = {}
 
 export function logEvent(envelope: Envelope): void {
   const ctx = spanStorage.getStore();
+  // Console mirror + sampling + Sentry breadcrumb (unchanged internal path).
   emit(envelope, ctx ?? null);
+  // Dispatch to the LOGS destination. Redact BEFORE dispatch (D6) so the
+  // adapter never sees raw attrs. No-op when logs is unconfigured ("none").
+  registry?.forRole("logs")?.emit(redactEnvelope(envelope));
 }
 
 // ─── captureError ─────────────────────────────────────────────────────────
@@ -248,6 +263,11 @@ export function logEvent(envelope: Envelope): void {
 export function captureError(err: unknown, envelope: Envelope): void {
   const ctx = spanStorage.getStore();
   if (ctx) ctx.status = "error";
+
+  // Dispatch to the ERRORS destination. Redact BEFORE dispatch (D6). No-op
+  // when errors is unconfigured. By the fail-closed registry contract this
+  // can NEVER reach the logs-only Axiom adapter.
+  registry?.forRole("errors")?.captureException(err, redactEnvelope(envelope));
 
   if (initialized && err instanceof Error) {
     safeFireAndForget(() => {
@@ -334,6 +354,16 @@ function redactObject(obj: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(obj)) out[k] = redactValue(k, v);
   return out;
+}
+
+/**
+ * Redact an envelope's attrs before it is handed to a destination adapter.
+ * Redaction runs ONCE in the wrapper (D6) so adapters never see raw attrs.
+ */
+function redactEnvelope(envelope: Envelope): Envelope {
+  return envelope.attrs
+    ? { ...envelope, attrs: redactObject(envelope.attrs) }
+    : envelope;
 }
 
 // ─── Project-specific extensions ──────────────────────────────────────────
