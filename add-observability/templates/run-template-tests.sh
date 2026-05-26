@@ -416,7 +416,21 @@ run_ts_supabase_edge() {
   mkdir -p "$OBS_DIR"
   substitute_tokens "$SRC/index.ts"      "$OBS_DIR/index.ts"
   substitute_tokens "$SRC/middleware.ts"  "$OBS_DIR/middleware.ts"
-  substitute_tokens "$SRC/index.test.ts" "$OBS_DIR/index.test.ts"
+  # Copy every *.test.ts (index contract suite + phase-21 axiom suite).
+  for f in "$SRC"/*.test.ts; do
+    [[ -f "$f" ]] || continue
+    substitute_tokens "$f" "$OBS_DIR/$(basename "$f")"
+  done
+
+  # destinations/ sub-dir (role-based registry + adapters, phase 21).
+  if [[ -d "$SRC/destinations" ]]; then
+    local DEST_DIR="$OBS_DIR/destinations"
+    mkdir -p "$DEST_DIR"
+    for f in "$SRC/destinations"/*.ts; do
+      [[ -f "$f" ]] || continue
+      substitute_tokens "$f" "$DEST_DIR/$(basename "$f")"
+    done
+  fi
 
   cat > "$WORKDIR/deno.json" << 'DENOJSON'
 {
@@ -430,7 +444,7 @@ DENOJSON
 
   info "[$STACK] deno test..."
   local OUTPUT EXIT_CODE=0
-  OUTPUT=$(cd "$WORKDIR" && deno test -A --no-check "$OBS_DIR/index.test.ts" 2>&1) || EXIT_CODE=$?
+  OUTPUT=$(cd "$WORKDIR" && deno test -A --no-check "$OBS_DIR"/*.test.ts 2>&1) || EXIT_CODE=$?
 
   # Deno summary: "ok | N passed | 0 failed | ..."
   local PASSED=0 FAILED=0
