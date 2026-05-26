@@ -63,7 +63,7 @@ substitute_tokens() {
     -e 's/{{DESTINATION}}/sentry/g' \
     -e 's/{{DEBUG_SAMPLE_RATE}}/0.1/g' \
     -e 's/{{TRACE_SAMPLE_RATE}}/0.1/g' \
-    -e "s/{{REDACTED_KEYS}}/$REDACTED_KEYS/g" \
+    -e "s|{{REDACTED_KEYS}}|$REDACTED_KEYS|g" \
     -e 's/{{ENV_VAR_DSN}}/SENTRY_DSN/g' \
     -e 's/{{ENV_VAR_ENV}}/DEPLOY_ENV/g' \
     -e 's/{{ENV_VAR_SERVICE}}/SERVICE_NAME/g' \
@@ -82,7 +82,7 @@ substitute_tokens_go() {
     -e 's/{{DESTINATION}}/sentry/g' \
     -e 's/{{DEBUG_SAMPLE_RATE}}/0.1/g' \
     -e 's/{{TRACE_SAMPLE_RATE}}/0.1/g' \
-    -e "s/{{REDACTED_KEYS}}/$REDACTED_KEYS/g" \
+    -e "s|{{REDACTED_KEYS}}|$REDACTED_KEYS|g" \
     -e 's/{{ENV_VAR_DSN}}/SENTRY_DSN/g' \
     -e 's/{{ENV_VAR_ENV}}/DEPLOY_ENV/g' \
     -e 's/{{ENV_VAR_SERVICE}}/SERVICE_NAME/g' \
@@ -163,7 +163,14 @@ export default defineConfig({ test: { environment: "node" } });
 VITCFG
 
   info "[$STACK] npm install..."
-  (cd "$WORKDIR" && npm install --no-fund --no-audit --loglevel=error 2>&1)
+  local SETUP_OUT SETUP_EXIT=0
+  SETUP_OUT=$(cd "$WORKDIR" && npm install --no-fund --no-audit --loglevel=error 2>&1) || SETUP_EXIT=$?
+  if [[ $SETUP_EXIT -ne 0 ]]; then
+    fail "[$STACK] npm install failed (exit $SETUP_EXIT)"
+    echo "$SETUP_OUT" | tail -20
+    trap - EXIT; rm -rf "$WORKDIR"
+    return 1
+  fi
 
   info "[$STACK] vitest run..."
   local OUTPUT EXIT_CODE=0
@@ -227,8 +234,7 @@ run_ts_react_vite() {
   local OBS_DIR="$WORKDIR/src/lib/observability"
   mkdir -p "$OBS_DIR"
   substitute_tokens "$SRC/lib-observability.ts"      "$OBS_DIR/index.ts"
-  # ErrorBoundary.tsx has no {{...}} tokens (uses JSX {{ }} style, not template vars)
-  cp "$SRC/ErrorBoundary.tsx"                         "$OBS_DIR/ErrorBoundary.tsx"
+  substitute_tokens "$SRC/ErrorBoundary.tsx"          "$OBS_DIR/ErrorBoundary.tsx"
   substitute_tokens "$SRC/lib-observability.test.ts" "$OBS_DIR/index.test.ts"
 
   cat > "$WORKDIR/package.json" << 'PKGJSON'
@@ -269,7 +275,14 @@ export default defineConfig({ test: { environment: "jsdom" } });
 VITCFG
 
   info "[$STACK] npm install..."
-  (cd "$WORKDIR" && npm install --no-fund --no-audit --loglevel=error 2>&1)
+  local SETUP_OUT SETUP_EXIT=0
+  SETUP_OUT=$(cd "$WORKDIR" && npm install --no-fund --no-audit --loglevel=error 2>&1) || SETUP_EXIT=$?
+  if [[ $SETUP_EXIT -ne 0 ]]; then
+    fail "[$STACK] npm install failed (exit $SETUP_EXIT)"
+    echo "$SETUP_OUT" | tail -20
+    trap - EXIT; rm -rf "$WORKDIR"
+    return 1
+  fi
 
   info "[$STACK] vitest run..."
   local OUTPUT EXIT_CODE=0
@@ -388,7 +401,14 @@ require github.com/getsentry/sentry-go v0.31.0
 GOMOD
 
   info "[$STACK] go mod tidy..."
-  (cd "$WORKDIR" && go mod tidy 2>&1)
+  local SETUP_OUT SETUP_EXIT=0
+  SETUP_OUT=$(cd "$WORKDIR" && go mod tidy 2>&1) || SETUP_EXIT=$?
+  if [[ $SETUP_EXIT -ne 0 ]]; then
+    fail "[$STACK] go mod tidy failed (exit $SETUP_EXIT)"
+    echo "$SETUP_OUT" | tail -20
+    trap - EXIT; rm -rf "$WORKDIR"
+    return 1
+  fi
 
   info "[$STACK] go test..."
   local OUTPUT EXIT_CODE=0
