@@ -129,6 +129,18 @@ run_ts_cloudflare_worker() {
   substitute_tokens "$SRC/middleware.ts"              "$OBS_DIR/middleware.ts"
   substitute_tokens "$SRC/lib-observability.test.ts" "$OBS_DIR/index.test.ts"
 
+  # destinations/ sub-dir (role-based registry + adapters, phase 21).
+  # Copy every .ts file (registry, adapters, and their tests) into the
+  # materialized destinations/ dir so the registry tests run.
+  if [[ -d "$SRC/destinations" ]]; then
+    local DEST_DIR="$OBS_DIR/destinations"
+    mkdir -p "$DEST_DIR"
+    for f in "$SRC/destinations"/*.ts; do
+      [[ -f "$f" ]] || continue
+      substitute_tokens "$f" "$DEST_DIR/$(basename "$f")"
+    done
+  fi
+
   cat > "$WORKDIR/package.json" << 'PKGJSON'
 {
   "name": "obs-harness-ts-cloudflare-worker",
