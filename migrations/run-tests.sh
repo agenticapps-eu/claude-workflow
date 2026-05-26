@@ -1613,6 +1613,110 @@ test_migration_0015() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Migration 0017 — Adopt Axiom logs destination on existing v0.4.x wrappers
+# ─────────────────────────────────────────────────────────────────────────────
+# UNLIKE the idempotency-only migrations (0014/0015), 0017 ships an executable
+# apply engine (templates/.claude/scripts/migrate-0017-axiom-destination.sh)
+# that owns the HIGH-RISK pieces: wrapper discovery, content-hash hand-modified
+# detection, the all-clean gate, refuse + .observability-0017.patch generation,
+# and the safe-root apply. The harness therefore runs the engine END-TO-END per
+# fixture (like 0005/0006/0010 run their scripts) rather than only probing
+# idempotency checks.
+#
+# Each fixture: setup.sh builds a sandboxed downstream project (v1.15.0) with
+# specific wrapper roots; verify.sh invokes the engine and asserts the full
+# behaviour (files written / NOT written, .patch produced, CLAUDE.md block,
+# version bump), returning its own exit code which is compared to expected-exit.
+#
+# RED gate: until the migration markdown AND the apply engine both land (GREEN
+# commit), the sanity checks below FAIL — the TDD discipline the phase requires.
+
+test_migration_0017() {
+  echo ""
+  echo "${YELLOW}━━━ Migration 0017 — Adopt Axiom logs destination ━━━${RESET}"
+
+  local fixtures="$REPO_ROOT/migrations/test-fixtures/0017"
+
+  if [ ! -d "$fixtures" ]; then
+    echo "  ${RED}SKIP${RESET}: fixtures directory missing"
+    SKIP=$((SKIP+1))
+    return
+  fi
+
+  # Sanity: the apply engine the fixtures invoke must exist + be executable.
+  local engine="$REPO_ROOT/templates/.claude/scripts/migrate-0017-axiom-destination.sh"
+  if [ ! -x "$engine" ]; then
+    echo "  ${RED}✗${RESET} apply engine missing/non-executable: $engine — RED state"
+    FAIL=$((FAIL+1))
+    return
+  fi
+
+  # Sanity: migration 0017 markdown itself exists (RED until GREEN commit).
+  local migration_file="$REPO_ROOT/migrations/0017-add-axiom-logs-destination.md"
+  if [ ! -f "$migration_file" ]; then
+    echo "  ${RED}✗${RESET} migration file missing: $migration_file — RED state"
+    FAIL=$((FAIL+1))
+    return
+  fi
+
+  # Sanity: known-wrapper-hashes.json exists and is valid JSON.
+  local hashes="$fixtures/known-wrapper-hashes.json"
+  if ! jq -e . < "$hashes" >/dev/null 2>&1; then
+    echo "  ${RED}✗${RESET} known-wrapper-hashes.json missing or invalid JSON — RED state"
+    FAIL=$((FAIL+1))
+    return
+  fi
+
+  run_0017_fixture() {
+    local fixname="$1"
+    local fixdir="$fixtures/$fixname"
+    local tmp; tmp="$(mktemp -d -t "migration-0017-${fixname}-XXXXXX")"
+
+    if [ -x "$fixdir/setup.sh" ]; then
+      (
+        cd "$tmp" && \
+        REPO_ROOT="$REPO_ROOT" FIXTURES_ROOT="$fixtures" \
+          "$fixdir/setup.sh" >/dev/null 2>&1
+      ) || {
+        echo "  ${RED}✗${RESET} $fixname — setup.sh failed"
+        FAIL=$((FAIL+1))
+        rm -rf "$tmp"
+        return
+      }
+    fi
+
+    local verify_out verify_exit
+    verify_out=$(
+      cd "$tmp" && \
+      REPO_ROOT="$REPO_ROOT" \
+        bash "$fixdir/verify.sh" 2>&1
+    )
+    verify_exit=$?
+
+    local expected_exit
+    expected_exit=$(tr -d '\n' < "$fixdir/expected-exit")
+    if [ "$verify_exit" != "$expected_exit" ]; then
+      echo "  ${RED}✗${RESET} $fixname — verify exit $verify_exit, expected $expected_exit"
+      echo "      verify output:"
+      printf '%s\n' "$verify_out" | sed 's/^/        /' | head -15
+      FAIL=$((FAIL+1))
+      rm -rf "$tmp"
+      return
+    fi
+
+    echo "  ${GREEN}✓${RESET} $fixname"
+    PASS=$((PASS+1))
+    rm -rf "$tmp"
+  }
+
+  for fix in "$fixtures"/[0-9]*-*/; do
+    local name
+    name="$(basename "${fix%/}")"
+    run_0017_fixture "$name"
+  done
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Preflight-correctness audit (Phase 13)
 # ─────────────────────────────────────────────────────────────────────────────
 # Walks every migration and executes each `requires[*].verify` shell command
@@ -1914,6 +2018,10 @@ fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "0016" ]; then
   test_migration_0016
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "0017" ]; then
+  test_migration_0017
 fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "preflight" ]; then
