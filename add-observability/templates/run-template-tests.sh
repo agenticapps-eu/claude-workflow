@@ -506,9 +506,14 @@ run_go_fly_http() {
   # {{PACKAGE_NAME}} → observability  (meta.yaml parameters.PACKAGE_NAME default)
   local OBS_DIR="$WORKDIR/internal/observability"
   mkdir -p "$OBS_DIR"
-  substitute_tokens_go "$SRC/observability.go"      "$OBS_DIR/observability.go"
-  substitute_tokens_go "$SRC/middleware.go"          "$OBS_DIR/middleware.go"
-  substitute_tokens_go "$SRC/observability_test.go"  "$OBS_DIR/observability_test.go"
+  # Copy every *.go file (wrapper, middleware, destinations layer, and their
+  # _test.go suites) so the destinations registry/adapter tests added in
+  # phase 21 (destinations.go / destinations_test.go) run alongside the
+  # baseline observability suite. go test ./... covers them all in one package.
+  for f in "$SRC"/*.go; do
+    [[ -f "$f" ]] || continue
+    substitute_tokens_go "$f" "$OBS_DIR/$(basename "$f")"
+  done
 
   cat > "$WORKDIR/go.mod" << 'GOMOD'
 module obsharness
