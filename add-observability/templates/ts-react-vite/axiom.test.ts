@@ -5,7 +5,7 @@
  * adapted to the browser runtime:
  *
  *   - Env is read from `import.meta.env`. Tests inject config via the
- *     TEST-ONLY `init({ testEnv })` seam (which also carries `__fetch`), so
+ *     TEST-ONLY `_resetForTest(env)` seam (which also carries `__fetch`), so
  *     the destination registry is exercised without stubbing import.meta.env.
  *   - BROWSER HARD RULE (review #8): the Axiom adapter NEVER ships an ingest
  *     token. It is `isConfigured()` ONLY when `VITE_AXIOM_PROXY_URL` is set,
@@ -44,7 +44,7 @@ vi.mock("@sentry/react", () => ({
 }));
 
 import * as Sentry from "@sentry/react";
-import { init, logEvent, captureError, startSpan, type InitEnv } from "./index";
+import { _resetForTest, init, logEvent, captureError, startSpan, type InitEnv } from "./index";
 
 // ─── Fakes ──────────────────────────────────────────────────────────────────
 
@@ -129,13 +129,12 @@ describe("browser no-token rule", () => {
 
   it("no VITE_AXIOM_PROXY_URL → adapter is console-only (logEvent no-ops to console, no POST)", async () => {
     const fake = makeFakeFetch("ok");
-    init({
-      testEnv: envWith({
+    _resetForTest(envWith({
         // No AXIOM_PROXY_URL → axiom adapter unconfigured → forRole('logs')=null.
         OBS_DESTINATIONS: "errors=none,logs=axiom",
         __fetch: fake.fn,
-      }),
-    });
+      }));
+    init();
     logEvent({ event: "x", severity: "info" });
     await flushAsync();
     expect(fake.calls).toHaveLength(0);
@@ -149,14 +148,13 @@ describe("browser no-token rule", () => {
 describe("role dispatch — logs→axiom(proxy), errors→sentry", () => {
   it("case 1: errors=sentry,logs=axiom → logEvent POSTs to proxy (no auth header); captureError → Sentry", async () => {
     const fake = makeFakeFetch("ok");
-    init({
-      testEnv: envWith({
+    _resetForTest(envWith({
         SENTRY_DSN,
         AXIOM_PROXY_URL: PROXY_URL,
         OBS_DESTINATIONS: "errors=sentry,logs=axiom",
         __fetch: fake.fn,
-      }),
-    });
+      }));
+    init();
 
     logEvent({ event: "user_login", severity: "info", attrs: { id: 7 } });
     await flushAsync();
@@ -179,14 +177,13 @@ describe("role dispatch — logs→axiom(proxy), errors→sentry", () => {
 
   it("case 2: errors=sentry,logs=none → logEvent no POST; captureError → Sentry", async () => {
     const fake = makeFakeFetch("ok");
-    init({
-      testEnv: envWith({
+    _resetForTest(envWith({
         SENTRY_DSN,
         AXIOM_PROXY_URL: PROXY_URL,
         OBS_DESTINATIONS: "errors=sentry,logs=none",
         __fetch: fake.fn,
-      }),
-    });
+      }));
+    init();
     logEvent({ event: "noop_log", severity: "info" });
     await flushAsync();
     expect(fake.calls.filter((c) => c.url === PROXY_URL)).toHaveLength(0);
@@ -197,13 +194,12 @@ describe("role dispatch — logs→axiom(proxy), errors→sentry", () => {
 
   it("case 3: errors=none,logs=axiom → logEvent POSTs to proxy; captureError no-ops (no throw, no Sentry)", async () => {
     const fake = makeFakeFetch("ok");
-    init({
-      testEnv: envWith({
+    _resetForTest(envWith({
         AXIOM_PROXY_URL: PROXY_URL,
         OBS_DESTINATIONS: "errors=none,logs=axiom",
         __fetch: fake.fn,
-      }),
-    });
+      }));
+    init();
     logEvent({ event: "user_login", severity: "info" });
     await flushAsync();
     expect(fake.calls.filter((c) => c.url === PROXY_URL)).toHaveLength(1);
@@ -215,13 +211,12 @@ describe("role dispatch — logs→axiom(proxy), errors→sentry", () => {
 
   it("case 4: errors=none,logs=none → both no-op; no POST, no Sentry", async () => {
     const fake = makeFakeFetch("ok");
-    init({
-      testEnv: envWith({
+    _resetForTest(envWith({
         AXIOM_PROXY_URL: PROXY_URL,
         OBS_DESTINATIONS: "errors=none,logs=none",
         __fetch: fake.fn,
-      }),
-    });
+      }));
+    init();
     logEvent({ event: "x", severity: "info" });
     captureError(new Error("boom"), { event: "y", severity: "error" });
     await flushAsync();
@@ -238,13 +233,12 @@ describe("sendBeacon fire-and-forget", () => {
     beaconSpy = vi.fn(() => true);
     // @ts-expect-error stub sendBeacon on jsdom navigator
     navigator.sendBeacon = beaconSpy;
-    init({
-      testEnv: envWith({
+    _resetForTest(envWith({
         AXIOM_PROXY_URL: PROXY_URL,
         OBS_DESTINATIONS: "errors=none,logs=axiom",
         __fetch: fake.fn,
-      }),
-    });
+      }));
+    init();
     logEvent({ event: "x", severity: "info" });
     await flushAsync();
     expect(beaconSpy).toHaveBeenCalledTimes(1);
@@ -258,13 +252,12 @@ describe("sendBeacon fire-and-forget", () => {
     beaconSpy = vi.fn(() => false);
     // @ts-expect-error stub sendBeacon on jsdom navigator
     navigator.sendBeacon = beaconSpy;
-    init({
-      testEnv: envWith({
+    _resetForTest(envWith({
         AXIOM_PROXY_URL: PROXY_URL,
         OBS_DESTINATIONS: "errors=none,logs=axiom",
         __fetch: fake.fn,
-      }),
-    });
+      }));
+    init();
     logEvent({ event: "x", severity: "info" });
     await flushAsync();
     expect(beaconSpy).toHaveBeenCalledTimes(1);
@@ -277,13 +270,12 @@ describe("sendBeacon fire-and-forget", () => {
 describe("never-throw egress (fetch fallback)", () => {
   it("fake fetch REJECTS → logEvent does not throw, one rate-limited warn", async () => {
     const fake = makeFakeFetch("reject");
-    init({
-      testEnv: envWith({
+    _resetForTest(envWith({
         AXIOM_PROXY_URL: PROXY_URL,
         OBS_DESTINATIONS: "errors=none,logs=axiom",
         __fetch: fake.fn,
-      }),
-    });
+      }));
+    init();
     expect(() => {
       logEvent({ event: "a", severity: "info" });
       logEvent({ event: "b", severity: "info" });
@@ -296,13 +288,12 @@ describe("never-throw egress (fetch fallback)", () => {
 
   it("fake fetch returns non-2xx (500) → no throw, warn", async () => {
     const fake = makeFakeFetch("error500");
-    init({
-      testEnv: envWith({
+    _resetForTest(envWith({
         AXIOM_PROXY_URL: PROXY_URL,
         OBS_DESTINATIONS: "errors=none,logs=axiom",
         __fetch: fake.fn,
-      }),
-    });
+      }));
+    init();
     expect(() => logEvent({ event: "a", severity: "info" })).not.toThrow();
     await flushAsync();
     const axiomWarns = warnSpy.mock.calls.filter((c) => String(c[0]).includes("axiom"));
@@ -314,7 +305,8 @@ describe("never-throw egress (fetch fallback)", () => {
 
 describe("startSpan regression", () => {
   it("valid span + idempotent end under SENTRY_DSN unset", () => {
-    init({ testEnv: envWith({}) });
+    _resetForTest(envWith({}));
+    init();
     const span = startSpan("work", { k: "v" });
     expect(span.traceId).toMatch(/^[0-9a-f]{32}$/);
     expect(span.spanId).toMatch(/^[0-9a-f]{16}$/);
@@ -324,13 +316,12 @@ describe("startSpan regression", () => {
 
   it("valid span + idempotent end under errors=none,logs=axiom", async () => {
     const fake = makeFakeFetch("ok");
-    init({
-      testEnv: envWith({
+    _resetForTest(envWith({
         AXIOM_PROXY_URL: PROXY_URL,
         OBS_DESTINATIONS: "errors=none,logs=axiom",
         __fetch: fake.fn,
-      }),
-    });
+      }));
+    init();
     const span = startSpan("work", { k: "v" });
     expect(span.traceId).toMatch(/^[0-9a-f]{32}$/);
     expect(() => {

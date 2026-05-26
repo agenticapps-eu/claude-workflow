@@ -1,0 +1,23 @@
+# ts-supabase-edge — public export surface (post-P2, matches main)
+# Source: add-observability/templates/ts-supabase-edge/index.ts
+# Captured: 2026-05-26  init signature: zero-arg, byte-identical to main.
+# @internal _resetForTest is a test-only helper (underscore-prefixed) and is
+# not part of the documented spec §10 surface.
+
+export type Severity = "debug" | "info" | "warn" | "error" | "fatal";
+export type SpanStatus = "ok" | "error";
+export interface Envelope {
+export interface Span {
+export interface TraceContext {
+export interface InitEnv {
+export function _resetForTest(env?: InitEnv): void  # @internal test-only
+export function init(): void
+export function flush(timeoutMs: number = 2000): Promise<void>
+export function parseTraceparent(header: string | null | undefined): TraceContext | null
+export function newRootContext(): TraceContext
+export function formatTraceparent(c: Pick<TraceContext, "traceId" | "spanId" | "flags">): string
+export function runWithContext<T>(ctx: TraceContext, name: string, fn: () => T): T
+export function getActiveContext(): TraceContext | null
+export function startSpan(name: string, attributes: Record<string, unknown> = {}): Span
+export function logEvent(envelope: Envelope): void
+export function captureError(err: unknown, envelope: Envelope): void

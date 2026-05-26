@@ -93,10 +93,3 @@ parameters:
     default: sentry
     accepted: [sentry, axiom, otel, postgres]
 
-# ─── Inheritance ──────────────────────────────────────────────────────────
-
-inherits_wrapper_from: ts-cloudflare-worker
-# The wrapper module (lib-observability.ts) is byte-identical to the
-# ts-cloudflare-worker template after parameter substitution. The
-# generator copies it without changes; only the middleware shape differs
-# (this stack's middleware exports a PagesFunction, not a fetch handler).

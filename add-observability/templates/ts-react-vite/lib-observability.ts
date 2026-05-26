@@ -95,6 +95,9 @@ let serviceName: string = SERVICE_DEFAULT;
 let deployEnv: string = "dev";
 let originalFetch: typeof fetch | null = null;
 
+/** @internal — test-only seam. Never set in production code. */
+let _testEnv: InitEnv | null = null;
+
 // Role-based destination registry, built once in `init`. logEvent dispatches
 // to the LOGS adapter; captureError to the ERRORS adapter. Null until init
 // runs. All SDK-specific behaviour (Sentry init/capture/breadcrumb, Axiom
@@ -127,15 +130,19 @@ export interface InitOptions {
    * SPA loads with a known trace ID (e.g. from a server-rendered cookie).
    */
   initialContext?: TraceContext;
-  /**
-   * TEST-ONLY env override. Production never sets this — env is read from
-   * `import.meta.env`. Tests pass an InitEnv (optionally carrying `__fetch`)
-   * so the destination registry is exercised without stubbing import.meta.env
-   * or the global fetch. When provided, `init` rebuilds the registry even if
-   * already initialized.
-   * @internal
-   */
-  testEnv?: InitEnv;
+}
+
+/**
+ * Reset module state and inject a test environment override. Call this
+ * BEFORE `init()` in each test case so the next `init()` rebuilds the
+ * registry with the injected env instead of reading `import.meta.env`.
+ *
+ * @internal — test-only export. Never call from production code.
+ */
+export function _resetForTest(env?: InitEnv): void {
+  _testEnv = env ?? null;
+  initialized = false;
+  registry = null;
 }
 
 /** Assemble an InitEnv from import.meta.env (VITE_-prefixed vars only). */
@@ -153,8 +160,7 @@ function envFromImportMeta(): InitEnv {
 
 /**
  * Initialize the wrapper. Called once at React-root mount time, BEFORE
- * `createRoot(...).render(...)`. Idempotent for the production call; a
- * `testEnv` override always rebuilds the registry.
+ * `createRoot(...).render(...)`. Idempotent.
  *
  * Reads from import.meta.env (Vite). Vite exposes only VITE_-prefixed
  * vars to client code at build time. Builds the role-based destination
@@ -163,10 +169,9 @@ function envFromImportMeta(): InitEnv {
  * is no Cloudflare `ctx` in the browser. resolveConfig is fail-closed.
  */
 export function init(opts: InitOptions = {}): void {
-  const rebuilding = opts.testEnv !== undefined;
-  if (initialized && !rebuilding) return;
+  if (initialized) return;
 
-  const env = opts.testEnv ?? envFromImportMeta();
+  const env = _testEnv ?? envFromImportMeta();
   serviceName = env.SERVICE_NAME ?? SERVICE_DEFAULT;
   deployEnv = env.DEPLOY_ENV ?? "dev";
 

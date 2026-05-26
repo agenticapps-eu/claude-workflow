@@ -19,6 +19,7 @@
 
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
+  _resetForTest,
   init,
   logEvent,
   captureError,
@@ -90,15 +91,14 @@ Deno.test({
   const fake = makeFakeFetch("ok");
   const c = withSilencedConsole();
   try {
-    init(
-      envWith({
+    _resetForTest(envWith({
         SENTRY_DSN,
         AXIOM_TOKEN,
         AXIOM_DATASET,
         OBS_DESTINATIONS: "errors=sentry,logs=axiom",
         __fetch: fake.fn,
-      }),
-    );
+      }));
+    init();
     logEvent({ event: "user_login", severity: "info", attrs: { id: 7 } });
     await flushAsync();
 
@@ -130,15 +130,14 @@ Deno.test({
   const fake = makeFakeFetch("ok");
   const c = withSilencedConsole();
   try {
-    init(
-      envWith({
+    _resetForTest(envWith({
         SENTRY_DSN,
         AXIOM_TOKEN,
         AXIOM_DATASET,
         OBS_DESTINATIONS: "errors=sentry,logs=none",
         __fetch: fake.fn,
-      }),
-    );
+      }));
+    init();
     logEvent({ event: "noop_log", severity: "info" });
     await flushAsync();
     assertEquals(fake.calls.filter((c) => c.url === DEFAULT_INGEST).length, 0);
@@ -158,14 +157,13 @@ Deno.test({
   const fake = makeFakeFetch("ok");
   const c = withSilencedConsole();
   try {
-    init(
-      envWith({
+    _resetForTest(envWith({
         AXIOM_TOKEN,
         AXIOM_DATASET,
         OBS_DESTINATIONS: "errors=none,logs=axiom",
         __fetch: fake.fn,
-      }),
-    );
+      }));
+    init();
     logEvent({ event: "user_login", severity: "info" });
     await flushAsync();
     assertEquals(fake.calls.filter((c) => c.url === DEFAULT_INGEST).length, 1);
@@ -186,14 +184,13 @@ Deno.test({
   const fake = makeFakeFetch("ok");
   const c = withSilencedConsole();
   try {
-    init(
-      envWith({
+    _resetForTest(envWith({
         AXIOM_TOKEN,
         AXIOM_DATASET,
         OBS_DESTINATIONS: "errors=none,logs=none",
         __fetch: fake.fn,
-      }),
-    );
+      }));
+    init();
     logEvent({ event: "x", severity: "info" });
     captureError(new Error("boom"), { event: "y", severity: "error" });
     await flushAsync();
@@ -214,15 +211,14 @@ Deno.test({
   const c = withSilencedConsole();
   const override = "https://api.eu.axiom.co/v1/datasets/test-ds/ingest";
   try {
-    init(
-      envWith({
+    _resetForTest(envWith({
         AXIOM_TOKEN,
         AXIOM_DATASET,
         AXIOM_INGEST_URL: override,
         OBS_DESTINATIONS: "errors=none,logs=axiom",
         __fetch: fake.fn,
-      }),
-    );
+      }));
+    init();
     logEvent({ event: "x", severity: "info" });
     await flushAsync();
     assert(fake.calls.map((c) => c.url).includes(override));
@@ -242,14 +238,13 @@ Deno.test({
   const fake = makeFakeFetch("reject");
   const c = withSilencedConsole();
   try {
-    init(
-      envWith({
+    _resetForTest(envWith({
         AXIOM_TOKEN,
         AXIOM_DATASET,
         OBS_DESTINATIONS: "errors=none,logs=axiom",
         __fetch: fake.fn,
-      }),
-    );
+      }));
+    init();
     logEvent({ event: "a", severity: "info" });
     logEvent({ event: "b", severity: "info" });
     logEvent({ event: "c", severity: "info" });
@@ -268,14 +263,13 @@ Deno.test({
   const fake = makeFakeFetch("error500");
   const c = withSilencedConsole();
   try {
-    init(
-      envWith({
+    _resetForTest(envWith({
         AXIOM_TOKEN,
         AXIOM_DATASET,
         OBS_DESTINATIONS: "errors=none,logs=axiom",
         __fetch: fake.fn,
-      }),
-    );
+      }));
+    init();
     logEvent({ event: "a", severity: "info" });
     await flushAsync();
     assertEquals(c.axiomWarns(), 1);
@@ -292,12 +286,11 @@ Deno.test({
   const fake = makeFakeFetch("ok");
   const c = withSilencedConsole();
   try {
-    init(
-      envWith({
+    _resetForTest(envWith({
         OBS_DESTINATIONS: "errors=none,logs=axiom",
         __fetch: fake.fn,
-      }),
-    );
+      }));
+    init();
     logEvent({ event: "a", severity: "info" });
     await flushAsync();
     assertEquals(fake.calls.length, 0);
@@ -315,7 +308,8 @@ Deno.test({
   fn: () => {
   const c = withSilencedConsole();
   try {
-    init(envWith({}));
+    _resetForTest(envWith({}));
+    init();
     const span = startSpan("work", { k: "v" });
     assert(/^[0-9a-f]{32}$/.test(span.traceId));
     assert(/^[0-9a-f]{16}$/.test(span.spanId));
@@ -334,14 +328,13 @@ Deno.test({
   const fake = makeFakeFetch("ok");
   const c = withSilencedConsole();
   try {
-    init(
-      envWith({
+    _resetForTest(envWith({
         AXIOM_TOKEN,
         AXIOM_DATASET,
         OBS_DESTINATIONS: "errors=none,logs=axiom",
         __fetch: fake.fn,
-      }),
-    );
+      }));
+    init();
     const span = startSpan("work", { k: "v" });
     assert(/^[0-9a-f]{32}$/.test(span.traceId));
     assert(/^[0-9a-f]{16}$/.test(span.spanId));

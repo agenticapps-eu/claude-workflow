@@ -85,6 +85,9 @@ let initialized = false;
 let serviceName: string = SERVICE_DEFAULT;
 let deployEnv: string = "dev";
 
+/** @internal — test-only seam. Never set in production code. */
+let _testEnv: InitEnv | null = null;
+
 // Role-based destination registry, built once in `init`. logEvent dispatches
 // to the LOGS adapter; captureError to the ERRORS adapter. Null until init
 // runs. All SDK-specific behaviour (Sentry init/capture/breadcrumb, Axiom
@@ -133,10 +136,22 @@ function envFromDeno(): InitEnv {
 }
 
 /**
- * Initialize the wrapper. Idempotent. Production calls `init()` (env read from
- * `Deno.env`); tests call `init(envOverride)` to inject `__fetch` /
- * `OBS_DESTINATIONS`. The public contract `init(): void` is preserved — the
- * override parameter is optional.
+ * Reset module state and inject a test environment override. Call this
+ * BEFORE `init()` in each test case so the next `init()` rebuilds the
+ * registry with the injected env instead of reading `Deno.env`.
+ *
+ * @internal — test-only export. Never call from production code.
+ */
+export function _resetForTest(env?: InitEnv): void {
+  _testEnv = env ?? null;
+  initialized = false;
+  registry = null;
+}
+
+/**
+ * Initialize the wrapper. Idempotent (zero-arg; env is read from `Deno.env`
+ * unless a test has pre-loaded `_testEnv` via `_resetForTest`). In
+ * production, this is called once per handler invocation by the middleware.
  *
  * Builds the role-based destination registry: each configured named adapter is
  * init()-ed (the Sentry adapter calls `Sentry.init` when a DSN is present, the
@@ -145,14 +160,10 @@ function envFromDeno(): InitEnv {
  * `ctx` on Edge, so ctx is undefined; the Axiom adapter uses
  * `EdgeRuntime.waitUntil` (guarded) for fire-and-forget egress.
  */
-export function init(envOverride?: InitEnv): void {
-  // Idempotent for the production zero-arg call (the middleware calls init()
-  // once per invocation; re-entry is a cheap no-op). An explicit env override
-  // (tests, or a handler that re-binds env) always rebuilds the registry so
-  // the new configuration takes effect.
-  if (initialized && envOverride === undefined) return;
+export function init(): void {
+  if (initialized) return;
 
-  const env = envOverride ?? envFromDeno();
+  const env = _testEnv ?? envFromDeno();
   serviceName = env.SERVICE_NAME ?? SERVICE_DEFAULT;
   deployEnv = env.DEPLOY_ENV ?? "dev";
 
