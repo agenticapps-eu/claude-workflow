@@ -80,6 +80,39 @@ tracked in git.
 The wrapper uses standard Cloudflare Workers types and `node:async_hooks`
 which is provided by `nodejs_compat`. No tsconfig changes required.
 
+## Axiom (logs destination — default)
+
+When `logs=axiom` is active (the default role map), set the following in
+addition to the Sentry vars above.
+
+| Var | Where | Required | Example |
+|---|---|---|---|
+| `AXIOM_TOKEN` | wrangler secret | required if logs=axiom | `xaat-...` (ingest-scoped) |
+| `AXIOM_DATASET` | `wrangler.toml` `[vars]` | required if logs=axiom | `myapp-prod` |
+| `AXIOM_INGEST_URL` | `wrangler.toml` `[vars]` | optional | `https://api.eu.axiom.co/v1/datasets/<ds>/ingest` |
+| `OBS_DESTINATIONS` | `wrangler.toml` `[vars]` or `.dev.vars` | optional | `errors=sentry,logs=axiom` (overrides baked default) |
+
+**`AXIOM_TOKEN`** must be an ingest-scoped token (not an API token). Set it
+as a Wrangler secret so it never lands in `wrangler.toml`:
+
+```bash
+wrangler secret put AXIOM_TOKEN --env staging
+wrangler secret put AXIOM_TOKEN --env production
+```
+
+**`AXIOM_INGEST_URL`** only needs to be set if you are using a non-default
+Axiom region (e.g. EU: `https://api.eu.axiom.co/v1/datasets/<ds>/ingest`) or
+a self-hosted Axiom instance. Omit for the standard US endpoint.
+
+**`OBS_DESTINATIONS`** overrides the baked default role map at runtime. The
+default (`errors=sentry,logs=axiom`) is compiled in at scaffold time; use
+this var only when you need to change the mapping without re-scaffolding (e.g.
+temporarily disable Axiom with `logs=none`).
+
+**Fail-safe:** if both `SENTRY_DSN` and `AXIOM_TOKEN`/`AXIOM_DATASET` are
+absent, the wrapper falls back to console-only emission (§10.5 fail-safe
+preserved — no events are lost and the app continues).
+
 ## Verification
 
 After init, verify the wiring:

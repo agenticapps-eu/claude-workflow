@@ -26,6 +26,39 @@ they leave the worker.
 - refresh_token
 - access_token
 
+## Destination roles
+
+Default role map (compiled in at scaffold time; overridable via
+`OBS_DESTINATIONS` at runtime):
+
+| Role | Default destination |
+|---|---|
+| `errors` | `sentry` |
+| `logs` | `axiom` |
+| `analytics` | `none` |
+
+**Override syntax:** set `OBS_DESTINATIONS=errors=sentry,logs=axiom` (or
+any subset) as a Wrangler var or secret. The resolver is fail-closed: an
+unsupported mapping (e.g. `errors=axiom`) is silently rejected and the
+baked default for that role stands. Errors can only ever go to Sentry —
+the Axiom adapter declares no `errors` role.
+
+**Redaction:** PII redaction (see "Redacted attributes" above) runs once
+in the wrapper before dispatch to any destination. No adapter ever
+receives an unredacted envelope.
+
+**Per-role no-op:** when a destination is not configured (env vars absent),
+`forRole(...)` returns null and that role's events are silently dropped
+(console-only fallback for logs; nothing sent to Sentry for errors).
+The app continues without error in either case (§10.5 fail-safe).
+
+**Correlation keys:** the Axiom log payload includes reserved correlation
+attributes `__service`, `__env`, `__trace_id`, `__span_id` (deployment
+metadata + trace/span IDs from the active `TraceContext`). These are NOT
+PII — they are used to correlate logs with Sentry traces in Axiom's
+query UI. If a project wants them stripped, remove them from the
+`axiom.ts` adapter's `emit` body before the POST.
+
 ## Project event names
 
 <!-- add domain events here -->
