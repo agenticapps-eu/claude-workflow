@@ -211,20 +211,98 @@ VITCFG
 run_ts_cloudflare_pages() {
   local STACK="ts-cloudflare-pages"
   local SRC="$TEMPLATES_DIR/$STACK"
+  local WORKDIR
+  WORKDIR="$(mktemp -d)"
+  # shellcheck disable=SC2064
+  trap "rm -rf '$WORKDIR'" EXIT
 
-  # Check for test files in the template dir
-  local HAS_TEST=false
-  for f in "$SRC"/*.test.ts "$SRC"/*.test.tsx "$SRC"/*.spec.ts "$SRC"/*.spec.tsx; do
-    [[ -f "$f" ]] && HAS_TEST=true && break
-  done
+  info "[$STACK] materializing into $WORKDIR"
 
-  if [[ "$HAS_TEST" == "false" ]]; then
-    info "[$STACK] no tests (pending)"
-    return 0
+  # Materialized paths (meta.yaml target.*):
+  #   lib-observability.ts      → functions/_lib/observability/index.ts
+  #   _middleware.ts            → functions/_middleware.ts
+  #   lib-observability.test.ts → functions/_lib/observability/index.test.ts
+  #
+  # Pages Functions run on the Workers runtime; the wrapper module is identical
+  # in shape to ts-cloudflare-worker (env arg + ctx.waitUntil + @sentry/cloudflare).
+  local OBS_DIR="$WORKDIR/functions/_lib/observability"
+  mkdir -p "$OBS_DIR"
+  substitute_tokens "$SRC/lib-observability.ts"      "$OBS_DIR/index.ts"
+  substitute_tokens "$SRC/lib-observability.test.ts" "$OBS_DIR/index.test.ts"
+
+  # destinations/ sub-dir (role-based registry + adapters, phase 21).
+  if [[ -d "$SRC/destinations" ]]; then
+    local DEST_DIR="$OBS_DIR/destinations"
+    mkdir -p "$DEST_DIR"
+    for f in "$SRC/destinations"/*.ts; do
+      [[ -f "$f" ]] || continue
+      substitute_tokens "$f" "$DEST_DIR/$(basename "$f")"
+    done
   fi
 
-  echo "[$STACK] has test files — add runner here when tests land"
-  return 0
+  cat > "$WORKDIR/package.json" << 'PKGJSON'
+{
+  "name": "obs-harness-ts-cloudflare-pages",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "@sentry/cloudflare": "^8.0.0"
+  }
+}
+PKGJSON
+
+  cat > "$WORKDIR/tsconfig.json" << 'TSCFG'
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "lib": ["ES2022"]
+  }
+}
+TSCFG
+
+  cat > "$WORKDIR/vitest.config.ts" << 'VITCFG'
+import { defineConfig } from "vitest/config";
+export default defineConfig({ test: { environment: "node" } });
+VITCFG
+
+  info "[$STACK] npm install..."
+  local SETUP_OUT SETUP_EXIT=0
+  SETUP_OUT=$(cd "$WORKDIR" && npm install --no-fund --no-audit --loglevel=error 2>&1) || SETUP_EXIT=$?
+  if [[ $SETUP_EXIT -ne 0 ]]; then
+    fail "[$STACK] npm install failed (exit $SETUP_EXIT)"
+    echo "$SETUP_OUT" | tail -20
+    trap - EXIT; rm -rf "$WORKDIR"
+    return 1
+  fi
+
+  info "[$STACK] vitest run..."
+  local OUTPUT EXIT_CODE=0
+  OUTPUT=$(cd "$WORKDIR" && npx vitest run 2>&1) || EXIT_CODE=$?
+
+  local COUNTS PASSED FAILED
+  COUNTS=$(parse_vitest_counts "$OUTPUT")
+  PASSED=$(echo "$COUNTS" | awk '{print $1}')
+  FAILED=$(echo "$COUNTS" | awk '{print $2}')
+
+  if [[ $EXIT_CODE -eq 0 ]]; then
+    pass "[$STACK] ${PASSED} tests passed"
+    echo "$OUTPUT" | grep -E 'Tests |Test Files' | tail -5 || true
+  else
+    fail "[$STACK] tests FAILED (exit $EXIT_CODE)"
+    echo "$OUTPUT" | tail -50
+  fi
+
+  trap - EXIT
+  rm -rf "$WORKDIR"
+  return $EXIT_CODE
 }
 
 # ─── Stack runner: ts-react-vite ─────────────────────────────────────────────
