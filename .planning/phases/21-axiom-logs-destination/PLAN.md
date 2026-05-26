@@ -80,18 +80,34 @@ export function buildRegistry(config: DestinationsConfig, env: InitEnv, ctx?: Ex
 `isConfigured()`, maps each role to its named adapter (skipping `"none"`), and
 returns a `Registry` whose `forRole` returns the adapter only when configured.
 
-**D2 role-map source:** `DestinationsConfig` resolves from (1) a baked constant
-`DESTINATIONS_CONFIG` substituted at init-time by the generator (default
-`{errors:"sentry",logs:"axiom",analytics:"none"}`), overridable by (2) an
+**D2 role-map source:** `DestinationsConfig` resolves via `resolveConfig(env)` from
+(1) a baked constant `DESTINATIONS_CONFIG` substituted at init-time by the generator
+(default `{errors:"sentry",logs:"axiom",analytics:"none"}`), overridable by (2) an
 `OBS_DESTINATIONS` env var parsed as `errors=sentry,logs=axiom`.
 
-- [ ] **Step 1:** Write failing registry tests (RED) — see P2 test matrix; the
-  registry test asserts `forRole("logs").name === "axiom"` under default config and
-  `forRole("errors")` is `null` when `errors:"none"`.
+**`resolveConfig` MUST be fail-closed (review #5, codex HIGH — SAFETY).** An
+`errors=axiom` override would violate the never-Axiom-errors hard constraint, so
+validation is not optional:
+- Start from the baked `DESTINATIONS_CONFIG`; apply override keys on top.
+- **Reject unsupported role→dest mappings** (dest not in that role's
+  `supportedRoles` — e.g. `errors=axiom`, since the Axiom adapter has no `errors`
+  role): drop that key, keep the baked default, `console.warn` once.
+- **Unknown role or destination token**: ignore the key, `console.warn` once.
+- **Malformed pairs** (no `=`, duplicate keys, empty value): ignore; last valid
+  wins for dup keys.
+- **Case/whitespace**: trim + lowercase before matching.
+- Net effect: a malformed/hostile `OBS_DESTINATIONS` can only ever *narrow* toward
+  the safe baked default — never route errors to a logs-only adapter.
+
+- [ ] **Step 1:** Write failing registry + `resolveConfig` tests (RED) — assert
+  `forRole("logs").name==="axiom"` (default); `forRole("errors")===null` when
+  `errors:"none"`; AND the fail-closed cases: `OBS_DESTINATIONS="errors=axiom"`
+  resolves `errors` to the baked default (NOT axiom); `"errors=bogus"` → default;
+  malformed `"errorssentry"` → default; `"errors=sentry,errors=none"` dup → last.
 - [ ] **Step 2:** Run `npx vitest run registry` → FAIL (no `buildRegistry`).
-- [ ] **Step 3:** Implement `registry.ts` minimal.
-- [ ] **Step 4:** Run → PASS.
-- [ ] **Step 5:** Commit `feat(obs/cf-worker): destination registry + role map (GREEN)`.
+- [ ] **Step 3:** Implement `registry.ts` + `resolveConfig` minimal.
+- [ ] **Step 4:** Run → PASS (incl. all fail-closed cases).
+- [ ] **Step 5:** Commit `feat(obs/cf-worker): destination registry + fail-closed role map (GREEN)`.
 
 ### P1.2 — Wire the registry into `init`/`logEvent`/`captureError` (cf-worker)
 
@@ -115,9 +131,30 @@ unchanged.** Redaction stays in the wrapper, applied to `envelope` BEFORE dispat
 - [ ] **Step 4:** `gitnexus_detect_changes()` confirms only expected symbols moved.
 - [ ] **Step 5:** Commit `refactor(obs/cf-worker): dispatch logEvent/captureError via registry`.
 
+### P1.3 — Public-API baseline for byte-identity enforcement (review #4, codex HIGH)
+
+"Existing tests unchanged + grep" does NOT prove the §10.1 byte-identical interface
+(it misses export-shape, type/declaration, and signature drift). G2 is refuse-to-
+merge, so it needs a real check.
+
+**Action:** before any wrapper refactor, capture a per-stack **exported-API
+manifest** from the 1.15.0 baseline and assert it is unchanged after the refactor.
+- TS stacks: `npx tsc --emitDeclarationOnly --outDir /tmp/obs-dts-<stack>` against
+  the wrapper, then snapshot the generated `.d.ts` (public type surface). Baseline
+  the snapshot from `git show main:<wrapper>` build; diff post-refactor → MUST be
+  empty for the public surface.
+- Go stack: `go doc -all ./...` exported-symbol listing for the observability
+  package; baseline vs post-refactor diff → MUST be empty.
+- Store baselines under `.planning/phases/21-axiom-logs-destination/api-baseline/`
+  (one per stack) so the cross-phase gate can re-assert.
+
+- [ ] **Step 1:** Generate + commit the 5 baselines from `main` (1.15.0 surface).
+- [ ] **Step 2:** After each stack's P2 refactor, regenerate and diff → empty.
+
 **P1 gate:**
-- `grep -n "buildRegistry" ts-cloudflare-worker/lib-observability.ts` present.
+- `grep -n "buildRegistry\|resolveConfig" ts-cloudflare-worker/lib-observability.ts` present.
 - The 15 cf-worker contract tests pass unchanged (diff of test file = empty).
+- cf-worker `.d.ts` public surface diff vs `main` baseline = empty (P1.3).
 - `tsc --noEmit` clean for the cf-worker template.
 
 ---
@@ -127,6 +164,13 @@ unchanged.** Redaction stays in the wrapper, applied to `envelope` BEFORE dispat
 Apply the P1 pattern to all 5 stacks. Per stack: extract Sentry into `sentry.{ts,go}`,
 add `axiom.{ts,go}`, add `destinations/registry.{ts,go}`, wire `init`. Per-stack
 runtime adaptations are spelled out below — do not guess.
+
+> **Sequencing (review #3).** The generator substitution contract — the
+> `DESTINATIONS_CONFIG` token shape AND the "copy only role-referenced adapter
+> files" rule (P4.2) — MUST be frozen on the cf-worker reference (P1) BEFORE
+> replicating across the other 4 stacks here. Replicating first and changing the
+> generator contract later = 5× rework. Lock P4.1/P4.2's token format as the first
+> task of P2 (write it down in cf-worker's `meta.yaml` + INIT.md stub), then fan out.
 
 ### P2.1 — Sentry adapter (per stack, lift-and-shift)
 
@@ -142,6 +186,15 @@ cf-worker/pages, `Sentry.init` for deno/react, Go init for go-fly-http);
 URL (`https://api.axiom.co/v1/datasets/<dataset>/ingest`, `AXIOM_INGEST_URL`
 override); `emit(envelope)` ⇒ one `POST <ingest>` with `Authorization: Bearer
 <token>`, body `[envelope]`; `captureException` ⇒ **no-op**; `flush` per stack.
+
+**Degraded-mode + never-throw (review #2, agreed).** Every egress path
+(`fetch`/`sendBeacon`/Go HTTP) is wrapped so it CANNOT throw into app code: the
+fire-and-forget call swallows rejections and non-2xx responses, emitting a single
+**rate-limited** `console.warn` (TS) / `log.Printf` (Go) — e.g. "axiom: log delivery
+failing (N suppressed)" — at most once per cooldown window. The promise returned to
+`waitUntil` always resolves. If `ctx.waitUntil` is absent (Pages dev, non-Worker
+contexts), fall back to a detached `void fetch(...).catch(warnOnce)` — never an
+unhandled rejection.
 
 | Stack | env source | fire-and-forget | flush impl |
 |---|---|---|---|
@@ -180,9 +233,21 @@ Use `fakeFetch` (TS, matching existing fixture style) / `httptest.Server` (Go).
 | 3 | `errors=none, logs=axiom` | `logEvent` POSTs to Axiom; `captureError` no-ops cleanly |
 | 4 | `errors=none, logs=none` | both no-op; no POST, no Sentry call |
 
+**Additional required tests (from review):**
+- **Egress failure paths (review #2, per stack):** `fakeFetch` rejects; `fakeFetch`
+  returns non-2xx; `ctx.waitUntil` absent; `sendBeacon` returns false (react-vite);
+  Go flush timeout/HTTP error. Every assertion: **the obs call does not throw and
+  app code continues**; exactly one rate-limited warn observed.
+- **`startSpan` regression (review #6):** `startSpan` returns a valid child context
+  and `span.end` stays idempotent under `SENTRY_DSN` unset AND under
+  `errors=none,logs=axiom` — especially cf-worker + go-fly-http (lifecycle-sensitive).
+- **Vite no-token assertion (review #8):** a dedicated react-vite test asserts the
+  generated browser config emits NO `VITE_AXIOM_TOKEN` / `VITE_AXIOM_DATASET` and
+  that the adapter is console-only unless `VITE_AXIOM_PROXY_URL` is set.
+
 **TDD per adapter:** tests written first (RED — adapter/registry absent), then
 adapter implemented (GREEN). Commit pairs per stack:
-`test(obs/<stack>): axiom role-dispatch (RED)` → `feat(obs/<stack>): sentry+axiom adapters (GREEN)`.
+`test(obs/<stack>): axiom role-dispatch + failure paths (RED)` → `feat(obs/<stack>): sentry+axiom adapters (GREEN)`.
 
 **P2 gate:**
 - All 5 stacks have `destinations/{registry,sentry,axiom}.{ts,go}`.
@@ -257,10 +322,25 @@ role map into `<wrapper-dir>/destinations/` (e.g. `errors=none,logs=axiom` ⇒ o
 constant AND into CLAUDE.md's `observability:` block (consent gate 3). Write env
 stubs for active destinations only.
 
+### P4.3 — init generator fixture (review #3, gemini)
+
+P2/P5 test generated code + migration, but NOT the `init` generator logic itself.
+
+**Files:** `migrations/test-fixtures/0017-init/` (or the existing init test harness
+if one exists — grep first).
+
+**Action:** a fixture that runs `add-observability init --destinations
+errors=sentry,logs=axiom` against a sandbox project for at least one TS stack and one
+Go stack, and asserts: (a) ONLY role-referenced adapters are copied (e.g.
+`errors=none,logs=axiom` ⇒ `axiom.*` present, `sentry.*` absent); (b) the baked
+`DESTINATIONS_CONFIG` matches the flag; (c) CLAUDE.md `observability:` block written;
+(d) env stubs only for active destinations.
+
 **P4 gate:**
 - `grep -l "roles_supported" add-observability/templates/*/meta.yaml` = 5.
 - `grep -n "Destination role assignment" add-observability/init/INIT.md` present.
 - `grep -n "\-\-destinations" add-observability/init/INIT.md` present.
+- init fixture passes: `errors=none,logs=axiom` scaffolds `axiom.*` only, no `sentry.*`.
 
 ---
 
@@ -278,10 +358,28 @@ stubs for active destinations only.
 - **Pre-flight:** workflow 1.12.0–1.15.x AND ≥1 materialised wrapper from
   add-observability 0.3.x/0.4.x. Idempotency: `grep -RIn 'destinations/registry'
   <wrapper-paths>` — skip module-roots already migrated.
-- **Step 1 — hand-modified detection (§10.7):** content-hash each wrapper
-  `index.{ts,go}` vs `migrations/test-fixtures/0017/known-wrapper-hashes.json`. No
-  match ⇒ print the would-be diff, **refuse**, emit manual-splice guidance, exit
-  non-zero.
+- **Pre-flight — all-clean gate (review #7, codex).** Run hand-modified detection
+  (Step 1) across ALL module-roots BEFORE writing anything. If any root is
+  hand-modified, **abort with zero writes** by default and list the offenders —
+  a "failed" run must not have mutated the repo. Proceed-and-skip-the-dirty-ones is
+  opt-in only via an explicit `--allow-partial` flag, which makes the partial
+  semantics a deliberate operator choice (and prints a post-run summary of
+  applied vs skipped roots).
+- **Step 1 — hand-modified detection (§10.7; review #1 agreed + codex HIGH).**
+  Content-hash **every file the migration will rewrite**, not just `index.{ts,go}`:
+  the wrapper entry file AND any sibling observability file the migration touches
+  (e.g. `middleware.{ts,go}`, `policy.md`) where it isn't writing into an anchored
+  managed region. CLAUDE.md and `.env.example` are edited only inside
+  anchor-managed ranges (migration 0014 idiom) so a per-file hash isn't required
+  there — but the anchor MUST be present and unmodified; if the managed range was
+  hand-edited (anchor markers missing/moved), treat as hand-modified too. Compare
+  against `migrations/test-fixtures/0017/known-wrapper-hashes.json` (per-stack,
+  per-file). Any mismatch ⇒ **refuse** that module-root.
+- **Step 1a — refuse-path UX (review #1, gemini).** On refusal, in addition to
+  printing the would-be diff and manual-splice guidance, auto-generate a
+  `<module-root>/.observability-0017.patch` capturing the user's wrapper diff vs the
+  known baseline, and instruct: stash → re-run 0017 on the clean wrapper → re-apply
+  the patch. Exit non-zero.
 - **Step 2 — apply (safe path):** copy `destinations/{registry,sentry,axiom}` from
   the matching template stack; rewrite `index.{ts,go}` inlined-Sentry →
   registry-dispatched (target = v1.16.0 template); merge Axiom env rows into
@@ -322,7 +420,7 @@ write to `migrations/test-fixtures/0017/known-wrapper-hashes.json`. These are th
 | `02-fresh-apply-fxsa-shape` | 6 cf-worker roots + 1 react-vite, un-modified | all 7 roots migrated | 0 |
 | `03-already-applied` | registry already present | zero changes (idempotent) | 0 |
 | `04-hand-modified-refuse` | wrapper with extra logic (hash mismatch) | refuse, diff printed, no files written | non-zero |
-| `05-multi-stack-partial` | one clean root + one hand-modified | clean root migrated, modified listed + refused | non-zero |
+| `05-multi-stack-partial` | one clean root + one hand-modified | **default:** abort, ZERO writes to either root, both listed (non-zero exit). **`--allow-partial`:** clean root migrated, dirty root skipped + listed, post-run summary | non-zero (both modes) |
 | `06-no-claudemd` | no CLAUDE.md | stub `observability:` block written to new CLAUDE.md | 0 |
 
 **TDD:** fixtures (setup.sh/verify.sh/expected-exit) written FIRST (RED — harness
@@ -355,6 +453,13 @@ meta.yaml destinations block; INIT `--destinations` flag; migration 0017 (consen
 refuse semantics); CLAUDE.md v0.3.0→v0.4.0 block migration. Note Axiom span +
 batching + dual-ship deferred to 1.17.0.
 
+**Version-metadata note (review #9, codex).** Add one explicit line to the CHANGELOG
+entry explaining the deliberate split: `add-observability` skill `version` bumps
+0.4.0→0.5.0 (new declarative surface) but its `implements_spec` stays `0.3.2`
+because the wrapper *runtime contract* (§10.1–10.7) is unchanged; the
+multi-destination shape it now materialises is a §10.8 *project-metadata* concern
+already permitted at 0.3.x. Prevents a maintainer reading it as a drift bug.
+
 ### P6.3 — PR
 
 **Action:** `superpowers:finishing-a-development-branch` composes the PR
@@ -378,6 +483,11 @@ git diff --stat main -- add-observability/templates/*/lib-observability.test.ts 
                          add-observability/templates/*/index.test.ts \
                          add-observability/templates/go-fly-http/observability_test.go
 # expect: only ADDITIONS (new Axiom describe blocks), no edits to existing assertions
+
+# Interface byte-identity (G2): public-API manifest diff vs 1.15.0 (P1.3) — the REAL check
+# TS: regenerate .d.ts per stack, diff against api-baseline/<stack>.d.ts → empty
+# Go: go doc -all ./... diff against api-baseline/go-fly-http.txt → empty
+# expect: EMPTY diff for the public surface on all 5 stacks (refuse-to-merge if not)
 
 # Adapters present in all 5 stacks
 for s in ts-cloudflare-worker ts-cloudflare-pages ts-supabase-edge ts-react-vite go-fly-http; do
