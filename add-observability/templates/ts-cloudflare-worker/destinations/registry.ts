@@ -19,6 +19,8 @@
  */
 
 import type { Envelope, InitEnv } from "../index";
+import { createSentryAdapter } from "./sentry";
+import { createAxiomAdapter } from "./axiom";
 
 // ExecutionContext is the Cloudflare Workers runtime type. Defined here
 // compatibly (rather than imported) so the registry compiles standalone in
@@ -79,50 +81,11 @@ const ADAPTER_SUPPORTED_ROLES: Record<"sentry" | "axiom", ReadonlyArray<Role>> =
 };
 
 // ─── Adapter factories (keyed by name) ──────────────────────────────────────
-// P1 uses minimal stubs so the registry is testable. The supportedRoles
-// reference ADAPTER_SUPPORTED_ROLES as the authoritative declaration the
-// fail-closed resolver validates against: sentry⇒errors+logs,
-// axiom⇒logs+analytics (NO errors). P2 swaps the factory bodies for real
-// SDK adapters; the keys + ADAPTER_SUPPORTED_ROLES stay.
-
-function createSentryAdapter(): Destination {
-  return {
-    name: "sentry",
-    supportedRoles: ADAPTER_SUPPORTED_ROLES.sentry,
-    isConfigured(env: InitEnv): boolean {
-      return Boolean((env as Record<string, unknown>).SENTRY_DSN);
-    },
-    init(_env: InitEnv, _ctx?: ExecutionContext): void {
-      /* P2: Sentry init (withSentry populates the hub at the entry site) */
-    },
-    emit(_envelope: Envelope): void {
-      /* P2: Sentry breadcrumb / log */
-    },
-    captureException(_err: unknown, _envelope: Envelope): void {
-      /* P2: Sentry.captureException with scoped context */
-    },
-  };
-}
-
-function createAxiomAdapter(): Destination {
-  return {
-    name: "axiom",
-    supportedRoles: ADAPTER_SUPPORTED_ROLES.axiom,
-    isConfigured(env: InitEnv): boolean {
-      const e = env as Record<string, unknown>;
-      return Boolean(e.AXIOM_TOKEN) && Boolean(e.AXIOM_DATASET);
-    },
-    init(_env: InitEnv, _ctx?: ExecutionContext): void {
-      /* P2: cache token + dataset + ingest URL */
-    },
-    emit(_envelope: Envelope): void {
-      /* P2: POST envelope to the Axiom ingest endpoint (fire-and-forget) */
-    },
-    captureException(_err: unknown, _envelope: Envelope): void {
-      /* Axiom never captures errors — no-op by contract */
-    },
-  };
-}
+// P2 (this phase) wires the real SDK adapters. The factory bodies live in
+// sentry.ts / axiom.ts; this map just references them by name. The keys and
+// ADAPTER_SUPPORTED_ROLES (the fail-closed resolver's source of truth:
+// sentry⇒errors+logs, axiom⇒logs+analytics — NO errors) are unchanged. Each
+// adapter declares its own `supportedRoles` value matching ADAPTER_SUPPORTED_ROLES.
 
 const ADAPTER_FACTORIES: Record<"sentry" | "axiom", () => Destination> = {
   sentry: createSentryAdapter,

@@ -150,8 +150,9 @@ describe("role dispatch — logs→axiom, errors→sentry", () => {
     expect(body).toHaveLength(1);
     expect(body[0].event).toBe("user_login");
 
-    // captureError reaches Sentry.
+    // captureError reaches Sentry (capture is fire-and-forget via waitUntil).
     captureError(new Error("boom"), { event: "explode", severity: "error" });
+    await settled();
     expect(captureSpy).toHaveBeenCalledTimes(1);
   });
 
@@ -174,6 +175,7 @@ describe("role dispatch — logs→axiom, errors→sentry", () => {
     expect(fake.calls.filter((c) => c.url === DEFAULT_INGEST)).toHaveLength(0);
 
     captureError(new Error("boom"), { event: "explode", severity: "error" });
+    await settled();
     expect(captureSpy).toHaveBeenCalledTimes(1);
   });
 
