@@ -326,6 +326,20 @@ run_ts_react_vite() {
   substitute_tokens "$SRC/lib-observability.ts"      "$OBS_DIR/index.ts"
   substitute_tokens "$SRC/ErrorBoundary.tsx"          "$OBS_DIR/ErrorBoundary.tsx"
   substitute_tokens "$SRC/lib-observability.test.ts" "$OBS_DIR/index.test.ts"
+  # Phase-21 axiom role-dispatch + browser-no-token suite.
+  if [[ -f "$SRC/axiom.test.ts" ]]; then
+    substitute_tokens "$SRC/axiom.test.ts" "$OBS_DIR/axiom.test.ts"
+  fi
+
+  # destinations/ sub-dir (role-based registry + adapters, phase 21).
+  if [[ -d "$SRC/destinations" ]]; then
+    local DEST_DIR="$OBS_DIR/destinations"
+    mkdir -p "$DEST_DIR"
+    for f in "$SRC/destinations"/*.ts; do
+      [[ -f "$f" ]] || continue
+      substitute_tokens "$f" "$DEST_DIR/$(basename "$f")"
+    done
+  fi
 
   cat > "$WORKDIR/package.json" << 'PKGJSON'
 {
