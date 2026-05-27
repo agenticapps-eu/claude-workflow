@@ -28,25 +28,29 @@ description: synthetic test fixture for migration 0017
 EOF
 
 # 2. Materialise an UN-MODIFIED wrapper for a stack into <root-dir>.
-#    materialize_clean_* copies the exact OLD (main-branch) template bytes
-#    (tokens NOT substituted) — its CANONICAL (masked) form matches the masked
-#    baseline in known-wrapper-hashes.json, so the engine classifies it CLEAN.
-#    materialize_substituted_* (below) replaces tokens with real values like a
-#    real project; its bytes do NOT match the template, only its masked form
-#    does — proving canonicalisation works on genuinely substituted wrappers.
+#    materialize_clean_* copies the OLD (v0.4.x) template bytes and then
+#    substitutes the generator tokens with real values — exactly what a real
+#    downstream project's wrapper looks like on disk (init always substitutes;
+#    a wrapper with literal {{TOKENS}} never occurs in practice). Its CANONICAL
+#    (masked) form matches the masked baseline in known-wrapper-hashes.json, so
+#    the engine classifies it CLEAN, and its substituted values are what the
+#    engine's token extraction must recover and preserve into the new wrapper.
+#    materialize_substituted_* are kept as named aliases for fixtures whose
+#    intent is to emphasise the substituted-clean case (e.g. 07).
 _main_wrapper() {
   # $1=stack  $2=template-wrapper-file  $3=dest-abs-path
-  # Source the OLD (v0.4.x) wrapper from the vendored bytes under old-wrappers/,
-  # NOT from `git show main:` — `main` now carries the post-1.16.0 registry shape
-  # (PR #45), so a moving-ref source silently mis-classifies every clean fixture
-  # as already-applied. See old-wrappers/README.md.
+  # Source the OLD (v0.4.x) wrapper from the vendored bytes the apply engine
+  # also uses for token extraction, NOT from `git show main:` — `main` now
+  # carries the post-1.16.0 registry shape (PR #45), so a moving-ref source
+  # silently mis-classifies every clean fixture as already-applied. See
+  # templates/.claude/scripts/migrate-0017-old-wrappers/README.md.
   mkdir -p "$(dirname "$3")"
-  cp "$FIXTURES_ROOT/old-wrappers/$1/$2" "$3"
+  cp "$REPO_ROOT/templates/.claude/scripts/migrate-0017-old-wrappers/$1/$2" "$3"
 }
 
-materialize_clean_worker() { _main_wrapper ts-cloudflare-worker lib-observability.ts "$1/index.ts"; }
-materialize_clean_react()  { _main_wrapper ts-react-vite        lib-observability.ts "$1/index.ts"; }
-materialize_clean_go()     { _main_wrapper go-fly-http          observability.go     "$1/observability.go"; }
+materialize_clean_worker() { _main_wrapper ts-cloudflare-worker lib-observability.ts "$1/index.ts"; _substitute_tokens "$1/index.ts"; }
+materialize_clean_react()  { _main_wrapper ts-react-vite        lib-observability.ts "$1/index.ts"; _substitute_tokens "$1/index.ts"; }
+materialize_clean_go()     { _main_wrapper go-fly-http          observability.go     "$1/observability.go"; _substitute_tokens "$1/observability.go"; }
 
 # Substitute generator tokens in a wrapper exactly as `add-observability` would
 # for a REAL project — so the on-disk bytes do NOT match the raw template, only
@@ -74,14 +78,10 @@ _substitute_tokens() {
   perl -0pi -e 's/^([ \t]*)\{\{REDACTED_KEYS\}\}\n/${1}"password",\n${1}"token",\n${1}"api_key",\n${1}"authorization",\n${1}"secret",\n/m' "$f"
 }
 
-materialize_substituted_react() {
-  _main_wrapper ts-react-vite lib-observability.ts "$1/index.ts"
-  _substitute_tokens "$1/index.ts"
-}
-materialize_substituted_go() {
-  _main_wrapper go-fly-http observability.go "$1/observability.go"
-  _substitute_tokens "$1/observability.go"
-}
+# Named aliases — materialize_clean_* already substitutes (see note above), so
+# these are equivalent; kept so fixtures can signal "substituted-clean" intent.
+materialize_substituted_react() { materialize_clean_react "$1"; }
+materialize_substituted_go()    { materialize_clean_go "$1"; }
 
 # Hand-modified: clean wrapper + an extra hand-added line → hash mismatch.
 materialize_dirty_worker() {
