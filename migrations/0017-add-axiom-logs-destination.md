@@ -6,13 +6,16 @@ from_version: 1.15.0
 to_version: 1.16.0
 applies_to:
   - "<wrapper-dir>/index.{ts,go}"                  # wrapper entry file: inline-Sentry → registry-dispatched (Step 2)
-  - "<wrapper-dir>/destinations/"                  # registry + sentry + axiom adapters copied in (Step 2)
+  - "<wrapper-dir>/destinations/"                  # registry + sentry + axiom adapters materialised in (Step 2)
   - CLAUDE.md                                      # observability: block v0.3.0 → v0.4.0 multi-destination (Step 2, anchor-managed)
   - .claude/skills/agentic-apps-workflow/SKILL.md  # version 1.15.0 → 1.16.0 (Step 3)
 requires:
   - file: templates/.claude/scripts/migrate-0017-axiom-destination.sh
     install: "vendored in the scaffolder repo; symlinked into $HOME via the same install pattern as add-observability/"
     verify: "test -x $HOME/.claude/skills/agenticapps-workflow/templates/.claude/scripts/migrate-0017-axiom-destination.sh"
+  - file: templates/.claude/scripts/migrate-0017-old-wrappers/
+    install: "vendored OLD (v0.4.x) wrapper bytes the engine uses as the token-extraction guide; ships with the engine"
+    verify: "test -f $HOME/.claude/skills/agenticapps-workflow/templates/.claude/scripts/migrate-0017-old-wrappers/ts-react-vite/lib-observability.ts"
 optional_for:
   - projects without a materialised add-observability wrapper (pre-init)
 ---
@@ -122,12 +125,20 @@ patch artefacts; `--allow-partial` proceeds to apply the clean roots.
 
 For each clean root the engine:
 
-- Copies `destinations/{registry,sentry,axiom}.ts` (TS stacks) or
-  `destinations.go` (go-fly-http) from
-  `add-observability/templates/<stack>/` into the project's wrapper dir.
-- Rewrites the wrapper entry file inline-Sentry → registry-dispatched (the
-  rewrite target is the v1.16.0 template wrapper for that stack — public
-  interface byte-identical per §10.1; only internals move).
+- Recovers the project's real generator-token values (service name, sample
+  rates, redacted-keys list, env-var names, Go package) from its existing
+  wrapper, using the OLD (v0.4.x) template under
+  `templates/.claude/scripts/migrate-0017-old-wrappers/<stack>/` as the
+  line-by-line alignment guide, then **materialises** those values into the
+  v1.16.0 wrapper template AND the `destinations/{registry,sentry,axiom}.ts`
+  (TS) / `destinations.go` (go-fly-http) adapters. It never copies the
+  templates verbatim — a verbatim copy leaves `{{TOKENS}}` that do not compile.
+  The rewrite is inline-Sentry → registry-dispatched (public interface
+  byte-identical per §10.1; only internals move) and the project's values are
+  PRESERVED (a customised `TRACE_SAMPLE_RATE` is not reset to a default).
+- **Token-free guard (toolchain-independent):** if any `{{token}}` survives
+  substitution in the staged wrapper or adapters, the root is refused with ZERO
+  writes — a raw template can never ship even where no compiler is available.
 - Merges Axiom env rows (`AXIOM_TOKEN`, `AXIOM_DATASET`, `OBS_DESTINATIONS`)
   into a co-located `env-additions.md` and/or `.dev.vars` when present
   (idempotent — skipped if `AXIOM_TOKEN` already there).
@@ -142,14 +153,22 @@ For each clean root the engine:
     enforcement: { baseline: .observability/baseline.json }
   ```
 
-- Smoke-verifies with `tsc --noEmit` (TS) / `go build ./...` (Go) when the
-  toolchain is present; otherwise prints a skip note.
+- **Smoke-build (FATAL)** with `tsc --noEmit` (TS) / `go build ./...` (Go) when
+  the toolchain is present: a failed build rolls the root back (restore the
+  entry file, remove created adapters) and the run exits non-zero. An absent
+  toolchain is a non-fatal skip — the token-free guard above already guarantees
+  no raw template shipped.
 
 ### Step 3 — version bump
 
-`.claude/skills/agentic-apps-workflow/SKILL.md` `version: 1.15.0 → 1.16.0`.
-`implements_spec` stays `0.4.0` (the wrapper runtime contract §10.1–10.7 is
-unchanged; the multi-destination shape is a §10.8 project-metadata concern).
+`.claude/skills/agentic-apps-workflow/SKILL.md` `version: 1.15.0 → 1.16.0`,
+**only when at least one root actually migrated.** A run that migrates zero
+roots — every clean root failed the token-free guard / smoke build, or
+`--allow-partial` skipped all dirty roots — leaves the version untouched: a repo
+must never claim 1.16.0 with un-migrated wrappers. (The genuine no-wrapper and
+all-already-applied paths bump earlier, per Skip cases.) `implements_spec` stays
+`0.4.0` (the wrapper runtime contract §10.1–10.7 is unchanged; the
+multi-destination shape is a §10.8 project-metadata concern).
 
 **Idempotency:** `grep -q '^version: 1.16.0$'` — re-bumping is a no-op.
 
@@ -192,6 +211,10 @@ grep -q '^version: 1.16.0$' .claude/skills/agentic-apps-workflow/SKILL.md
 - **No wrapper (pre-init):** version bump only, exit 0.
 - **Hand-modified:** refused with diff + `.observability-0017.patch` (exit
   non-zero; default mode writes nothing else).
+- **Apply/smoke failure on a clean root:** the root is rolled back (token-free
+  guard refuses pre-write with zero writes; a smoke-build failure restores the
+  entry + removes created adapters) and the run exits non-zero. Other roots and
+  the version bump are unaffected unless every root failed.
 
 ## Notes
 
@@ -200,10 +223,14 @@ grep -q '^version: 1.16.0$' .claude/skills/agentic-apps-workflow/SKILL.md
   harness only probes idempotency-check correctness. 0017's risk is in the
   *apply* (overwriting a wrapper) and in *refusing correctly*, so — following
   the precedent of migrations 0005/0006/0010, which ship executable artefacts —
-  the apply is a script the harness runs end-to-end. The 7 fixtures assert the
-  full behaviour, including the "writes nothing on refuse / default-abort" gate
-  and (fixture 07) that a realistically-substituted unmodified wrapper
-  canonicalises CLEAN and auto-applies.
+  the apply is a script the harness runs end-to-end. The 10 fixtures assert the
+  full behaviour, including the "writes nothing on refuse / default-abort" gate,
+  (07) that a realistically-substituted unmodified wrapper canonicalises CLEAN
+  and auto-applies token-free with its values preserved, (08) that an
+  anchor-wrapped clean wrapper applies, (09) that an all-dirty `--allow-partial`
+  run migrates zero roots and does NOT bump the version, and (10) that a clean
+  cf-worker applies with each env var landing at its own site (no signature
+  collapse in the InitEnv block).
 - **Version coverage of the hash baseline.** Only add-observability v0.4.x
   wrapper shapes are baselined (the shape every `from_version: 1.15.0` project
   carries). v0.3.x is documented as out-of-scope in `HASHING-NOTE.md`.

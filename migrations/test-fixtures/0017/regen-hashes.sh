@@ -2,10 +2,11 @@
 # Regenerate migration 0017's known-wrapper-hashes.json.
 #
 # The recorded sha256 per stack is the hash of the CANONICAL (structurally
-# masked) form of that stack's OLD (pre-1.16.0) template wrapper, taken from
-# the claude-workflow `main` branch at add-observability v0.4.x. The masking
-# program is IMPORTED verbatim from the apply engine (canonicalize_awk) so the
-# baseline and the runtime check cannot drift.
+# masked) form of that stack's OLD (pre-1.16.0) template wrapper, read from the
+# vendored bytes under templates/.claude/scripts/migrate-0017-old-wrappers/
+# (add-observability v0.4.x, pinned from commit 34ee72e) — the same bytes the
+# apply engine uses for token extraction. The masking program is IMPORTED verbatim from the apply
+# engine (canonicalize_awk) so the baseline and the runtime check cannot drift.
 #
 # Usage:  bash migrations/test-fixtures/0017/regen-hashes.sh [--check]
 #   (no args)  rewrite known-wrapper-hashes.json in place
@@ -39,8 +40,11 @@ declare -a STACKS=(
 
 canon_hash_of_template() {
   local stack="$1" wf="$2"
-  git -C "$REPO_ROOT" show "main:add-observability/templates/$stack/$wf" \
-    | awk -f <(canonicalize_awk) \
+  # Read the OLD (v0.4.x) wrapper from the vendored bytes the apply engine also
+  # uses for token extraction, NOT `git show main:` — `main` now carries the
+  # post-1.16.0 registry shape (PR #45). See
+  # ../../../templates/.claude/scripts/migrate-0017-old-wrappers/README.md.
+  awk -f <(canonicalize_awk) "$REPO_ROOT/templates/.claude/scripts/migrate-0017-old-wrappers/$stack/$wf" \
     | sha256_of_stdin
 }
 
@@ -63,7 +67,7 @@ fi
 tmp="$(mktemp)"
 {
   echo '{'
-  echo '  "_comment": "Migration 0017 hand-modified detection baseline. See HASHING-NOTE.md for the canonicalisation (structural masking) method, version coverage rationale, and the token-substitution handling. Keys: <stack> -> <add-observability-wrapper-version> -> { wrapper_file, materialized_path, sha256 }. sha256 is the digest of the CANONICAL (masked) form of the OLD (pre-1.16.0) template wrapper on the claude-workflow `main` branch at add-observability v0.4.x. Masking collapses every token-substitution site to a fixed placeholder so a real substituted wrapper canonicalises to the same digest, while any change outside a token site differs (fail-closed). Regenerate with migrations/test-fixtures/0017/regen-hashes.sh, which imports the masking program verbatim from the apply engine. cf-cloudflare-pages is intentionally absent: it never shipped a wrapper before 1.16.0.",'
+  echo '  "_comment": "Migration 0017 hand-modified detection baseline. See HASHING-NOTE.md for the canonicalisation (structural masking) method, version coverage rationale, and the token-substitution handling. Keys: <stack> -> <add-observability-wrapper-version> -> { wrapper_file, materialized_path, sha256 }. sha256 is the digest of the CANONICAL (masked) form of the OLD (pre-1.16.0) template wrapper, vendored under templates/.claude/scripts/migrate-0017-old-wrappers/ (add-observability v0.4.x, pinned from commit 34ee72e). Masking collapses every token-substitution site to a fixed placeholder so a real substituted wrapper canonicalises to the same digest, while any change outside a token site differs (fail-closed). Regenerate with migrations/test-fixtures/0017/regen-hashes.sh, which imports the masking program verbatim from the apply engine. cf-cloudflare-pages is intentionally absent: it never shipped a wrapper before 1.16.0.",'
   echo '  "hash_algorithm": "sha256",'
   echo '  "canonicalization": "structural-masking-v1",'
   echo '  "schema_version": 2,'

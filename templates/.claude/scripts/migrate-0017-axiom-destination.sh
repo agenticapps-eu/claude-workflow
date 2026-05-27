@@ -29,26 +29,34 @@
 #   * Fail-closed: an unrecognised wrapper shape is treated as hand-modified.
 set -uo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # ─── argument parsing ────────────────────────────────────────────────────────
 TEMPLATES_DIR=""
 HASHES_FILE=""
 ALLOW_PARTIAL=0
 PROJECT_DIR="$PWD"
+OLD_TEMPLATES_DIR=""   # v0.4.x wrapper bytes used as the token-extraction guide
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --templates-dir) TEMPLATES_DIR="$2"; shift 2 ;;
-    --hashes)        HASHES_FILE="$2"; shift 2 ;;
-    --allow-partial) ALLOW_PARTIAL=1; shift ;;
-    --project-dir)   PROJECT_DIR="$2"; shift 2 ;;
+    --templates-dir)     TEMPLATES_DIR="$2"; shift 2 ;;
+    --hashes)            HASHES_FILE="$2"; shift 2 ;;
+    --allow-partial)     ALLOW_PARTIAL=1; shift ;;
+    --project-dir)       PROJECT_DIR="$2"; shift 2 ;;
+    --old-templates-dir) OLD_TEMPLATES_DIR="$2"; shift 2 ;;
     *) echo "migrate-0017: unknown arg: $1" >&2; exit 3 ;;
   esac
 done
+
+# Default the extraction-guide dir to the engine's co-located runtime data.
+OLD_TEMPLATES_DIR="${OLD_TEMPLATES_DIR:-$SCRIPT_DIR/migrate-0017-old-wrappers}"
 
 [ -n "$TEMPLATES_DIR" ] || { echo "migrate-0017: --templates-dir required" >&2; exit 3; }
 [ -d "$TEMPLATES_DIR" ] || { echo "migrate-0017: templates dir not found: $TEMPLATES_DIR" >&2; exit 3; }
 [ -n "$HASHES_FILE" ] || { echo "migrate-0017: --hashes required" >&2; exit 3; }
 [ -f "$HASHES_FILE" ] || { echo "migrate-0017: hashes file not found: $HASHES_FILE" >&2; exit 3; }
+[ -d "$OLD_TEMPLATES_DIR" ] || { echo "migrate-0017: old-templates dir not found: $OLD_TEMPLATES_DIR" >&2; exit 3; }
 command -v jq >/dev/null 2>&1 || { echo "migrate-0017: jq is required" >&2; exit 3; }
 
 cd "$PROJECT_DIR" || { echo "migrate-0017: cannot cd to $PROJECT_DIR" >&2; exit 3; }
@@ -189,6 +197,14 @@ canonicalize_awk() {
 BEGIN { P = "\x00TOK\x00"; in_redact = 0 }
 {
   line = $0
+
+  # Anchor markers (migration 0014 / init wrap the managed region with
+  # `// agenticapps:observability:start` … `:end`, plus the /* … */ and #
+  # comment variants other stacks use). Drop them BEFORE hashing so an
+  # otherwise-pristine anchor-wrapped wrapper canonicalises to the anchor-free
+  # baseline and classifies CLEAN — without them the markers survived masking
+  # and every anchored wrapper was wrongly refused.
+  if (line ~ /agenticapps:observability:(start|end)/) { next }
 
   # REDACTED_KEYS array body — collapse ONLY genuine list elements (quoted
   # strings / the template token / blanks). Any non-element line inside the
@@ -389,27 +405,192 @@ if [ ${#DIRTY_DIRS[@]} -gt 0 ]; then
   echo "migrate-0017: --allow-partial — migrating clean roots, skipping dirty ones." >&2
 fi
 
+# ─── token re-materialisation (the apply must NOT emit raw templates) ─────────
+# A clean project wrapper is, by construction, a token-substituted copy of the
+# OLD (v0.4.x) template for its stack. To rewrite it to the v1.16.0 target
+# WITHOUT discarding the project's real values (service name, sample rates,
+# redacted-keys list, env-var names, Go package name), recover each token's
+# value from the project wrapper using the OLD template as the alignment guide,
+# then inject those values into the NEW template + adapters.
+#
+# Correctness rests on the clean-classification already proven upstream: every
+# byte OUTSIDE a token site is identical between the OLD template and the project
+# wrapper (any difference canonicalises to a mismatch → refuse). So for each
+# OLD-template line carrying a single `{{TOKEN}}`, the project wrapper has a line
+# sharing that line's literal prefix + suffix; the middle is the value. The
+# multi-line `{{REDACTED_KEYS}}` list is captured as a block.
+
+# OLD-template guide file for a stack (same basename convention as the NEW one).
+old_guide_file() { stack_template_wrapper "$1"; }
+
+# Emit TOKEN<TAB>VALUE for every scalar token, by aligning T (guide) with W.
+# A token may appear at several sites; some are AMBIGUOUS — e.g. the cf-worker
+# InitEnv interface lists `{{ENV_VAR_DSN}}?: string;`, `{{ENV_VAR_ENV}}?: string;`
+# and `{{ENV_VAR_SERVICE}}?: string;`, all sharing prefix "  " + suffix
+# "?: string;". Matching W on a shared signature gives every such token the
+# FIRST field's value (all three → the DSN env var). So per token we choose an
+# occurrence whose (prefix,suffix) signature is UNIQUE across tokens (the env
+# vars each have a distinct usage site, e.g. `env.{{ENV_VAR_ENV}} ?? "dev"`),
+# falling back to the first occurrence only if every site is ambiguous.
+build_scalar_map() {
+  awk '
+    FNR==NR {
+      line=$0
+      if (match(line, /\{\{[A-Z_]+\}\}/)) {
+        tok=substr(line, RSTART+2, RLENGTH-4); rest=substr(line, RSTART+RLENGTH)
+        if (tok != "REDACTED_KEYS" && rest !~ /\{\{[A-Z_]+\}\}/) {
+          pre=substr(line,1,RSTART-1); suf=rest; sig=pre SUBSEP suf
+          if (!(tok in seen)) { seen[tok]=1; order[++n]=tok }
+          oc[tok, ++occn[tok], "p"]=pre; oc[tok, occn[tok], "s"]=suf
+          if (!((sig, tok) in sigtok)) { sigtok[sig,tok]=1; sigdistinct[sig]++ }
+        }
+      }
+      next
+    }
+    { wn++; W[wn]=$0 }
+    END {
+      # Choose one extraction site per token: prefer an unambiguous signature.
+      for (i=1;i<=n;i++) {
+        t=order[i]; chosen=0
+        for (k=1;k<=occn[t];k++) {
+          p=oc[t,k,"p"]; s=oc[t,k,"s"]
+          if (sigdistinct[p SUBSEP s]==1) { cpre[t]=p; csuf[t]=s; chosen=1; break }
+        }
+        if (!chosen) { cpre[t]=oc[t,1,"p"]; csuf[t]=oc[t,1,"s"] }
+      }
+      # Extract each token from the first W line matching its chosen signature.
+      for (wi=1;wi<=wn;wi++) {
+        line=W[wi]; ll=length(line)
+        for (i=1;i<=n;i++) {
+          t=order[i]; if (t in val) continue
+          p=cpre[t]; s=csuf[t]; lp=length(p); ls=length(s)
+          if (ll < lp+ls) continue
+          if (substr(line,1,lp) != p) continue
+          if (ls>0 && substr(line, ll-ls+1, ls) != s) continue
+          val[t]=substr(line, lp+1, ll-lp-ls)
+        }
+      }
+      for (i=1;i<=n;i++){ t=order[i]; if (t in val) printf "%s\t%s\n", t, val[t] }
+    }
+  ' "$1" "$2"
+}
+
+# Emit the redacted-keys list element lines from W (empty if none).
+capture_redacted_block() {
+  awk '
+    state==1 {
+      if ($0 ~ /^[[:space:]]*\];[[:space:]]*$/ || $0 ~ /^[[:space:]]*\}[[:space:]]*$/) { state=2; next }
+      print; next
+    }
+    state==0 && ($0 ~ /REDACTED_KEYS.*=[[:space:]]*\[[[:space:]]*$/ || $0 ~ /redactedKeys[[:space:]]*=[[:space:]]*\[\]string\{[[:space:]]*$/) { state=1; next }
+  ' "$1"
+}
+
+# Substitute tokens in a NEW template ($1) from a scalar map ($2) + redacted
+# block file ($3); write the materialised file to stdout.
+materialize_tokens() {
+  awk -v mapf="$2" -v redf="$3" '
+    BEGIN {
+      while ((getline ml < mapf) > 0) { ti=index(ml,"\t"); if (ti) { mv[substr(ml,1,ti-1)]=substr(ml,ti+1) } }
+      nred=0; while ((getline rl < redf) > 0) { red[++nred]=rl }
+    }
+    {
+      line=$0
+      if (line ~ /\{\{REDACTED_KEYS\}\}/) { for (j=1;j<=nred;j++) print red[j]; next }
+      while (match(line, /\{\{[A-Z_]+\}\}/)) {
+        tok=substr(line, RSTART+2, RLENGTH-4)
+        if (tok in mv) { line=substr(line,1,RSTART-1) mv[tok] substr(line, RSTART+RLENGTH) } else break
+      }
+      print line
+    }
+  ' "$1"
+}
+
 # ─── apply to clean roots ────────────────────────────────────────────────────
+# Returns 0 on success (files written), 1 on refuse (ZERO writes for this root).
 apply_root() {
   local dir="$1" stack="$2" entry="$3"
-  local wf; wf=$(stack_template_wrapper "$stack")
-  local src="$TEMPLATES_DIR/$stack"
+  local wf src guide
+  wf=$(stack_template_wrapper "$stack")
+  src="$TEMPLATES_DIR/$stack"
+  guide="$OLD_TEMPLATES_DIR/$stack/$(old_guide_file "$stack")"
 
-  # 1. Copy destination adapters into <root>/destinations/ (TS) or sibling
-  #    destinations.go (Go single-file).
-  if [ -f "$src/destinations/registry.ts" ]; then
-    mkdir -p "$dir/destinations"
-    cp "$src/destinations/registry.ts" "$dir/destinations/registry.ts"
-    cp "$src/destinations/sentry.ts"   "$dir/destinations/sentry.ts"
-    cp "$src/destinations/axiom.ts"    "$dir/destinations/axiom.ts"
-  elif [ -f "$src/destinations.go" ]; then
-    cp "$src/destinations.go" "$dir/destinations.go"
+  if [ ! -f "$guide" ]; then
+    echo "  ERROR: no token-extraction guide for stack '$stack' ($guide)" >&2
+    return 1
   fi
 
-  # 2. Rewrite the wrapper entry file to the v1.16.0 registry-dispatched target.
-  cp "$src/$wf" "$entry"
+  # 1. Recover the project's real token values from its existing wrapper.
+  local mapf redf; mapf=$(mktemp); redf=$(mktemp)
+  build_scalar_map "$guide" "$entry" > "$mapf"
+  capture_redacted_block "$entry" > "$redf"
 
-  # 3. Merge Axiom env rows into the project's env file if one exists alongside.
+  # 2. Stage the substituted wrapper + adapters into temps (no writes yet).
+  local stage_entry; stage_entry=$(mktemp)
+  materialize_tokens "$src/$wf" "$mapf" "$redf" > "$stage_entry"
+
+  local adst=() atmp=()
+  if [ -f "$src/destinations/registry.ts" ]; then
+    local a t
+    for a in registry sentry axiom; do
+      t=$(mktemp); materialize_tokens "$src/destinations/$a.ts" "$mapf" "$redf" > "$t"
+      adst+=("$dir/destinations/$a.ts"); atmp+=("$t")
+    done
+  elif [ -f "$src/destinations.go" ]; then
+    local t; t=$(mktemp); materialize_tokens "$src/destinations.go" "$mapf" "$redf" > "$t"
+    adst+=("$dir/destinations.go"); atmp+=("$t")
+  fi
+
+  # 3. Token-free guard (toolchain-independent): refuse with ZERO writes if any
+  #    generator token survived extraction (would not compile anyway).
+  local bad=0 k
+  if grep -q '{{' "$stage_entry"; then
+    bad=1; echo "  ERROR: unresolved token(s) after substitution in $entry:" >&2
+    grep -oE '\{\{[A-Z_]+\}\}' "$stage_entry" | sort -u | sed 's/^/        /' >&2
+  fi
+  if [ "${#atmp[@]}" -gt 0 ]; then
+    for k in "${!atmp[@]}"; do
+      grep -q '{{' "${atmp[$k]}" && { bad=1; echo "  ERROR: unresolved token(s) in ${adst[$k]}" >&2; }
+    done
+  fi
+  if [ "$bad" -ne 0 ]; then
+    rm -f "$mapf" "$redf" "$stage_entry" ${atmp[@]+"${atmp[@]}"}
+    echo "  REFUSED (zero writes): token extraction incomplete for root $dir" >&2
+    return 1
+  fi
+
+  # 4. Commit: back up the entry (for smoke rollback), then write staged files.
+  cp "$entry" "$entry.0017bak"
+  mv "$stage_entry" "$entry"
+  if [ "${#atmp[@]}" -gt 0 ]; then
+    for k in "${!atmp[@]}"; do
+      mkdir -p "$(dirname "${adst[$k]}")"
+      mv "${atmp[$k]}" "${adst[$k]}"
+    done
+  fi
+  rm -f "$mapf" "$redf"
+  # NOTE: env-file rows (env-additions.md / .dev.vars) are merged by the caller
+  # only AFTER the smoke build passes, so a smoke rollback never leaves stray
+  # AXIOM_* lines behind.
+  echo "  migrated: $entry  (stack: $stack)"
+  return 0
+}
+
+# Roll a freshly-applied root back to its pre-apply state (smoke-build failure).
+# Only the wrapper entry + adapters were written at this point; env-file rows
+# are merged post-smoke, so there is nothing else to undo.
+rollback_root() {
+  local dir="$1" entry="$2"
+  [ -f "$entry.0017bak" ] && mv -f "$entry.0017bak" "$entry"
+  rm -f "$dir/destinations/registry.ts" "$dir/destinations/sentry.ts" \
+        "$dir/destinations/axiom.ts" "$dir/destinations.go"
+  rmdir "$dir/destinations" 2>/dev/null || true
+}
+
+# Merge Axiom env rows into a root's env files (idempotent). Called only after a
+# root's smoke build passes, so failed/rolled-back roots leave env files clean.
+merge_axiom_env() {
+  local dir="$1"
   if [ -f "$dir/env-additions.md" ] && ! grep -q 'AXIOM_TOKEN' "$dir/env-additions.md" 2>/dev/null; then
     {
       echo ""
@@ -423,7 +604,6 @@ apply_root() {
   if [ -f ".dev.vars" ] && ! grep -q 'AXIOM_TOKEN' .dev.vars 2>/dev/null; then
     printf 'AXIOM_TOKEN=\nAXIOM_DATASET=\n' >> .dev.vars
   fi
-  echo "  migrated: $entry  (stack: $stack)"
 }
 
 # CLAUDE.md observability: block rewrite v0.3.0 -> v0.4.0 multi-destination.
@@ -477,49 +657,77 @@ EOF
   echo "  rewrote CLAUDE.md observability: block to spec_version 0.4.0 + destinations"
 }
 
-# Smoke-build if a toolchain is present (else skip with a note).
+# Smoke-build if a toolchain is present (else skip with a note). FATAL: a failed
+# build returns non-zero so the caller rolls the root back. Absent toolchain is
+# not a failure (returns 0 with a skip note) — the token-free guard in apply_root
+# already guarantees, toolchain-independently, that no raw template shipped.
 smoke_build() {
   local stack="$1" dir="$2"
   case "$stack" in
     go-fly-http)
       if command -v go >/dev/null 2>&1 && [ -f go.mod ]; then
-        go build ./... >/dev/null 2>&1 && echo "  smoke: go build ./... OK" \
-          || echo "  smoke: go build reported issues (review manually)"
+        if go build ./... >/dev/null 2>&1; then echo "  smoke: go build ./... OK"; return 0
+        else echo "  smoke: go build FAILED on migrated root" >&2; return 1; fi
       else
-        echo "  smoke: go toolchain absent — skipped"
+        echo "  smoke: go toolchain absent — skipped"; return 0
       fi
       ;;
     ts-*)
       if command -v npx >/dev/null 2>&1 && [ -f tsconfig.json ]; then
-        npx --no-install tsc --noEmit >/dev/null 2>&1 && echo "  smoke: tsc --noEmit OK" \
-          || echo "  smoke: tsc reported issues (review manually)"
+        if npx --no-install tsc --noEmit >/dev/null 2>&1; then echo "  smoke: tsc --noEmit OK"; return 0
+        else echo "  smoke: tsc --noEmit FAILED on migrated root" >&2; return 1; fi
       else
-        echo "  smoke: TS toolchain absent — skipped"
+        echo "  smoke: TS toolchain absent — skipped"; return 0
       fi
       ;;
   esac
+  return 0
 }
 
 CLAUDEMD_DONE=0
+MIGRATED=0
+APPLY_FAILED=()
 for i in "${!CLEAN_DIRS[@]}"; do
   dir="${CLEAN_DIRS[$i]}"; stack="${CLEAN_STACKS[$i]}"; entry="${CLEAN_ENTRIES[$i]}"
-  apply_root "$dir" "$stack" "$entry"
-  if [ "$CLAUDEMD_DONE" -eq 0 ]; then
-    rewrite_claudemd "$dir/policy.md"
-    CLAUDEMD_DONE=1
+  if ! apply_root "$dir" "$stack" "$entry"; then
+    APPLY_FAILED+=("$dir")
+    continue
   fi
-  smoke_build "$stack" "$dir"
+  if smoke_build "$stack" "$dir"; then
+    rm -f "$entry.0017bak"
+    merge_axiom_env "$dir"
+    MIGRATED=$((MIGRATED+1))
+    if [ "$CLAUDEMD_DONE" -eq 0 ]; then
+      rewrite_claudemd "$dir/policy.md"
+      CLAUDEMD_DONE=1
+    fi
+  else
+    echo "  smoke build failed — rolling back root $dir" >&2
+    rollback_root "$dir" "$entry"
+    APPLY_FAILED+=("$dir")
+  fi
 done
 
-bump_version
+# Version bump ONLY when at least one root actually migrated. A run that migrated
+# zero roots — every clean root failed apply/smoke, OR --allow-partial skipped
+# all dirty roots — must NOT claim 1.16.0. (The genuine no-eligible-roots and
+# all-already-applied paths bump earlier, before this loop.)
+if [ "$MIGRATED" -gt 0 ]; then
+  bump_version
+fi
 
 # ─── post-run summary + exit ─────────────────────────────────────────────────
-echo "migrate-0017: summary — migrated=${#CLEAN_DIRS[@]} already=${#SKIP_ALREADY[@]} unsupported=${#SKIP_UNSUPPORTED[@]} dirty-skipped=${#DIRTY_DIRS[@]}"
+echo "migrate-0017: summary — migrated=$MIGRATED failed=${#APPLY_FAILED[@]} already=${#SKIP_ALREADY[@]} unsupported=${#SKIP_UNSUPPORTED[@]} dirty-skipped=${#DIRTY_DIRS[@]}"
 
+if [ ${#APPLY_FAILED[@]} -gt 0 ]; then
+  echo "migrate-0017: ${#APPLY_FAILED[@]} clean root(s) FAILED to migrate (token extraction or smoke build) and were rolled back:" >&2
+  printf '  failed: %s\n' "${APPLY_FAILED[@]}" >&2
+fi
 if [ ${#DIRTY_DIRS[@]} -gt 0 ]; then
-  # --allow-partial path: clean roots applied, dirty skipped → non-zero per PLAN.
   echo "migrate-0017: completed with ${#DIRTY_DIRS[@]} dirty root(s) skipped (--allow-partial)." >&2
   printf '  skipped (hand-modified): %s\n' "${DIRTY_DIRS[@]}" >&2
+fi
+if [ ${#DIRTY_DIRS[@]} -gt 0 ] || [ ${#APPLY_FAILED[@]} -gt 0 ]; then
   exit 2
 fi
 exit 0
