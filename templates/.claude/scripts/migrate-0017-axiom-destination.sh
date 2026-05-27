@@ -424,31 +424,54 @@ fi
 old_guide_file() { stack_template_wrapper "$1"; }
 
 # Emit TOKEN<TAB>VALUE for every scalar token, by aligning T (guide) with W.
+# A token may appear at several sites; some are AMBIGUOUS — e.g. the cf-worker
+# InitEnv interface lists `{{ENV_VAR_DSN}}?: string;`, `{{ENV_VAR_ENV}}?: string;`
+# and `{{ENV_VAR_SERVICE}}?: string;`, all sharing prefix "  " + suffix
+# "?: string;". Matching W on a shared signature gives every such token the
+# FIRST field's value (all three → the DSN env var). So per token we choose an
+# occurrence whose (prefix,suffix) signature is UNIQUE across tokens (the env
+# vars each have a distinct usage site, e.g. `env.{{ENV_VAR_ENV}} ?? "dev"`),
+# falling back to the first occurrence only if every site is ambiguous.
 build_scalar_map() {
   awk '
     FNR==NR {
       line=$0
       if (match(line, /\{\{[A-Z_]+\}\}/)) {
         tok=substr(line, RSTART+2, RLENGTH-4); rest=substr(line, RSTART+RLENGTH)
-        if (tok != "REDACTED_KEYS" && !(tok in seen) && rest !~ /\{\{[A-Z_]+\}\}/) {
-          seen[tok]=1; order[++n]=tok
-          pre[tok]=substr(line,1,RSTART-1); suf[tok]=rest
+        if (tok != "REDACTED_KEYS" && rest !~ /\{\{[A-Z_]+\}\}/) {
+          pre=substr(line,1,RSTART-1); suf=rest; sig=pre SUBSEP suf
+          if (!(tok in seen)) { seen[tok]=1; order[++n]=tok }
+          oc[tok, ++occn[tok], "p"]=pre; oc[tok, occn[tok], "s"]=suf
+          if (!((sig, tok) in sigtok)) { sigtok[sig,tok]=1; sigdistinct[sig]++ }
         }
       }
       next
     }
-    {
-      line=$0; ll=length(line)
+    { wn++; W[wn]=$0 }
+    END {
+      # Choose one extraction site per token: prefer an unambiguous signature.
       for (i=1;i<=n;i++) {
-        t=order[i]; if (t in val) continue
-        p=pre[t]; s=suf[t]; lp=length(p); ls=length(s)
-        if (ll < lp+ls) continue
-        if (substr(line,1,lp) != p) continue
-        if (ls>0 && substr(line, ll-ls+1, ls) != s) continue
-        val[t]=substr(line, lp+1, ll-lp-ls)
+        t=order[i]; chosen=0
+        for (k=1;k<=occn[t];k++) {
+          p=oc[t,k,"p"]; s=oc[t,k,"s"]
+          if (sigdistinct[p SUBSEP s]==1) { cpre[t]=p; csuf[t]=s; chosen=1; break }
+        }
+        if (!chosen) { cpre[t]=oc[t,1,"p"]; csuf[t]=oc[t,1,"s"] }
       }
+      # Extract each token from the first W line matching its chosen signature.
+      for (wi=1;wi<=wn;wi++) {
+        line=W[wi]; ll=length(line)
+        for (i=1;i<=n;i++) {
+          t=order[i]; if (t in val) continue
+          p=cpre[t]; s=csuf[t]; lp=length(p); ls=length(s)
+          if (ll < lp+ls) continue
+          if (substr(line,1,lp) != p) continue
+          if (ls>0 && substr(line, ll-ls+1, ls) != s) continue
+          val[t]=substr(line, lp+1, ll-lp-ls)
+        }
+      }
+      for (i=1;i<=n;i++){ t=order[i]; if (t in val) printf "%s\t%s\n", t, val[t] }
     }
-    END { for (i=1;i<=n;i++){ t=order[i]; if (t in val) printf "%s\t%s\n", t, val[t] } }
   ' "$1" "$2"
 }
 
@@ -546,8 +569,28 @@ apply_root() {
     done
   fi
   rm -f "$mapf" "$redf"
+  # NOTE: env-file rows (env-additions.md / .dev.vars) are merged by the caller
+  # only AFTER the smoke build passes, so a smoke rollback never leaves stray
+  # AXIOM_* lines behind.
+  echo "  migrated: $entry  (stack: $stack)"
+  return 0
+}
 
-  # 5. Merge Axiom env rows into the project's env file if one exists alongside.
+# Roll a freshly-applied root back to its pre-apply state (smoke-build failure).
+# Only the wrapper entry + adapters were written at this point; env-file rows
+# are merged post-smoke, so there is nothing else to undo.
+rollback_root() {
+  local dir="$1" entry="$2"
+  [ -f "$entry.0017bak" ] && mv -f "$entry.0017bak" "$entry"
+  rm -f "$dir/destinations/registry.ts" "$dir/destinations/sentry.ts" \
+        "$dir/destinations/axiom.ts" "$dir/destinations.go"
+  rmdir "$dir/destinations" 2>/dev/null || true
+}
+
+# Merge Axiom env rows into a root's env files (idempotent). Called only after a
+# root's smoke build passes, so failed/rolled-back roots leave env files clean.
+merge_axiom_env() {
+  local dir="$1"
   if [ -f "$dir/env-additions.md" ] && ! grep -q 'AXIOM_TOKEN' "$dir/env-additions.md" 2>/dev/null; then
     {
       echo ""
@@ -561,17 +604,6 @@ apply_root() {
   if [ -f ".dev.vars" ] && ! grep -q 'AXIOM_TOKEN' .dev.vars 2>/dev/null; then
     printf 'AXIOM_TOKEN=\nAXIOM_DATASET=\n' >> .dev.vars
   fi
-  echo "  migrated: $entry  (stack: $stack)"
-  return 0
-}
-
-# Roll a freshly-applied root back to its pre-apply state (smoke-build failure).
-rollback_root() {
-  local dir="$1" entry="$2"
-  [ -f "$entry.0017bak" ] && mv -f "$entry.0017bak" "$entry"
-  rm -f "$dir/destinations/registry.ts" "$dir/destinations/sentry.ts" \
-        "$dir/destinations/axiom.ts" "$dir/destinations.go"
-  rmdir "$dir/destinations" 2>/dev/null || true
 }
 
 # CLAUDE.md observability: block rewrite v0.3.0 -> v0.4.0 multi-destination.
@@ -663,6 +695,7 @@ for i in "${!CLEAN_DIRS[@]}"; do
   fi
   if smoke_build "$stack" "$dir"; then
     rm -f "$entry.0017bak"
+    merge_axiom_env "$dir"
     MIGRATED=$((MIGRATED+1))
     if [ "$CLAUDEMD_DONE" -eq 0 ]; then
       rewrite_claudemd "$dir/policy.md"
