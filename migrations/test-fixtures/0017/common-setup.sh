@@ -83,6 +83,16 @@ _substitute_tokens() {
 materialize_substituted_react() { materialize_clean_react "$1"; }
 materialize_substituted_go()    { materialize_clean_go "$1"; }
 
+# Prettier-styled clean worker: a substituted-but-unmodified cf-worker wrapper
+# reformatted to a non-default style (single quotes, no semicolons), as a
+# project with `{ "singleQuote": true, "semi": false }` produces. Must still
+# classify CLEAN — the canonicaliser normalises style before hashing.
+materialize_prettier_worker() {
+  materialize_clean_worker "$1"
+  local f="$1/index.ts" tmp; tmp=$(mktemp)
+  sed -E "s/\"/'/g; s/;([[:space:]]*\/\/)/\1/g; s/;[[:space:]]*\$//" "$f" > "$tmp" && mv "$tmp" "$f"
+}
+
 # Anchor-wrapped (migration 0014 / init idiom): a substituted-clean wrapper whose
 # content is bracketed by `// agenticapps:observability:start/end` markers. Must
 # still classify CLEAN — the canonicaliser strips the markers before hashing.

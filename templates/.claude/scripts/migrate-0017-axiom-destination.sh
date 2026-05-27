@@ -198,29 +198,45 @@ BEGIN { P = "\x00TOK\x00"; in_redact = 0 }
 {
   line = $0
 
+  # ── style normalisation (Prettier-insensitive) ───────────────────────────
+  # The masking rules below assume the TEMPLATE's style (double quotes, trailing
+  # semicolons, one-space indent steps). A downstream `.prettierrc` (single
+  # quotes / no semicolons / different print width) would otherwise defeat EVERY
+  # rule — not just add line noise — and a clean wrapper would be refused. So we
+  # first fold both the guide and the candidate to one canonical style. Applied
+  # to both sides, it is hash-neutral; an embedded-quote edge case would mismatch
+  # (refuse), which is fail-safe. Line REFLOW (print width) is not normalised —
+  # a wrapper whose lines wrap differently still routes to the recovery patch.
+  gsub(/\r$/, "", line)                       # CRLF
+  gsub(/'/, "\"", line)                       # single → double string quotes
+  gsub(/;[ \t]*\/\//, " //", line)            # semicolon before a line comment
+  sub(/;[ \t]*$/, "", line)                   # trailing semicolon
+  sub(/,[ \t]*$/, "", line)                   # trailing comma (Prettier all)
+  gsub(/[ \t][ \t]+/, " ", line)              # collapse 2+ spaces/tabs → 1
+  sub(/[ \t]+$/, "", line)                    # trim trailing whitespace
+
   # Anchor markers (migration 0014 / init wrap the managed region with
-  # `// agenticapps:observability:start` … `:end`, plus the /* … */ and #
-  # comment variants other stacks use). Drop them BEFORE hashing so an
-  # otherwise-pristine anchor-wrapped wrapper canonicalises to the anchor-free
-  # baseline and classifies CLEAN — without them the markers survived masking
-  # and every anchored wrapper was wrongly refused.
+  # `// agenticapps:observability:start` … `:end`). Drop them in BOTH modes so
+  # an otherwise-pristine anchor-wrapped wrapper classifies CLEAN.
   if (line ~ /agenticapps:observability:(start|end)/) { next }
 
-  # REDACTED_KEYS array body — collapse ONLY genuine list elements (quoted
-  # strings / the template token / blanks). Any non-element line inside the
-  # array is a hand modification and is emitted verbatim (alters the hash).
+  # NORMALIZE_ONLY mode: emit the style-normalised line without masking. The
+  # token extractor (build_scalar_map / capture_redacted_block) uses this so it
+  # aligns guide↔wrapper on identical style, sharing ONE normaliser (no drift).
+  if (NORMALIZE_ONLY == "1") { print line; next }
+
+  # REDACTED_KEYS array body — collapse genuine list elements to one placeholder
+  # so a project's customised key list never alters the hash.
   if (in_redact) {
-    if (line ~ /^[[:space:]]*\];[[:space:]]*$/ || line ~ /^[[:space:]]*\}[[:space:]]*$/) {
-      in_redact = 0; print line; next
-    }
+    if (line ~ /^[[:space:]]*\]$/ || line ~ /^[[:space:]]*\}$/) { in_redact = 0; print line; next }
     if (line ~ /^[[:space:]]*$/) { next }
-    if (line ~ /^[[:space:]]*"[^"]*",?[[:space:]]*$/) { next }
-    if (line ~ /^[[:space:]]*\{\{REDACTED_KEYS\}\},?[[:space:]]*$/) { next }
+    if (line ~ /^[[:space:]]*"[^"]*"$/) { next }
+    if (line ~ /^[[:space:]]*\{\{REDACTED_KEYS\}\}$/) { next }
     print line; next
   }
   if (line ~ /REDACTED_KEYS.*=[[:space:]]*\[[[:space:]]*$/ \
       || line ~ /redactedKeys[[:space:]]*=[[:space:]]*\[\]string\{[[:space:]]*$/) {
-    print line; print "  " P "REDACTED_KEYS" P; in_redact = 1; next
+    print line; print " " P "REDACTED_KEYS" P; in_redact = 1; next
   }
 
   # header comment Service: / Destination:
@@ -232,36 +248,36 @@ BEGIN { P = "\x00TOK\x00"; in_redact = 0 }
   }
 
   # Go package declaration
-  if (line ~ /^package [A-Za-z0-9_{}]+[[:space:]]*$/) { print "package " P "PACKAGE_NAME" P; next }
+  if (line ~ /^package [A-Za-z0-9_{}]+$/) { print "package " P "PACKAGE_NAME" P; next }
   if (line ~ /^\/\/ Package /) {
     sub(/Package [A-Za-z0-9_{}]+/, "Package " P "PACKAGE_NAME" P, line); print line; next
   }
 
-  # service-name literal
-  if (line ~ /^const SERVICE_DEFAULT = ".*";[[:space:]]*$/) {
-    print "const SERVICE_DEFAULT = \"" P "SERVICE_NAME" P "\";"; next
+  # service-name literal (semicolon already stripped by normalisation)
+  if (line ~ /^const SERVICE_DEFAULT = ".*"$/) {
+    print "const SERVICE_DEFAULT = \"" P "SERVICE_NAME" P "\""; next
   }
-  if (line ~ /^[[:space:]]*serviceName[[:space:]]*=[[:space:]]*".*"[[:space:]]*$/) {
+  if (line ~ /^[[:space:]]*serviceName = ".*"$/) {
     sub(/=.*$/, "= \"" P "SERVICE_NAME" P "\"", line); print line; next
   }
 
   # sample-rate literals
-  if (line ~ /^const DEBUG_SAMPLE_RATE = .*;[[:space:]]*$/) {
-    print "const DEBUG_SAMPLE_RATE = " P "DEBUG_SAMPLE_RATE" P ";"; next
+  if (line ~ /^const DEBUG_SAMPLE_RATE = .*$/) {
+    print "const DEBUG_SAMPLE_RATE = " P "DEBUG_SAMPLE_RATE" P; next
   }
-  if (line ~ /^const TRACE_SAMPLE_RATE = .*;[[:space:]]*$/) {
-    print "const TRACE_SAMPLE_RATE = " P "TRACE_SAMPLE_RATE" P ";"; next
+  if (line ~ /^const TRACE_SAMPLE_RATE = .*$/) {
+    print "const TRACE_SAMPLE_RATE = " P "TRACE_SAMPLE_RATE" P; next
   }
-  if (line ~ /^[[:space:]]*debugSampleRate[[:space:]]*=[[:space:]]*.*$/) {
+  if (line ~ /^[[:space:]]*debugSampleRate = .*$/) {
     sub(/=.*$/, "= " P "DEBUG_SAMPLE_RATE" P, line); print line; next
   }
-  if (line ~ /^[[:space:]]*traceSampleRate[[:space:]]*=[[:space:]]*.*$/) {
+  if (line ~ /^[[:space:]]*traceSampleRate = .*$/) {
     sub(/=.*$/, "= " P "TRACE_SAMPLE_RATE" P, line); print line; next
   }
 
-  # InitEnv interface fields: `  IDENT?: string;`
-  if (line ~ /^[[:space:]]+[A-Za-z_{}][A-Za-z0-9_{}]*\?: string;[[:space:]]*$/) {
-    sub(/[A-Za-z_{}][A-Za-z0-9_{}]*\?: string;/, P "ENV_VAR" P "?: string;", line); print line; next
+  # InitEnv interface fields: `IDENT?: string` (semicolon normalised away)
+  if (line ~ /^[[:space:]]*[A-Za-z_{}][A-Za-z0-9_{}]*\?: string$/) {
+    sub(/[A-Za-z_{}][A-Za-z0-9_{}]*\?: string/, P "ENV_VAR" P "?: string", line); print line; next
   }
 
   # env-var access — quoted-getenv forms first so the generic env. rule below
@@ -433,6 +449,11 @@ old_guide_file() { stack_template_wrapper "$1"; }
 # vars each have a distinct usage site, e.g. `env.{{ENV_VAR_ENV}} ?? "dev"`),
 # falling back to the first occurrence only if every site is ambiguous.
 build_scalar_map() {
+  # Normalise BOTH guide and wrapper to one style first (shared normaliser), so
+  # the literal prefix/suffix alignment is immune to the project's .prettierrc.
+  local g w; g=$(mktemp); w=$(mktemp)
+  awk -v NORMALIZE_ONLY=1 -f <(canonicalize_awk) "$1" > "$g"
+  awk -v NORMALIZE_ONLY=1 -f <(canonicalize_awk) "$2" > "$w"
   awk '
     FNR==NR {
       line=$0
@@ -472,14 +493,15 @@ build_scalar_map() {
       }
       for (i=1;i<=n;i++){ t=order[i]; if (t in val) printf "%s\t%s\n", t, val[t] }
     }
-  ' "$1" "$2"
+  ' "$g" "$w"
+  rm -f "$g" "$w"
 }
 
 # Emit the redacted-keys list element lines from W (empty if none).
 capture_redacted_block() {
   awk '
     state==1 {
-      if ($0 ~ /^[[:space:]]*\];[[:space:]]*$/ || $0 ~ /^[[:space:]]*\}[[:space:]]*$/) { state=2; next }
+      if ($0 ~ /^[[:space:]]*\];?[[:space:]]*$/ || $0 ~ /^[[:space:]]*\}[;,]?[[:space:]]*$/) { state=2; next }
       print; next
     }
     state==0 && ($0 ~ /REDACTED_KEYS.*=[[:space:]]*\[[[:space:]]*$/ || $0 ~ /redactedKeys[[:space:]]*=[[:space:]]*\[\]string\{[[:space:]]*$/) { state=1; next }

@@ -8,28 +8,28 @@
       "0.4.x": {
         "wrapper_file": "lib-observability.ts",
         "materialized_path": "src/lib/observability/index.ts",
-        "sha256": "bcad3d5504dd5b630f62e7fb9f0e4b529bae02b9a444c2ebd71b8b76e5f467c8"
+        "sha256": "239a5984665f053ed8124cca7a5c74bf6fb97d7553bc9724306470c28ce65db3"
       }
     },
     "ts-supabase-edge": {
       "0.4.x": {
         "wrapper_file": "index.ts",
         "materialized_path": "supabase/functions/_shared/observability/index.ts",
-        "sha256": "68935e52c17eb9ec9b39f40c6d6597d3bc743ce7dbe57d40a6b158fd5cba78a4"
+        "sha256": "314024040bfb8d30acad634c2102b59d2b1591b923fb16686e3d3c733eee8c14"
       }
     },
     "ts-react-vite": {
       "0.4.x": {
         "wrapper_file": "lib-observability.ts",
         "materialized_path": "src/lib/observability/index.ts",
-        "sha256": "376fcbed2299d6cca5f9b75ee243b1b45656ff0a901caad602818c28a61b283c"
+        "sha256": "15d3dfee9f71adea79b434b2f03d61ac88dd8ffd7ac06a9a203eed8d6256010a"
       }
     },
     "go-fly-http": {
       "0.4.x": {
         "wrapper_file": "observability.go",
         "materialized_path": "internal/observability/observability.go",
-        "sha256": "dd38ac9326be7ba51262c9ae164d05407c73059224c07236c03810983cc08eb4"
+        "sha256": "ad6e990ccd853aa7a42c538166437011230d9a4c649880dbfea79bb4d6154b24"
       }
     }
   }
