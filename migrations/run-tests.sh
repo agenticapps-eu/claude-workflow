@@ -1969,6 +1969,82 @@ test_meta_destinations_consistency() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Migration 0018 — Post-phase observability scan hook (advisory)
+# ─────────────────────────────────────────────────────────────────────────────
+# Like 0014/0015 this is an idempotency-only migration (no apply engine). The
+# fixtures probe the three steps' idempotency checks on pre-apply (01) and
+# post-apply (02) states. PLUS a direct advisory-contract smoke test of the
+# shipped template hook: it MUST exit 0 outside a GSD project AND without a
+# baseline (the no-op-but-explicit acceptance criterion).
+
+test_migration_0018() {
+  echo ""
+  echo "${YELLOW}━━━ Migration 0018 — Post-phase observability scan hook (advisory) ━━━${RESET}"
+
+  local fixtures="$REPO_ROOT/migrations/test-fixtures/0018"
+  local migration_file="$REPO_ROOT/migrations/0018-postphase-observability-hook.md"
+  local hook="$REPO_ROOT/templates/.claude/hooks/observability-postphase-scan.sh"
+
+  # Sanity (RED until the GREEN commit lands all three artifacts).
+  if [ ! -f "$migration_file" ]; then
+    echo "  ${RED}✗${RESET} migration file missing: $migration_file — RED state"; FAIL=$((FAIL+1)); return
+  fi
+  if [ ! -x "$hook" ]; then
+    echo "  ${RED}✗${RESET} hook template missing/non-executable: $hook — RED state"; FAIL=$((FAIL+1)); return
+  fi
+  if ! jq -e '.hooks.post_phase.observability_scan' "$REPO_ROOT/templates/config-hooks.json" >/dev/null 2>&1; then
+    echo "  ${RED}✗${RESET} config-hooks.json missing post_phase.observability_scan — RED state"; FAIL=$((FAIL+1)); return
+  fi
+
+  # Advisory contract: never exits non-zero.
+  local smoke; smoke="$(mktemp -d -t migration-0018-smoke-XXXXXX)"
+  ( cd "$smoke" && bash "$hook" >/dev/null 2>&1 ); local rc_outside=$?
+  ( cd "$smoke" && mkdir -p .planning && bash "$hook" >/dev/null 2>&1 ); local rc_nobaseline=$?
+  rm -rf "$smoke"
+  if [ "$rc_outside" -eq 0 ] && [ "$rc_nobaseline" -eq 0 ]; then
+    echo "  ${GREEN}✓${RESET} hook is advisory — exit 0 outside GSD and without a baseline"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} hook must always exit 0 (outside=$rc_outside, no-baseline=$rc_nobaseline)"
+    FAIL=$((FAIL+1))
+  fi
+
+  if [ ! -d "$fixtures" ]; then
+    echo "  ${RED}SKIP${RESET}: fixtures directory missing"; SKIP=$((SKIP+1)); return
+  fi
+
+  run_0018_fixture() {
+    local fixname="$1"
+    local fixdir="$fixtures/$fixname"
+    local tmp; tmp="$(mktemp -d -t "migration-0018-${fixname}-XXXXXX")"
+
+    if [ -x "$fixdir/setup.sh" ]; then
+      ( cd "$tmp" && REPO_ROOT="$REPO_ROOT" FIXTURES_ROOT="$fixtures" "$fixdir/setup.sh" >/dev/null 2>&1 ) || {
+        echo "  ${RED}✗${RESET} $fixname — setup.sh failed"; FAIL=$((FAIL+1)); rm -rf "$tmp"; return
+      }
+    fi
+
+    local verify_out verify_exit
+    verify_out=$( cd "$tmp" && REPO_ROOT="$REPO_ROOT" bash "$fixdir/verify.sh" 2>&1 )
+    verify_exit=$?
+
+    local expected_exit; expected_exit=$(tr -d '\n' < "$fixdir/expected-exit")
+    if [ "$verify_exit" != "$expected_exit" ]; then
+      echo "  ${RED}✗${RESET} $fixname — verify exit $verify_exit, expected $expected_exit"
+      printf '%s\n' "$verify_out" | sed 's/^/        /' | head -10
+      FAIL=$((FAIL+1)); rm -rf "$tmp"; return
+    fi
+
+    echo "  ${GREEN}✓${RESET} $fixname"; PASS=$((PASS+1)); rm -rf "$tmp"
+  }
+
+  for fix in "$fixtures"/[0-9]*-*/; do
+    local name; name="$(basename "${fix%/}")"
+    run_0018_fixture "$name"
+  done
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Dispatcher
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -2022,6 +2098,10 @@ fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "0017" ]; then
   test_migration_0017
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "0018" ]; then
+  test_migration_0018
 fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "preflight" ]; then

@@ -91,6 +91,15 @@
         "skill": "gstack:qa",
         "trigger": "dev server reachable on localhost",
         "evidence": "QA report linked from VERIFICATION.md"
+      },
+      "observability_scan": {
+        "enabled": true,
+        "skill": "add-observability:scan",
+        "trigger": ".observability/baseline.json present (project adopted §10.9 enforcement)",
+        "evidence": ".observability/delta.json; advisory warning when counts.high_confidence_gaps > 0",
+        "programmatic_hook": ".claude/hooks/observability-postphase-scan.sh",
+        "blocking": false,
+        "rationale": "ADR-0027 (migration 0018) — advisory delta scan of agent-written code; never blocks (LLM-driven scanner). No-op without a baseline. Promote to blocking once the deterministic scanner ships."
       }
     },
     "finishing": {
