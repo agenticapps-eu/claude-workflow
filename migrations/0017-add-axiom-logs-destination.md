@@ -223,12 +223,14 @@ grep -q '^version: 1.16.0$' .claude/skills/agentic-apps-workflow/SKILL.md
   harness only probes idempotency-check correctness. 0017's risk is in the
   *apply* (overwriting a wrapper) and in *refusing correctly*, so — following
   the precedent of migrations 0005/0006/0010, which ship executable artefacts —
-  the apply is a script the harness runs end-to-end. The 9 fixtures assert the
+  the apply is a script the harness runs end-to-end. The 10 fixtures assert the
   full behaviour, including the "writes nothing on refuse / default-abort" gate,
   (07) that a realistically-substituted unmodified wrapper canonicalises CLEAN
   and auto-applies token-free with its values preserved, (08) that an
-  anchor-wrapped clean wrapper applies, and (09) that an all-dirty
-  `--allow-partial` run migrates zero roots and does NOT bump the version.
+  anchor-wrapped clean wrapper applies, (09) that an all-dirty `--allow-partial`
+  run migrates zero roots and does NOT bump the version, and (10) that a clean
+  cf-worker applies with each env var landing at its own site (no signature
+  collapse in the InitEnv block).
 - **Version coverage of the hash baseline.** Only add-observability v0.4.x
   wrapper shapes are baselined (the shape every `from_version: 1.15.0` project
   carries). v0.3.x is documented as out-of-scope in `HASHING-NOTE.md`.
