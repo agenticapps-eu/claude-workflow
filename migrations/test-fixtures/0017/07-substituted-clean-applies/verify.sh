@@ -36,6 +36,25 @@ test -f "$REACT_ROOT/destinations/sentry.ts"   || { echo "react sentry.ts missin
 test -f "$REACT_ROOT/destinations/axiom.ts"    || { echo "react axiom.ts missing"; exit 1; }
 grep -q 'buildRegistry' "$REACT_ROOT/index.ts" || { echo "react wrapper not registry-dispatched after apply"; exit 1; }
 
+# Bug #1 — apply must MATERIALISE tokens, never ship a raw template (the bug was
+# a verbatim cp: output kept {{SERVICE_NAME}} etc. and did not compile).
+for f in "$REACT_ROOT/index.ts" "$REACT_ROOT/destinations/registry.ts" \
+         "$REACT_ROOT/destinations/sentry.ts" "$REACT_ROOT/destinations/axiom.ts" \
+         "$GO_ROOT/observability.go" "$GO_ROOT/destinations.go"; do
+  grep -q '{{' "$f" && { echo "apply left raw {{tokens}} in $f"; exit 1; }
+done
+# Bug #1 — the project's REAL values are PRESERVED, not reset to meta defaults.
+grep -q 'const SERVICE_DEFAULT = "cparx-api";' "$REACT_ROOT/index.ts" \
+  || { echo "service name not preserved into migrated react wrapper"; exit 1; }
+grep -q 'const TRACE_SAMPLE_RATE = 0.05;' "$REACT_ROOT/index.ts" \
+  || { echo "TRACE_SAMPLE_RATE (0.05) not preserved — apply used a default instead of the project value"; exit 1; }
+# Bug #1 — values flow into the NEW adapters too (adapter tokens come from the
+# wrapper-derived map): Go package + DSN env var land in destinations.go.
+grep -q 'package observability' "$GO_ROOT/destinations.go" \
+  || { echo "Go package name not propagated into destinations.go adapter"; exit 1; }
+grep -q 'SENTRY_DSN' "$GO_ROOT/destinations.go" \
+  || { echo "DSN env var not propagated into destinations.go adapter"; exit 1; }
+
 # CLAUDE.md observability block bumped to v0.4.0 + destinations line.
 grep -q '^  spec_version: 0.4.0' CLAUDE.md || { echo "CLAUDE.md spec_version not bumped"; exit 1; }
 grep -q 'destinations:.*errors: sentry.*logs: axiom' CLAUDE.md || { echo "CLAUDE.md destinations line missing"; exit 1; }
