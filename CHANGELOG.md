@@ -17,6 +17,18 @@ No scaffolder version bump and **no migration**: the wrapper public interface (s
 - **`_resetForTest` completeness (gap #5, `ts-react-vite`)** — now also clears `spanStack`, resets `serviceName`/`deployEnv` to defaults, and restores `window.fetch` from the original (`init` stores the original reference, binds only the interceptor base) so the next `init` re-patches a clean global. Eliminates cross-suite test leakage.
 - **Regression coverage** — new tests across `ts-cloudflare-worker`, `ts-cloudflare-pages`, `ts-supabase-edge`, and `ts-react-vite` (incl. the browser Axiom cross-origin cases). Full template suite green (worker 43, pages 30, react-vite 41, supabase-edge 25, go-fly-http 25); migration suite 168 PASS / 0 FAIL.
 
+## [1.17.0] — 2026-05-27
+
+### Added (GSD post-phase observability hook — advisory, issue #50)
+
+Migration **0018** (1.16.0 → 1.17.0). Ships the one piece of §10.9 enforcement that belongs upstream as a post-phase agent gate. Does **not** add the §10.9.3 CI gate or §10.9.4 pre-commit hook (both still deferred pending the deterministic Node scanner port). See ADR-0027.
+
+- **`templates/.claude/hooks/observability-postphase-scan.sh`** — advisory hook that delta-scans the phase diff (`add-observability scan --since-commit <phase-base>`) on phase completion and WARNS when `counts.high_confidence_gaps > 0`, pointing at `scan-apply --confidence high`. Resolves the phase base via `git merge-base HEAD origin/<default>`.
+- **Wired into the GSD post-phase chain** — `config-hooks.json` → `hooks.post_phase.observability_scan` (installed into projects as `.planning/config.json`), alongside `spec_review`/`code_quality_review`/`security`/`qa`. Documented in `workflow.md` post-phase hooks. Chosen over a Claude Code `Stop` hook (which fires every turn-end — wrong frequency + recursion-prone for an LLM scan).
+- **Advisory, never blocking** — `set +e` + `trap 'exit 0'`; always exits 0. Promote to blocking once the deterministic scanner ships.
+- **No-op when enforcement not adopted** — explicit one-line notice + exit 0 when `.observability/baseline.json` is absent.
+- **Migration 0018** — idempotent (copy hook → merge config entry → bump version), with pre-flight, post-checks, and rollback per step. Tests: `test-fixtures/0018` (needs-apply / already-applied) + advisory-contract smoke; migration suite 171 PASS / 0 FAIL.
+
 ## [1.16.0] — 2026-05-26
 
 ### Added (Axiom as logs destination — Sentry stays errors-only)

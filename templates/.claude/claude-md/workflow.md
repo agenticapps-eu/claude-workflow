@@ -116,6 +116,13 @@ Verification evidence I will produce: {list}
    or :8080), run gstack `/qa` on affected pages. Output referenced in
    VERIFICATION.md.
 
+9b. **Observability delta scan (advisory)** — If the project has adopted §10.9
+    enforcement (`.observability/baseline.json` present), run
+    `.claude/hooks/observability-postphase-scan.sh`. It delta-scans the
+    phase diff and WARNS when the phase introduced new high-confidence §10
+    gaps, pointing at `/add-observability scan-apply --confidence high`.
+    Advisory only — never blocks the phase (ADR-0027). No-op without a baseline.
+
 ### Finishing Hooks (feature branch ready to merge)
 
 10. **Branch close** — Invoke `superpowers:finishing-a-development-branch` to
