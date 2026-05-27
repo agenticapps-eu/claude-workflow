@@ -36,8 +36,12 @@ EOF
 #    does — proving canonicalisation works on genuinely substituted wrappers.
 _main_wrapper() {
   # $1=stack  $2=template-wrapper-file  $3=dest-abs-path
+  # Source the OLD (v0.4.x) wrapper from the vendored bytes under old-wrappers/,
+  # NOT from `git show main:` — `main` now carries the post-1.16.0 registry shape
+  # (PR #45), so a moving-ref source silently mis-classifies every clean fixture
+  # as already-applied. See old-wrappers/README.md.
   mkdir -p "$(dirname "$3")"
-  git -C "$REPO_ROOT" show "main:add-observability/templates/$1/$2" > "$3"
+  cp "$FIXTURES_ROOT/old-wrappers/$1/$2" "$3"
 }
 
 materialize_clean_worker() { _main_wrapper ts-cloudflare-worker lib-observability.ts "$1/index.ts"; }
