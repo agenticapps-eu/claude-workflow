@@ -23,6 +23,8 @@ import {
   getActiveContext,
   withSpan,
   instrumentedFetch,
+  init,
+  _resetForTest,
 } from "./index";
 
 // ─── §10.3 traceparent roundtrip ────────────────────────────────────────────
@@ -224,5 +226,90 @@ describe("§10.5 stdout mirror", () => {
     logEvent({ event: "test_info", severity: "info" });
     expect(spy).toHaveBeenCalled();
     spy.mockRestore();
+  });
+});
+
+// ─── §10.6 redaction depth (issue #49 — gap #1) ─────────────────────────────
+
+describe("§10.6 redaction recurses into nested objects and arrays", () => {
+  it("scrubs secrets nested under non-secret keys and inside arrays of objects", () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    logEvent({
+      event: "request",
+      severity: "info",
+      attrs: {
+        request: { headers: { secret: "leak-me", "x-ok": "fine" } },
+        items: [{ password: "p1" }, { ok: "yes" }],
+      },
+    });
+    const logged = JSON.parse(spy.mock.calls.at(-1)![0] as string);
+    expect(logged.attrs.request.headers.secret).toBe("[redacted]");
+    expect(logged.attrs.request.headers["x-ok"]).toBe("fine");
+    expect(logged.attrs.items[0].password).toBe("[redacted]");
+    expect(logged.attrs.items[1].ok).toBe("yes");
+    spy.mockRestore();
+  });
+
+  it("does not overflow on circular attrs — true cycle short-circuits", () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const cyclic: Record<string, unknown> = { name: "root" };
+    cyclic.self = cyclic;
+    expect(() => logEvent({ event: "cyc", severity: "info", attrs: { cyclic } })).not.toThrow();
+    const logged = JSON.parse(spy.mock.calls.at(-1)![0] as string);
+    expect(logged.attrs.cyclic.name).toBe("root");
+    expect(logged.attrs.cyclic.self).toBe("[circular]");
+    spy.mockRestore();
+  });
+});
+
+// ─── §10.4 captureError visibility (issue #49 — gap #2) ─────────────────────
+
+describe("§10.4 captureError is never sampled out", () => {
+  it("coerces a caller-supplied low severity so the exception still emits", () => {
+    const rnd = vi.spyOn(Math, "random").mockReturnValue(0.999999);
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    captureError(new Error("boom"), { event: "explode", severity: "debug" });
+    expect(errSpy).toHaveBeenCalled();
+    errSpy.mockRestore();
+    rnd.mockRestore();
+  });
+});
+
+// ─── §10.3 traceparent semantics (issue #49 — gap #4) ───────────────────────
+
+describe("§10.3 traceparent semantic validation", () => {
+  it("rejects all-zero ids and the reserved ff version", () => {
+    for (const header of [
+      "00-00000000000000000000000000000000-00f067aa0ba902b7-01",
+      "00-4bf92f3577b34da6a3ce929d0e0e4736-0000000000000000-01",
+      "ff-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+    ]) {
+      expect(parseTraceparent(header), `expected reject for ${header}`).toBeNull();
+    }
+  });
+
+  it("accepts a higher version (W3C forward-compat), parsing the known v0 fields", () => {
+    const fwd = parseTraceparent("01-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01");
+    expect(fwd).not.toBeNull();
+    expect(fwd!.traceId).toBe("4bf92f3577b34da6a3ce929d0e0e4736");
+    expect(fwd!.parentSpanId).toBe("00f067aa0ba902b7");
+  });
+});
+
+// ─── §10.7 test-seam completeness (issue #49 — gap #5) ──────────────────────
+
+describe("_resetForTest restores all module state", () => {
+  it("restores window.fetch and clears the span stack / service identity", () => {
+    const original = window.fetch;
+    _resetForTest({ SERVICE_NAME: "svcA", DEPLOY_ENV: "prod" });
+    init(); // monkey-patches window.fetch
+    expect(window.fetch).not.toBe(original);
+    startSpan("leak"); // pushed, never ended
+    expect(getActiveContext()).not.toBeNull();
+
+    _resetForTest();
+
+    expect(window.fetch).toBe(original); // fetch un-instrumented
+    expect(getActiveContext()).toBeNull(); // span stack cleared
   });
 });

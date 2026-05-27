@@ -301,6 +301,50 @@ describe("never-throw egress (fetch fallback)", () => {
   });
 });
 
+// ─── BROWSER HARD RULE: same-origin proxy only (issue #49 — gap #3) ──────────
+
+describe("cross-origin proxy URL is rejected", () => {
+  it("absolute cross-origin URL → adapter unconfigured, no POST", async () => {
+    const fake = makeFakeFetch("ok");
+    _resetForTest(envWith({
+        AXIOM_PROXY_URL: "https://evil.example.com/ingest",
+        OBS_DESTINATIONS: "errors=none,logs=axiom",
+        __fetch: fake.fn,
+      }));
+    init();
+    logEvent({ event: "x", severity: "info" });
+    await flushAsync();
+    expect(fake.calls.filter((c) => c.url.includes("evil.example.com"))).toHaveLength(0);
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  it("protocol-relative //host URL → rejected, no POST", async () => {
+    const fake = makeFakeFetch("ok");
+    _resetForTest(envWith({
+        AXIOM_PROXY_URL: "//evil.example.com/ingest",
+        OBS_DESTINATIONS: "errors=none,logs=axiom",
+        __fetch: fake.fn,
+      }));
+    init();
+    logEvent({ event: "x", severity: "info" });
+    await flushAsync();
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  it("same-origin relative path is still accepted (POSTs)", async () => {
+    const fake = makeFakeFetch("ok");
+    _resetForTest(envWith({
+        AXIOM_PROXY_URL: PROXY_URL,
+        OBS_DESTINATIONS: "errors=none,logs=axiom",
+        __fetch: fake.fn,
+      }));
+    init();
+    logEvent({ event: "x", severity: "info" });
+    await flushAsync();
+    expect(fake.calls.filter((c) => c.url === PROXY_URL)).toHaveLength(1);
+  });
+});
+
 // ─── startSpan regression ───────────────────────────────────────────────────
 
 describe("startSpan regression", () => {

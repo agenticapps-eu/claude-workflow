@@ -114,3 +114,70 @@ Deno.test("§10.3 active context: nested scopes correctly", () => {
     assertEquals(getActiveContext()!.traceId, outer.traceId);
   });
 });
+
+// ─── §10.6 redaction depth (issue #49 — gap #1) ─────────────────────────────
+
+Deno.test("§10.6 redaction recurses into nested objects and arrays", () => {
+  const origLog = console.log;
+  const lines: string[] = [];
+  console.log = (...args: unknown[]) => {
+    lines.push(String(args[0]));
+  };
+  try {
+    logEvent({
+      event: "request",
+      severity: "info",
+      attrs: {
+        request: { headers: { secret: "leak-me", "x-ok": "fine" } },
+        items: [{ password: "p1" }, { ok: "yes" }],
+      },
+    });
+  } finally {
+    console.log = origLog;
+  }
+  const logged = JSON.parse(lines[lines.length - 1]);
+  assertEquals(logged.attrs.request.headers.secret, "[redacted]");
+  assertEquals(logged.attrs.request.headers["x-ok"], "fine");
+  assertEquals(logged.attrs.items[0].password, "[redacted]");
+  assertEquals(logged.attrs.items[1].ok, "yes");
+});
+
+// ─── §10.4 captureError visibility (issue #49 — gap #2) ─────────────────────
+
+Deno.test("§10.4 captureError is never sampled out", () => {
+  const origRandom = Math.random;
+  const origErr = console.error;
+  let errCalls = 0;
+  Math.random = () => 0.999999; // would drop a "debug"-severity event
+  console.error = () => {
+    errCalls++;
+  };
+  try {
+    captureError(new Error("boom"), { event: "explode", severity: "debug" });
+  } finally {
+    Math.random = origRandom;
+    console.error = origErr;
+  }
+  assert(errCalls > 0);
+});
+
+// ─── §10.3 traceparent semantics (issue #49 — gap #4) ───────────────────────
+
+Deno.test("§10.3 traceparent: rejects all-zero ids and the reserved ff version", () => {
+  for (
+    const header of [
+      "00-00000000000000000000000000000000-00f067aa0ba902b7-01",
+      "00-4bf92f3577b34da6a3ce929d0e0e4736-0000000000000000-01",
+      "ff-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+    ]
+  ) {
+    assertEquals(parseTraceparent(header), null, `expected reject for ${header}`);
+  }
+});
+
+Deno.test("§10.3 traceparent: accepts a higher version (W3C forward-compat)", () => {
+  const fwd = parseTraceparent("01-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01");
+  assert(fwd !== null);
+  assertEquals(fwd!.traceId, "4bf92f3577b34da6a3ce929d0e0e4736");
+  assertEquals(fwd!.parentSpanId, "00f067aa0ba902b7");
+});

@@ -142,10 +142,20 @@ export function parseTraceparent(header: string | null | undefined): TraceContex
   if (!header) return null;
   const m = TRACEPARENT_RE.exec(header.trim());
   if (!m) return null;
+  const version = m[1].toLowerCase();
+  const traceId = m[2].toLowerCase();
+  const parentId = m[3].toLowerCase();
+  // #49 gap 4: the regex gates shape; these gate W3C semantics — reject the
+  // reserved "ff" version and the all-zero trace-id / parent-id that downstream
+  // collectors (Sentry/Tempo/Honeycomb) discard or mis-attribute. Higher
+  // versions (01–fe) stay forward-compatible: parse the known v0 fields rather
+  // than drop the inbound trace.
+  if (version === "ff") return null;
+  if (/^0+$/.test(traceId) || /^0+$/.test(parentId)) return null;
   return {
-    traceId: m[2].toLowerCase(),
+    traceId,
     spanId: randHex(8),
-    parentSpanId: m[3].toLowerCase(),
+    parentSpanId: parentId,
     flags: parseInt(m[4], 16),
   };
 }
@@ -268,8 +278,11 @@ export function captureError(err: unknown, envelope: Envelope): void {
   const ctx = spanStorage.getStore();
   if (ctx) ctx.status = "error";
 
-  // Console mirror + sampling + enrichment (severity defaults to error).
-  const enriched = emit({ ...envelope, severity: envelope.severity ?? "error" }, ctx ?? null);
+  // #49 gap 2: captureError must be visible regardless of caller severity.
+  // Coerce to "error" (preserving an explicit "fatal") so emit's sample-rate
+  // gate can never silently drop the exception.
+  const severity: Severity = envelope.severity === "fatal" ? "fatal" : "error";
+  const enriched = emit({ ...envelope, severity }, ctx ?? null);
 
   // Dispatch to the ERRORS destination (Sentry scoped captureException). No-op
   // when errors is unconfigured. By the fail-closed registry contract this can
@@ -332,15 +345,41 @@ function emit(envelope: Envelope, ctx: TraceContext | null): Envelope | null {
 
 // ─── Redaction ────────────────────────────────────────────────────────────
 
-function redactValue(key: string, value: unknown): unknown {
+function redactValue(key: string, value: unknown, seen: WeakSet<object> = new WeakSet()): unknown {
   const k = key.toLowerCase();
   if (REDACTED_KEYS.some((r) => k.includes(r))) return "[redacted]";
-  return value;
+  return redactDeep(value, seen);
 }
 
-function redactObject(obj: Record<string, unknown>): Record<string, unknown> {
+// #49 gap 1: recurse into plain objects and arrays so secrets nested below the
+// top level (attrs.request.headers.secret, arrays of objects) are scrubbed too.
+// null and non-plain objects (Date, class instances) pass through unchanged; new
+// containers are constructed, so the caller's input is never mutated. `seen` is
+// an ancestor stack (add before recursing, delete after) so a true cycle
+// short-circuits to "[circular]" instead of overflowing the stack, while shared
+// (DAG) references are still fully redacted.
+function redactDeep(value: unknown, seen: WeakSet<object>): unknown {
+  if (value === null || typeof value !== "object") return value;
+  if (seen.has(value)) return "[circular]";
+  seen.add(value);
+  try {
+    if (Array.isArray(value)) return value.map((v) => redactDeep(v, seen));
+    if (isPlainObject(value)) return redactObject(value, seen);
+    return value;
+  } finally {
+    seen.delete(value);
+  }
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function redactObject(obj: Record<string, unknown>, seen: WeakSet<object> = new WeakSet()): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(obj)) out[k] = redactValue(k, v);
+  for (const [k, v] of Object.entries(obj)) out[k] = redactValue(k, v, seen);
   return out;
 }
 
