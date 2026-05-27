@@ -20,6 +20,12 @@
 set +e
 trap 'exit 0' EXIT
 
+# 0. Re-entry guard. This hook runs `claude -p` headlessly below; refuse nested
+#    invocations so a scan can never re-trigger the hook (the env var is
+#    exported, so any child claude process inherits it).
+[ -n "${OBS_POSTPHASE_SCAN_ACTIVE:-}" ] && exit 0
+export OBS_POSTPHASE_SCAN_ACTIVE=1
+
 # 1. GSD project? Silent no-op otherwise (matches the other post-phase gates).
 [ -d .planning ] || exit 0
 
@@ -49,6 +55,13 @@ if [ -z "$PHASE_BASE" ]; then
   echo "ℹ️  observability post-phase scan: could not resolve a phase-base commit; skipping."
   exit 0
 fi
+# Defence-in-depth: only ever pass a bare commit SHA onward. Anything else
+# (a branch name, a ref expression, an injected payload) is rejected, not run.
+case "$PHASE_BASE" in
+  *[!0-9a-fA-F]*)
+    echo "ℹ️  observability post-phase scan: phase-base is not a commit SHA; skipping."
+    exit 0 ;;
+esac
 
 # 4. Run the delta scan headlessly. If the claude CLI isn't on PATH, print the
 #    command for the operator to run by hand and stop (still exit 0).
