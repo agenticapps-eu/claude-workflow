@@ -4,6 +4,19 @@ All notable changes to the AgenticApps Claude Workflow scaffolder are
 documented here. The format follows [Keep a Changelog](https://keepachangelog.com/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed (`add-observability` 0.5.0 → 0.5.1 — wrapper template correctness, issue #49)
+
+No scaffolder version bump and **no migration**: the wrapper public interface (spec §10.1) is byte-identical, so downstreams already on 1.16.0 pick up the patches by re-materialising the wrapper (re-run `add-observability`). CodeRabbit flagged these on `agenticapps-eu/callbot#40`; fixing them upstream keeps every downstream wrapper coherent with the migration hash baseline. See ADR-0026.
+
+- **Nested-secret redaction (gap #1, all 4 TS stacks)** — `redactObject`/`redactValue` now recurse into plain objects and arrays. Secrets nested below the top level (e.g. `attrs.request.headers.secret`, arrays of objects) are scrubbed; `null` and non-plain objects (`Date`, class instances) pass through; input is never mutated.
+- **`captureError` visibility (gap #2, all 4 TS stacks)** — caller `severity` is coerced to `error` (preserving an explicit `fatal`) before `emit`, so a caller-supplied `severity: "debug"` can no longer be sample-rate-gated and silently dropped.
+- **Browser Axiom same-origin enforcement (gap #3, `ts-react-vite`)** — the Axiom adapter `isConfigured`/`init` resolve `AXIOM_PROXY_URL` through a same-origin guard: relative paths accepted, protocol-relative (`//host`) and cross-origin absolute URLs rejected, fail-closed when `location` is absent. A misconfigured `VITE_AXIOM_PROXY_URL` can no longer exfiltrate envelopes cross-origin.
+- **`parseTraceparent` semantics (gap #4, all 4 TS stacks)** — beyond the structural regex, reject reserved/unknown version (≠ `00`) and all-zero trace-id / parent-id that downstream collectors discard or mis-attribute. No new `zod` dependency.
+- **`_resetForTest` completeness (gap #5, `ts-react-vite`)** — now also clears `spanStack`, resets `serviceName`/`deployEnv` to defaults, and restores `window.fetch` from the original (`init` stores the original reference, binds only the interceptor base) so the next `init` re-patches a clean global. Eliminates cross-suite test leakage.
+- **Regression coverage** — new tests across `ts-cloudflare-worker`, `ts-cloudflare-pages`, `ts-supabase-edge`, and `ts-react-vite` (incl. the browser Axiom cross-origin cases). Full template suite green (worker 43, pages 30, react-vite 41, supabase-edge 25, go-fly-http 25); migration suite 168 PASS / 0 FAIL.
+
 ## [1.16.0] — 2026-05-26
 
 ### Added (Axiom as logs destination — Sentry stays errors-only)

@@ -39,6 +39,27 @@ const WARN_COOLDOWN_MS = 60_000;
 
 type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 
+/**
+ * Resolve AXIOM_PROXY_URL to a SAME-ORIGIN proxy URL, or "" when it is unset,
+ * cross-origin, protocol-relative (`//host/...`), or unparseable. Enforces the
+ * BROWSER HARD RULE: a misconfigured `VITE_AXIOM_PROXY_URL` must never POST log
+ * envelopes to a third-party origin. A single-leading-slash path is same-origin
+ * by definition; an absolute URL is accepted only when its origin matches
+ * `location.origin`. Fail-closed: no `location` (SSR) → reject (#49 gap 3).
+ */
+function resolveSameOriginProxy(env: Record<string, unknown>): string {
+  const v = typeof env.AXIOM_PROXY_URL === "string" ? env.AXIOM_PROXY_URL : "";
+  if (v === "") return "";
+  // Relative path ("/api/..."), but NOT protocol-relative ("//host/...").
+  if (v.startsWith("/") && !v.startsWith("//")) return v;
+  try {
+    if (typeof location === "undefined") return "";
+    return new URL(v, location.href).origin === location.origin ? v : "";
+  } catch {
+    return "";
+  }
+}
+
 export function createAxiomAdapter(): Destination {
   let proxyUrl = "";
   let fetchImpl: FetchLike | null = null;
@@ -62,15 +83,19 @@ export function createAxiomAdapter(): Destination {
     supportedRoles: AXIOM_ROLES,
 
     isConfigured(env): boolean {
-      // Browser HARD RULE: configured ONLY via a same-origin proxy URL. NO
-      // token. Without a proxy the adapter stays console-only (forRole→null).
-      const e = env as Record<string, unknown>;
-      return typeof e.AXIOM_PROXY_URL === "string" && e.AXIOM_PROXY_URL !== "";
+      // Browser HARD RULE: configured ONLY via a SAME-ORIGIN proxy URL. NO
+      // token. A cross-origin or protocol-relative URL is rejected so a
+      // misconfigured VITE_AXIOM_PROXY_URL can never exfiltrate envelopes to a
+      // third-party host. Without an accepted proxy the adapter stays
+      // console-only (forRole→null).
+      return resolveSameOriginProxy(env as Record<string, unknown>) !== "";
     },
 
     init(env, _ctx?: ExecutionContext): void {
       const e = env as Record<string, unknown>;
-      proxyUrl = typeof e.AXIOM_PROXY_URL === "string" ? e.AXIOM_PROXY_URL : "";
+      // Store the SAME value isConfigured() vetted — never the raw env string —
+      // so a cross-origin URL that slipped past a caller cannot reach emit().
+      proxyUrl = resolveSameOriginProxy(e);
 
       const injected = e.__fetch;
       fetchImpl =
