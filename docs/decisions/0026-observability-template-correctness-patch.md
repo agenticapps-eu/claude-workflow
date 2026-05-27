@@ -42,7 +42,12 @@ Implementation choices:
 - **#1** — `redactValue(key, value)` checks the key first (existing behaviour),
   then recurses via `redactDeep`: arrays mapped element-wise, plain objects
   re-redacted, `null` and non-plain objects (e.g. `Date`) preserved as-is. New
-  objects/arrays are constructed — input is never mutated.
+  objects/arrays are constructed — input is never mutated. A `WeakSet` ancestor
+  stack (add before recursing, delete after) short-circuits true cycles to
+  `"[circular]"` so a self-referential `attrs` object cannot overflow the stack
+  inside the un-`try`-wrapped `emit` on the error path; shared (DAG) references
+  are still fully redacted. (Added after independent review flagged the
+  unbounded-recursion crash vector.)
 - **#2** — coerce severity before `emit`:
   `severity === "fatal" ? "fatal" : "error"`. `captureError` can never be
   sampled out.
@@ -51,9 +56,15 @@ Implementation choices:
   protocol-relative `//host`) → accept; otherwise parse against `location.href`
   and accept only when `origin === location.origin`; parse failure → reject
   (fail-closed).
-- **#4** — keep the regex as the fast structural gate, then an inline
-  `validateTraceparent` rejecting version ≠ `00`, all-zero trace-id, and
-  all-zero parent-id. No new `zod` dependency (per the issue).
+- **#4** — keep the regex as the fast structural gate, then inline semantic
+  checks rejecting the reserved version `ff` and all-zero trace-id / parent-id.
+  No new `zod` dependency (per the issue). **Refinement on the issue's literal
+  "version must be `00`":** per W3C Trace Context, only `ff` is invalid; a parser
+  receiving a higher version (`01`–`fe`) MUST still parse the known v0 fields so
+  distributed traces survive a future-version upstream. Rejecting all non-`00`
+  would silently drop inbound parent context and start a new root trace — so we
+  reject only `ff`. (Adjusted after independent review cited the W3C forward-compat
+  rule.)
 - **#5** — `_resetForTest` additionally clears `spanStack`, restores
   `window.fetch` from the stored `originalFetch`, and resets `serviceName` /
   `deployEnv` to their documented defaults (`SERVICE_DEFAULT` / `"dev"`) rather
@@ -79,7 +90,8 @@ Implementation choices:
 - Downstreams already on v1.16.0 re-run the materialisation flow to pick up the
   patch; no `/update-agenticapps-workflow` migration step.
 - Redaction is now recursive — marginally more work per emit, bounded by attr
-  depth; acceptable for an observability hot path that already JSON-stringifies.
+  depth and cycle-guarded against self-reference; acceptable for an observability
+  hot path that already JSON-stringifies.
 - `captureError` is guaranteed visible regardless of caller severity, matching
   its documented contract.
 - The browser Axiom adapter is fail-closed against cross-origin egress.

@@ -177,6 +177,17 @@ describe("§10.6 redaction recurses into nested objects and arrays", () => {
     expect(logged.attrs.items[1].ok).toBe("yes");
     spy.mockRestore();
   });
+
+  it("does not overflow on circular attrs — true cycle short-circuits", () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const cyclic: Record<string, unknown> = { name: "root" };
+    cyclic.self = cyclic;
+    expect(() => logEvent({ event: "cyc", severity: "info", attrs: { cyclic } })).not.toThrow();
+    const logged = JSON.parse(spy.mock.calls.at(-1)![0] as string);
+    expect(logged.attrs.cyclic.name).toBe("root");
+    expect(logged.attrs.cyclic.self).toBe("[circular]");
+    spy.mockRestore();
+  });
 });
 
 // ─── §10.4 captureError visibility (issue #49 — gap #2) ─────────────────────
@@ -197,7 +208,7 @@ describe("§10.4 captureError is never sampled out", () => {
 // ─── §10.3 traceparent semantics (issue #49 — gap #4) ───────────────────────
 
 describe("§10.3 traceparent semantic validation", () => {
-  it("rejects all-zero ids and non-00 version", () => {
+  it("rejects all-zero ids and the reserved ff version", () => {
     for (const header of [
       "00-00000000000000000000000000000000-00f067aa0ba902b7-01", // all-zero trace-id
       "00-4bf92f3577b34da6a3ce929d0e0e4736-0000000000000000-01", // all-zero parent-id
@@ -205,5 +216,12 @@ describe("§10.3 traceparent semantic validation", () => {
     ]) {
       expect(parseTraceparent(header), `expected reject for ${header}`).toBeNull();
     }
+  });
+
+  it("accepts a higher version (W3C forward-compat), parsing the known v0 fields", () => {
+    const fwd = parseTraceparent("01-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01");
+    expect(fwd).not.toBeNull();
+    expect(fwd!.traceId).toBe("4bf92f3577b34da6a3ce929d0e0e4736");
+    expect(fwd!.parentSpanId).toBe("00f067aa0ba902b7");
   });
 });

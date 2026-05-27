@@ -163,7 +163,7 @@ Deno.test("§10.4 captureError is never sampled out", () => {
 
 // ─── §10.3 traceparent semantics (issue #49 — gap #4) ───────────────────────
 
-Deno.test("§10.3 traceparent: rejects all-zero ids and non-00 version", () => {
+Deno.test("§10.3 traceparent: rejects all-zero ids and the reserved ff version", () => {
   for (
     const header of [
       "00-00000000000000000000000000000000-00f067aa0ba902b7-01",
@@ -173,4 +173,11 @@ Deno.test("§10.3 traceparent: rejects all-zero ids and non-00 version", () => {
   ) {
     assertEquals(parseTraceparent(header), null, `expected reject for ${header}`);
   }
+});
+
+Deno.test("§10.3 traceparent: accepts a higher version (W3C forward-compat)", () => {
+  const fwd = parseTraceparent("01-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01");
+  assert(fwd !== null);
+  assertEquals(fwd!.traceId, "4bf92f3577b34da6a3ce929d0e0e4736");
+  assertEquals(fwd!.parentSpanId, "00f067aa0ba902b7");
 });

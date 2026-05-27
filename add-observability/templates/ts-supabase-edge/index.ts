@@ -205,9 +205,11 @@ export function parseTraceparent(header: string | null | undefined): TraceContex
   const traceId = m[2].toLowerCase();
   const parentId = m[3].toLowerCase();
   // #49 gap 4: the regex gates shape; these gate W3C semantics — reject the
-  // reserved/unknown version and the all-zero trace-id / parent-id that
-  // downstream collectors (Sentry/Tempo/Honeycomb) discard or mis-attribute.
-  if (version !== "00") return null;
+  // reserved "ff" version and the all-zero trace-id / parent-id that downstream
+  // collectors (Sentry/Tempo/Honeycomb) discard or mis-attribute. Higher
+  // versions (01–fe) stay forward-compatible: parse the known v0 fields rather
+  // than drop the inbound trace.
+  if (version === "ff") return null;
   if (/^0+$/.test(traceId) || /^0+$/.test(parentId)) return null;
   return {
     traceId,
@@ -365,20 +367,30 @@ function emit(envelope: Envelope, ctx: TraceContext | null): Envelope | null {
   };
 }
 
-function redactValue(key: string, value: unknown): unknown {
+function redactValue(key: string, value: unknown, seen: WeakSet<object> = new WeakSet()): unknown {
   const k = key.toLowerCase();
   if (REDACTED_KEYS.some((r) => k.includes(r))) return "[redacted]";
-  return redactDeep(value);
+  return redactDeep(value, seen);
 }
 
 // #49 gap 1: recurse into plain objects and arrays so secrets nested below the
 // top level (attrs.request.headers.secret, arrays of objects) are scrubbed too.
 // null and non-plain objects (Date, class instances) pass through unchanged; new
-// containers are constructed, so the caller's input is never mutated.
-function redactDeep(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(redactDeep);
-  if (isPlainObject(value)) return redactObject(value);
-  return value;
+// containers are constructed, so the caller's input is never mutated. `seen` is
+// an ancestor stack (add before recursing, delete after) so a true cycle
+// short-circuits to "[circular]" instead of overflowing the stack, while shared
+// (DAG) references are still fully redacted.
+function redactDeep(value: unknown, seen: WeakSet<object>): unknown {
+  if (value === null || typeof value !== "object") return value;
+  if (seen.has(value)) return "[circular]";
+  seen.add(value);
+  try {
+    if (Array.isArray(value)) return value.map((v) => redactDeep(v, seen));
+    if (isPlainObject(value)) return redactObject(value, seen);
+    return value;
+  } finally {
+    seen.delete(value);
+  }
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -387,9 +399,9 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return proto === Object.prototype || proto === null;
 }
 
-function redactObject(obj: Record<string, unknown>): Record<string, unknown> {
+function redactObject(obj: Record<string, unknown>, seen: WeakSet<object> = new WeakSet()): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(obj)) out[k] = redactValue(k, v);
+  for (const [k, v] of Object.entries(obj)) out[k] = redactValue(k, v, seen);
   return out;
 }
 
