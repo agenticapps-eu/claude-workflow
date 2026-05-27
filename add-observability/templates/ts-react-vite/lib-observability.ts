@@ -30,7 +30,8 @@
  *   are public keys.
  */
 
-import * as Sentry from "@sentry/react";
+import { buildRegistry, resolveConfig, type Registry } from "./destinations/registry";
+import { SENTRY_RESERVED_ATTRS } from "./destinations/sentry";
 
 // Re-export the React error boundary so consumers can import both `init`
 // and `ObservabilityErrorBoundary` from this module (per INIT.md Phase 5
@@ -94,7 +95,33 @@ let serviceName: string = SERVICE_DEFAULT;
 let deployEnv: string = "dev";
 let originalFetch: typeof fetch | null = null;
 
+/** @internal — test-only seam. Never set in production code. */
+let _testEnv: InitEnv | null = null;
+
+// Role-based destination registry, built once in `init`. logEvent dispatches
+// to the LOGS adapter; captureError to the ERRORS adapter. Null until init
+// runs. All SDK-specific behaviour (Sentry init/capture/breadcrumb, Axiom
+// proxy POST) now lives behind the adapters; this wrapper owns the console
+// mirror + sampling + dispatch.
+let registry: Registry | null = null;
+
 // ─── Initialization ───────────────────────────────────────────────────────
+
+/**
+ * The configuration source the destination adapters read. The wrapper
+ * assembles it from `import.meta.env` (VITE_-prefixed vars only). CRITICAL:
+ * the Axiom browser adapter reads ONLY `AXIOM_PROXY_URL` (from
+ * `VITE_AXIOM_PROXY_URL`) — NEVER an ingest token. SENTRY_DSN is a public
+ * browser key by design.
+ */
+export interface InitEnv {
+  SENTRY_DSN?: string;
+  DEPLOY_ENV?: string;
+  SERVICE_NAME?: string;
+  AXIOM_PROXY_URL?: string;
+  OBS_DESTINATIONS?: string;
+  [key: string]: unknown;
+}
 
 export interface InitOptions {
   /**
@@ -106,31 +133,49 @@ export interface InitOptions {
 }
 
 /**
+ * Reset module state and inject a test environment override. Call this
+ * BEFORE `init()` in each test case so the next `init()` rebuilds the
+ * registry with the injected env instead of reading `import.meta.env`.
+ *
+ * @internal — test-only export. Never call from production code.
+ */
+export function _resetForTest(env?: InitEnv): void {
+  _testEnv = env ?? null;
+  initialized = false;
+  registry = null;
+}
+
+/** Assemble an InitEnv from import.meta.env (VITE_-prefixed vars only). */
+function envFromImportMeta(): InitEnv {
+  const env = (import.meta as ImportMeta & { env: Record<string, string> }).env ?? {};
+  return {
+    SENTRY_DSN: env.{{ENV_VAR_DSN}},
+    DEPLOY_ENV: env.{{ENV_VAR_ENV}},
+    SERVICE_NAME: env.{{ENV_VAR_SERVICE}},
+    // Browser HARD RULE: only a same-origin PROXY url, never an ingest token.
+    AXIOM_PROXY_URL: env.VITE_AXIOM_PROXY_URL,
+    OBS_DESTINATIONS: env.VITE_OBS_DESTINATIONS,
+  };
+}
+
+/**
  * Initialize the wrapper. Called once at React-root mount time, BEFORE
  * `createRoot(...).render(...)`. Idempotent.
  *
  * Reads from import.meta.env (Vite). Vite exposes only VITE_-prefixed
- * vars to client code at build time.
+ * vars to client code at build time. Builds the role-based destination
+ * registry: the Sentry adapter calls `Sentry.init` when VITE_SENTRY_DSN is
+ * present; the Axiom adapter posts to VITE_AXIOM_PROXY_URL (no token). There
+ * is no Cloudflare `ctx` in the browser. resolveConfig is fail-closed.
  */
 export function init(opts: InitOptions = {}): void {
   if (initialized) return;
 
-  const env = (import.meta as ImportMeta & { env: Record<string, string> }).env;
-  serviceName = env.{{ENV_VAR_SERVICE}} ?? SERVICE_DEFAULT;
-  deployEnv = env.{{ENV_VAR_ENV}} ?? "dev";
-  const dsn = env.{{ENV_VAR_DSN}};
+  const env = _testEnv ?? envFromImportMeta();
+  serviceName = env.SERVICE_NAME ?? SERVICE_DEFAULT;
+  deployEnv = env.DEPLOY_ENV ?? "dev";
 
-  if (dsn) {
-    Sentry.init({
-      dsn,
-      environment: deployEnv,
-      release: serviceName,
-      tracesSampleRate: TRACE_SAMPLE_RATE,
-      sendDefaultPii: false,
-      // BrowserTracing integration is included by @sentry/react default.
-      // If you want to opt out, override `integrations: []` here.
-    });
-  }
+  registry = buildRegistry(resolveConfig(env), env);
 
   // Monkey-patch global fetch so all outbound requests carry traceparent.
   if (typeof window !== "undefined" && originalFetch === null) {
@@ -252,7 +297,7 @@ export function startSpan(name: string, attributes: Record<string, unknown> = {}
       // against out-of-order ends).
       const idx = spanStack.indexOf(ctx);
       if (idx !== -1) spanStack.splice(idx, 1);
-      emit(
+      const enriched = emit(
         {
           event: name,
           severity: finalStatus === "error" ? "error" : "info",
@@ -260,6 +305,10 @@ export function startSpan(name: string, attributes: Record<string, unknown> = {}
         },
         ctx,
       );
+      // Spans stay Sentry-native: a span-end breadcrumb on the ERRORS
+      // destination, NEVER routed to the Axiom logs sink. No-op when errors is
+      // unconfigured / non-Sentry.
+      if (enriched) registry?.forRole("errors")?.emit(enriched);
     },
     get traceId() { return ctx.traceId; },
     get spanId() { return ctx.spanId; },
@@ -270,7 +319,15 @@ export function startSpan(name: string, attributes: Record<string, unknown> = {}
 // ─── logEvent ─────────────────────────────────────────────────────────────
 
 export function logEvent(envelope: Envelope): void {
-  emit(envelope, spanStack[spanStack.length - 1] ?? null);
+  const enriched = emit(envelope, spanStack[spanStack.length - 1] ?? null);
+  if (!enriched) return;
+  // Dispatch to the LOGS destination (Axiom same-origin proxy POST). No-op when
+  // logs is "none" or no VITE_AXIOM_PROXY_URL is set (browser HARD RULE: no
+  // token, so without a proxy the Axiom adapter is unconfigured → console-only).
+  registry?.forRole("logs")?.emit(enriched);
+  // Breadcrumb on the ERRORS destination (Sentry) so the next captureException
+  // carries this context. No-op when errors is unconfigured / non-Sentry.
+  registry?.forRole("errors")?.emit(enriched);
 }
 
 // ─── captureError ─────────────────────────────────────────────────────────
@@ -279,25 +336,14 @@ export function captureError(err: unknown, envelope: Envelope): void {
   const top = spanStack[spanStack.length - 1];
   if (top) top.status = "error";
 
-  if (initialized && err instanceof Error) {
-    safeFireAndForget(() => {
-      Sentry.withScope((scope) => {
-        scope.setTag("event", envelope.event);
-        scope.setTag("service", serviceName);
-        scope.setTag("env", deployEnv);
-        if (top) {
-          scope.setTag("trace_id", top.traceId);
-          scope.setTag("span_id", top.spanId);
-        }
-        if (envelope.attrs) {
-          scope.setContext("attrs", redactObject(envelope.attrs));
-        }
-        Sentry.captureException(err);
-      });
-    });
-  }
+  const enriched = emit({ ...envelope, severity: envelope.severity ?? "error" }, top ?? null);
 
-  emit({ ...envelope, severity: envelope.severity ?? "error" }, top ?? null);
+  // Dispatch to the ERRORS destination (Sentry scoped captureException). No-op
+  // when errors is unconfigured. By the fail-closed registry contract this can
+  // NEVER reach the logs-only Axiom adapter (its captureException is a no-op
+  // anyway). The enriched envelope carries service/env/trace under reserved
+  // attrs so the adapter can rebuild Sentry scope tags.
+  if (enriched) registry?.forRole("errors")?.captureException(err, enriched);
 }
 
 // ─── Outbound fetch interceptor ──────────────────────────────────────────
@@ -324,20 +370,29 @@ export function instrumentedFetch(base: typeof fetch): typeof fetch {
 }
 
 // ─── Internal: emit ───────────────────────────────────────────────────────
+//
+// Owns the console mirror + sampling, and builds the enriched+redacted
+// envelope handed to destination adapters. Returns null when the event was
+// sampled out (so callers skip dispatch). All SDK-specific egress (Sentry
+// breadcrumb/capture, Axiom proxy POST) lives in the adapters.
 
-function emit(envelope: Envelope, ctx: TraceContext | null): void {
+function emit(envelope: Envelope, ctx: TraceContext | null): Envelope | null {
   const severity: Severity = envelope.severity ?? "info";
 
-  if (severity === "debug" && Math.random() > DEBUG_SAMPLE_RATE) return;
+  if (severity === "debug" && Math.random() > DEBUG_SAMPLE_RATE) return null;
+
+  const traceId = ctx?.traceId ?? randHex(16);
+  const spanId = ctx?.spanId ?? randHex(8);
+  const redactedAttrs = redactObject(envelope.attrs ?? {});
 
   const event = {
-    trace_id: ctx?.traceId ?? randHex(16),
-    span_id: ctx?.spanId ?? randHex(8),
+    trace_id: traceId,
+    span_id: spanId,
     service: serviceName,
     env: deployEnv,
     event: envelope.event,
     severity,
-    attrs: redactObject(envelope.attrs ?? {}),
+    attrs: redactedAttrs,
     ts: Date.now(),
   };
 
@@ -347,29 +402,20 @@ function emit(envelope: Envelope, ctx: TraceContext | null): void {
   else if (severity === "warn") console.warn(line);
   else console.log(line);
 
-  if (initialized && severity !== "debug") {
-    safeFireAndForget(() => {
-      Sentry.addBreadcrumb({
-        category: event.event,
-        level: sentryLevel(severity),
-        data: event.attrs as { [k: string]: unknown },
-      });
-    });
-  }
-}
-
-function sentryLevel(s: Severity): Sentry.SeverityLevel {
-  return s === "warn" ? "warning" : (s as Sentry.SeverityLevel);
-}
-
-function safeFireAndForget(fn: () => void): void {
-  try {
-    Promise.resolve().then(fn).catch(() => {
-      /* observability MUST NOT throw */
-    });
-  } catch {
-    /* swallow */
-  }
+  // Enriched envelope for adapter dispatch: redacted user attrs plus reserved
+  // correlation keys (service/env/trace) the Sentry adapter reads for scope
+  // tags. The reserved keys also give Axiom log/trace correlation for free.
+  return {
+    event: envelope.event,
+    severity,
+    attrs: {
+      ...redactedAttrs,
+      [SENTRY_RESERVED_ATTRS.service]: serviceName,
+      [SENTRY_RESERVED_ATTRS.env]: deployEnv,
+      [SENTRY_RESERVED_ATTRS.traceId]: traceId,
+      [SENTRY_RESERVED_ATTRS.spanId]: spanId,
+    },
+  };
 }
 
 // ─── Redaction ────────────────────────────────────────────────────────────

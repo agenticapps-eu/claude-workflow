@@ -90,6 +90,99 @@ router.subscribe("onBeforeNavigate", ({ toLocation }) => {
 
 Not auto-wired by the skill — it's project-specific.
 
+## Axiom (logs destination — browser, proxy-only)
+
+The browser MUST NOT receive an Axiom ingest-write token — it would be
+bundled into the production JS and visible to anyone who opens DevTools.
+The browser adapter is therefore console-only by default and activates
+only when a **same-origin proxy URL** is configured.
+
+| Var | Where | Required | Example |
+|---|---|---|---|
+| `VITE_AXIOM_PROXY_URL` | `.env` / `.env.production` | optional | `/api/log` |
+
+Do **NOT** add `VITE_AXIOM_TOKEN` or `VITE_AXIOM_DATASET` to your Vite env
+files — those would be bundled into client JS and exfiltrated. The ingest
+token lives server-side only, inside the proxy handler.
+
+**`VITE_AXIOM_PROXY_URL`** is a same-origin path (or full URL to a
+same-origin endpoint) that accepts `POST` with a JSON body of
+`[envelope, ...]` and forwards it to the Axiom ingest API with the
+`Authorization: Bearer <token>` header added server-side. If unset,
+`isConfigured()` returns false, `forRole("logs")` returns null, and log
+events are console-only (the existing behaviour is preserved unchanged).
+
+**`OBS_DESTINATIONS`** is not applicable in the browser bundle — the role
+map is baked at build time and cannot be overridden via a runtime env var
+in a Vite app.
+
+**Fail-safe:** if `VITE_AXIOM_PROXY_URL` is absent (or `VITE_SENTRY_DSN` is
+absent), the wrapper falls back to console-only emission (§10.5 fail-safe
+preserved — no events are lost and the app continues).
+
+### Same-origin proxy example
+
+A minimal Hono (or Express) `/api/log` handler that holds the secret
+server-side and proxies the body to Axiom:
+
+```ts
+// Hono (e.g. Cloudflare Worker, Bun, Node) — server-side only
+import { Hono } from "hono";
+
+const app = new Hono();
+
+app.post("/api/log", async (c) => {
+  const token   = process.env.AXIOM_TOKEN   ?? c.env?.AXIOM_TOKEN;
+  const dataset = process.env.AXIOM_DATASET ?? c.env?.AXIOM_DATASET;
+  if (!token || !dataset) return c.json({ error: "axiom not configured" }, 500);
+
+  const body = await c.req.text();
+  const url  = `https://api.axiom.co/v1/datasets/${dataset}/ingest`;
+
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+    },
+    body,
+  });
+  return c.json({ ok: resp.ok }, resp.ok ? 200 : 502);
+});
+
+export default app;
+```
+
+```ts
+// Express (Node) equivalent
+import express from "express";
+
+const router = express.Router();
+
+router.post("/api/log", express.text({ type: "application/json" }), async (req, res) => {
+  const { AXIOM_TOKEN: token, AXIOM_DATASET: dataset } = process.env;
+  if (!token || !dataset) { res.status(500).json({ error: "axiom not configured" }); return; }
+
+  const url  = `https://api.axiom.co/v1/datasets/${dataset}/ingest`;
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: req.body,
+  });
+  res.status(resp.ok ? 200 : 502).json({ ok: resp.ok });
+});
+```
+
+Set `AXIOM_TOKEN` and `AXIOM_DATASET` as server-side secrets (e.g. in
+`.env.server`, fly secrets, or a KV binding) — never in `.env` where Vite
+would bundle them.
+
+> **Hardening:** an open `/api/log` proxy is an abuse-amplification vector —
+> any browser tab (or script) can POST arbitrary payloads to your Axiom dataset.
+> The proxy SHOULD enforce: (a) a request body-size cap (e.g. `express.text({ limit: "64kb" })`
+> or Hono's `bodyLimit` middleware); (b) basic rate-limiting per IP; and (c) if
+> the app has authentication, require a valid session before forwarding.
+
 ## `.gitignore`
 
 The skill adds:

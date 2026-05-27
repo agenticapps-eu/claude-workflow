@@ -8,13 +8,15 @@ Side-by-side check that both wrappers expose the same semantic contract.
 >
 > | Stack | Wrapper | Tests | Runner | Result |
 > |---|---|---|---|---|
-> | ts-cloudflare-worker | own | 15 | vitest + jsdom | 15/15 pass |
-> | ts-cloudflare-pages  | inherits worker | (inherited) | n/a | static review |
-> | ts-react-vite        | own (browser-flavored) | 22 | vitest + jsdom | 22/22 pass + tsc clean |
-> | ts-supabase-edge     | own (Deno-flavored) | 12 | deno test | 12/12 pass |
-> | go-fly-http          | own | 12 | go test | 12/12 pass |
+> | ts-cloudflare-worker | own | 40 | vitest + jsdom | 40/40 pass |
+> | ts-cloudflare-pages  | own | 27 | vitest + jsdom | 27/27 pass |
+> | ts-react-vite        | own (browser-flavored) | 34 | vitest + jsdom | 34/34 pass + tsc clean |
+> | ts-supabase-edge     | own (Deno-flavored) | 22 | deno test | 22/22 pass |
+> | go-fly-http          | own | 25 | go test | 25/25 pass |
 >
-> **Total: 61 contract tests passing across 4 runtimes** (Cloudflare Worker isolate, browser/jsdom, Deno, Go).
+> **Total: 148 contract tests passing across 4 runtimes** (Cloudflare Worker isolate, browser/jsdom, Deno, Go).
+>
+> **Note (v1.16.0):** Per-stack counts grew significantly with the Axiom logs destination (cf-worker 40, cf-pages 27, react-vite 34, supabase-edge 22, go-fly-http 25). cf-pages previously had zero tests and now ships its own full wrapper + contract harness (D3 gap closed). The materialize-and-test harness (`add-observability/templates/run-template-tests.sh`) now exercises all 148 tests end-to-end.
 >
 > Latent bug caught by test fixtures: Go template imported `crypto/rand` and `math/rand/v2` both as `rand` (compile-time conflict). Fixed by aliasing as `mrand "math/rand/v2"`. The cparx pilot masked this because I aliased manually when materializing; the test fixture caught it on the v0.2.1 verification run — exactly the failure mode the test fixtures exist to prevent.
 

@@ -19,7 +19,8 @@
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
-import * as Sentry from "@sentry/cloudflare";
+import { buildRegistry, resolveConfig, type Registry } from "./destinations/registry";
+import { SENTRY_RESERVED_ATTRS } from "./destinations/sentry";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -71,10 +72,15 @@ const REDACTED_KEYS: ReadonlyArray<string> = [
 
 const spanStorage = new AsyncLocalStorage<InternalSpanContext>();
 
-let initialized = false;
 let serviceName: string = SERVICE_DEFAULT;
 let deployEnv: string = "dev";
-let waitUntilFn: ((p: Promise<unknown>) => void) | null = null;
+
+// Role-based destination registry, built once per invocation in `init`.
+// logEvent dispatches to the LOGS adapter; captureError to the ERRORS adapter.
+// Null until init runs (or when no destinations resolve). All SDK-specific
+// behaviour (Sentry capture/breadcrumb, Axiom POST) now lives behind the
+// adapters; this wrapper only owns the console mirror + sampling + dispatch.
+let registry: Registry | null = null;
 
 // ─── Initialization ───────────────────────────────────────────────────────
 
@@ -100,22 +106,14 @@ export function init(env: InitEnv, ctx: ExecutionContext): void {
   serviceName = env.{{ENV_VAR_SERVICE}} ?? SERVICE_DEFAULT;
   deployEnv = env.{{ENV_VAR_ENV}} ?? "dev";
 
-  // Capture waitUntil so emission can be fire-and-forget without
-  // blocking the response. Wrapping in try/catch so a missing ctx
-  // (out-of-request emission) degrades to drop, not throw.
-  try {
-    waitUntilFn = (p) => ctx.waitUntil(p);
-  } catch {
-    waitUntilFn = null;
-  }
-
-  if (initialized) return;
-  // `withSentry` at the entry-file site populates the Sentry hub when
-  // a DSN is configured; the wrapper just records the same DSN-present
-  // signal so `captureError` / `emit` know whether Sentry.* calls are
-  // safe. If no DSN, withSentry is a passthrough and these calls are
-  // skipped.
-  initialized = Boolean(env.{{ENV_VAR_DSN}});
+  // Build the role-based destination registry once per invocation. Each
+  // configured named adapter is init()-ed (and captures its own waitUntil
+  // binding from `ctx` for fire-and-forget egress); logEvent/captureError
+  // dispatch by role. resolveConfig is fail-closed (errors can never resolve
+  // to Axiom). `withSentry` at the entry-file site populates the Sentry hub
+  // when a DSN is configured; the sentry adapter gates its own calls on the
+  // same DSN-present signal via isConfigured/init.
+  registry = buildRegistry(resolveConfig(env), env, ctx);
 }
 
 // ─── traceparent helpers (W3C Trace Context Level 1) ──────────────────────
@@ -221,7 +219,7 @@ export function startSpan(name: string, attributes: Record<string, unknown> = {}
       ended = true;
       if (opts?.status) status = opts.status;
       const finalStatus: SpanStatus = status === "unset" ? "ok" : status;
-      emit(
+      const enriched = emit(
         {
           event: name,
           severity: finalStatus === "error" ? "error" : "info",
@@ -229,6 +227,10 @@ export function startSpan(name: string, attributes: Record<string, unknown> = {}
         },
         ctx,
       );
+      // Spans stay Sentry-native: a span-end breadcrumb on the ERRORS
+      // destination, NEVER routed to the Axiom logs sink (D-span). No-op
+      // when errors is unconfigured / non-Sentry.
+      if (enriched) registry?.forRole("errors")?.emit(enriched);
     },
     get traceId() { return ctx.traceId; },
     get spanId() { return ctx.spanId; },
@@ -240,7 +242,17 @@ export function startSpan(name: string, attributes: Record<string, unknown> = {}
 
 export function logEvent(envelope: Envelope): void {
   const ctx = spanStorage.getStore();
-  emit(envelope, ctx ?? null);
+  // Console mirror + sampling. Returns the enriched+redacted envelope ready
+  // for adapter dispatch, or null when the event was sampled out.
+  const enriched = emit(envelope, ctx ?? null);
+  if (!enriched) return;
+  // Dispatch to the LOGS destination (e.g. Axiom POST). No-op when logs is
+  // unconfigured ("none"). Attrs are already redacted (D6) — adapters never
+  // see raw attrs.
+  registry?.forRole("logs")?.emit(enriched);
+  // Breadcrumb on the ERRORS destination (Sentry) so the next captureException
+  // carries this context. No-op when errors is unconfigured / non-Sentry.
+  registry?.forRole("errors")?.emit(enriched);
 }
 
 // ─── captureError ─────────────────────────────────────────────────────────
@@ -249,77 +261,66 @@ export function captureError(err: unknown, envelope: Envelope): void {
   const ctx = spanStorage.getStore();
   if (ctx) ctx.status = "error";
 
-  if (initialized && err instanceof Error) {
-    safeFireAndForget(() => {
-      Sentry.withScope((scope) => {
-        scope.setTag("event", envelope.event);
-        scope.setTag("service", serviceName);
-        scope.setTag("env", deployEnv);
-        if (ctx) {
-          scope.setTag("trace_id", ctx.traceId);
-          scope.setTag("span_id", ctx.spanId);
-        }
-        if (envelope.attrs) {
-          scope.setContext("attrs", redactObject(envelope.attrs));
-        }
-        Sentry.captureException(err);
-      });
-    });
-  }
+  // Console mirror + sampling + enrichment (severity defaults to error).
+  const enriched = emit({ ...envelope, severity: envelope.severity ?? "error" }, ctx ?? null);
 
-  emit({ ...envelope, severity: envelope.severity ?? "error" }, ctx ?? null);
+  // Dispatch to the ERRORS destination (Sentry scoped captureException). No-op
+  // when errors is unconfigured. By the fail-closed registry contract this can
+  // NEVER reach the logs-only Axiom adapter (its captureException is a no-op
+  // anyway). The enriched envelope carries service/env/trace under reserved
+  // attrs so the adapter can rebuild Sentry scope tags without this module's
+  // AsyncLocalStorage.
+  if (enriched) registry?.forRole("errors")?.captureException(err, enriched);
 }
 
 // ─── Internal: emit ───────────────────────────────────────────────────────
+//
+// Owns the console mirror + sampling, and builds the enriched+redacted
+// envelope handed to destination adapters. Returns null when the event was
+// sampled out (so callers skip dispatch). All SDK-specific egress (Sentry
+// breadcrumb/capture, Axiom POST) lives in the adapters.
 
-function emit(envelope: Envelope, ctx: TraceContext | null): void {
+function emit(envelope: Envelope, ctx: TraceContext | null): Envelope | null {
   const severity: Severity = envelope.severity ?? "info";
 
   // Sampling: error/fatal/warn always pass; debug sampled; info always.
-  if (severity === "debug" && Math.random() > DEBUG_SAMPLE_RATE) return;
+  if (severity === "debug" && Math.random() > DEBUG_SAMPLE_RATE) return null;
+
+  const traceId = ctx?.traceId ?? randHex(16);
+  const spanId = ctx?.spanId ?? randHex(8);
+  const redactedAttrs = redactObject(envelope.attrs ?? {});
 
   const event = {
-    trace_id: ctx?.traceId ?? randHex(16),
-    span_id: ctx?.spanId ?? randHex(8),
+    trace_id: traceId,
+    span_id: spanId,
     service: serviceName,
     env: deployEnv,
     event: envelope.event,
     severity,
-    attrs: redactObject(envelope.attrs ?? {}),
+    attrs: redactedAttrs,
     ts: Date.now(),
   };
 
-  // Console mirror — visible in `wrangler tail`, useful when Sentry is down.
+  // Console mirror — visible in `wrangler tail`, useful when a sink is down.
   const line = JSON.stringify(event);
   if (severity === "error" || severity === "fatal") console.error(line);
   else if (severity === "warn") console.warn(line);
   else console.log(line);
 
-  // Breadcrumb so the next captureException carries this context.
-  if (initialized && severity !== "debug") {
-    safeFireAndForget(() => {
-      Sentry.addBreadcrumb({
-        category: event.event,
-        level: sentryLevel(severity),
-        data: event.attrs as { [k: string]: unknown },
-      });
-    });
-  }
-}
-
-function sentryLevel(s: Severity): Sentry.SeverityLevel {
-  return s === "warn" ? "warning" : (s as Sentry.SeverityLevel);
-}
-
-function safeFireAndForget(fn: () => void): void {
-  try {
-    const p = Promise.resolve().then(fn).catch(() => {
-      /* observability MUST NOT throw */
-    });
-    if (waitUntilFn) waitUntilFn(p);
-  } catch {
-    /* swallow */
-  }
+  // Enriched envelope for adapter dispatch: redacted user attrs plus reserved
+  // correlation keys (service/env/trace) the Sentry adapter reads for scope
+  // tags. The reserved keys also give Axiom log/trace correlation for free.
+  return {
+    event: envelope.event,
+    severity,
+    attrs: {
+      ...redactedAttrs,
+      [SENTRY_RESERVED_ATTRS.service]: serviceName,
+      [SENTRY_RESERVED_ATTRS.env]: deployEnv,
+      [SENTRY_RESERVED_ATTRS.traceId]: traceId,
+      [SENTRY_RESERVED_ATTRS.spanId]: spanId,
+    },
+  };
 }
 
 // ─── Redaction ────────────────────────────────────────────────────────────

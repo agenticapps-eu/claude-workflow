@@ -31,7 +31,8 @@
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
-import * as Sentry from "npm:@sentry/deno@^8.0.0";
+import { buildRegistry, resolveConfig, type Registry } from "./destinations/registry.ts";
+import { SENTRY_RESERVED_ATTRS } from "./destinations/sentry.ts";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -84,24 +85,89 @@ let initialized = false;
 let serviceName: string = SERVICE_DEFAULT;
 let deployEnv: string = "dev";
 
+/** @internal — test-only seam. Never set in production code. */
+let _testEnv: InitEnv | null = null;
+
+// Role-based destination registry, built once in `init`. logEvent dispatches
+// to the LOGS adapter; captureError to the ERRORS adapter. Null until init
+// runs. All SDK-specific behaviour (Sentry init/capture/breadcrumb, Axiom
+// POST) now lives behind the adapters; this wrapper owns the console mirror +
+// sampling + dispatch.
+let registry: Registry | null = null;
+
 // ─── Initialization ───────────────────────────────────────────────────────
 
+/**
+ * The configuration source the destination adapters read. On Supabase Edge
+ * this is assembled from `Deno.env.get(...)`; tests pass an override so they
+ * can inject the egress fetch (`__fetch`) and `OBS_DESTINATIONS` without
+ * mutating the real Deno.env. Index-signature so adapters can read AXIOM_* /
+ * SENTRY_DSN / OBS_DESTINATIONS / __fetch generically.
+ */
+export interface InitEnv {
+  SENTRY_DSN?: string;
+  DEPLOY_ENV?: string;
+  SERVICE_NAME?: string;
+  AXIOM_TOKEN?: string;
+  AXIOM_DATASET?: string;
+  AXIOM_INGEST_URL?: string;
+  OBS_DESTINATIONS?: string;
+  [key: string]: unknown;
+}
+
+/** Assemble an InitEnv from Deno.env (string vars only). */
+function envFromDeno(): InitEnv {
+  const get = (k: string): string | undefined => {
+    try {
+      return Deno.env.get(k) ?? undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  return {
+    SENTRY_DSN: get("{{ENV_VAR_DSN}}"),
+    DEPLOY_ENV: get("{{ENV_VAR_ENV}}"),
+    SERVICE_NAME: get("{{ENV_VAR_SERVICE}}"),
+    AXIOM_TOKEN: get("AXIOM_TOKEN"),
+    AXIOM_DATASET: get("AXIOM_DATASET"),
+    AXIOM_INGEST_URL: get("AXIOM_INGEST_URL"),
+    OBS_DESTINATIONS: get("OBS_DESTINATIONS"),
+  };
+}
+
+/**
+ * Reset module state and inject a test environment override. Call this
+ * BEFORE `init()` in each test case so the next `init()` rebuilds the
+ * registry with the injected env instead of reading `Deno.env`.
+ *
+ * @internal — test-only export. Never call from production code.
+ */
+export function _resetForTest(env?: InitEnv): void {
+  _testEnv = env ?? null;
+  initialized = false;
+  registry = null;
+}
+
+/**
+ * Initialize the wrapper. Idempotent (zero-arg; env is read from `Deno.env`
+ * unless a test has pre-loaded `_testEnv` via `_resetForTest`). In
+ * production, this is called once per handler invocation by the middleware.
+ *
+ * Builds the role-based destination registry: each configured named adapter is
+ * init()-ed (the Sentry adapter calls `Sentry.init` when a DSN is present, the
+ * Axiom adapter caches token/dataset/ingest + egress fetch). resolveConfig is
+ * fail-closed (errors can never resolve to Axiom). There is no Cloudflare
+ * `ctx` on Edge, so ctx is undefined; the Axiom adapter uses
+ * `EdgeRuntime.waitUntil` (guarded) for fire-and-forget egress.
+ */
 export function init(): void {
   if (initialized) return;
 
-  serviceName = Deno.env.get("{{ENV_VAR_SERVICE}}") ?? SERVICE_DEFAULT;
-  deployEnv = Deno.env.get("{{ENV_VAR_ENV}}") ?? "dev";
-  const dsn = Deno.env.get("{{ENV_VAR_DSN}}");
+  const env = _testEnv ?? envFromDeno();
+  serviceName = env.SERVICE_NAME ?? SERVICE_DEFAULT;
+  deployEnv = env.DEPLOY_ENV ?? "dev";
 
-  if (dsn) {
-    Sentry.init({
-      dsn,
-      environment: deployEnv,
-      release: serviceName,
-      tracesSampleRate: TRACE_SAMPLE_RATE,
-      sendDefaultPii: false,
-    });
-  }
+  registry = buildRegistry(resolveConfig(env), env);
   initialized = true;
 }
 
@@ -109,17 +175,13 @@ export function init(): void {
  * Best-effort flush. Edge Functions do not have a `waitUntil` — call
  * this at the end of each handler invocation (the middleware does it
  * automatically) so events buffered by the Sentry SDK are sent before
- * the function isolate is torn down.
- *
- * Sentry's flush returns a promise; we cap the wait to 2 seconds to
- * avoid blocking the response. Events lost beyond the cap are
- * acceptable per §10.5 ("a broken or slow observability destination
- * MUST NOT degrade end-user latency or availability").
+ * the function isolate is torn down. Delegates to the ERRORS adapter's
+ * `flush` (Sentry). Events lost beyond the cap are acceptable per §10.5.
  */
 export async function flush(timeoutMs: number = 2000): Promise<void> {
   if (!initialized) return;
   try {
-    await Sentry.flush(timeoutMs);
+    await registry?.forRole("errors")?.flush?.(timeoutMs);
   } catch {
     /* observability MUST NOT throw */
   }
@@ -200,7 +262,7 @@ export function startSpan(name: string, attributes: Record<string, unknown> = {}
       ended = true;
       if (opts?.status) status = opts.status;
       const finalStatus: SpanStatus = status === "unset" ? "ok" : status;
-      emit(
+      const enriched = emit(
         {
           event: name,
           severity: finalStatus === "error" ? "error" : "info",
@@ -208,6 +270,10 @@ export function startSpan(name: string, attributes: Record<string, unknown> = {}
         },
         ctx,
       );
+      // Spans stay Sentry-native: a span-end breadcrumb on the ERRORS
+      // destination, NEVER routed to the Axiom logs sink. No-op when errors is
+      // unconfigured / non-Sentry.
+      if (enriched) registry?.forRole("errors")?.emit(enriched);
     },
     get traceId() { return ctx.traceId; },
     get spanId() { return ctx.spanId; },
@@ -217,48 +283,52 @@ export function startSpan(name: string, attributes: Record<string, unknown> = {}
 // ─── logEvent / captureError ──────────────────────────────────────────────
 
 export function logEvent(envelope: Envelope): void {
-  emit(envelope, spanStorage.getStore() ?? null);
+  const enriched = emit(envelope, spanStorage.getStore() ?? null);
+  if (!enriched) return;
+  // Dispatch to the LOGS destination (e.g. Axiom POST). No-op when logs is
+  // "none". Attrs are already redacted — adapters never see raw attrs.
+  registry?.forRole("logs")?.emit(enriched);
+  // Breadcrumb on the ERRORS destination (Sentry) so the next captureException
+  // carries this context. No-op when errors is unconfigured / non-Sentry.
+  registry?.forRole("errors")?.emit(enriched);
 }
 
 export function captureError(err: unknown, envelope: Envelope): void {
   const ctx = spanStorage.getStore();
   if (ctx) ctx.status = "error";
 
-  if (initialized && err instanceof Error) {
-    safeFireAndForget(() => {
-      Sentry.withScope((scope) => {
-        scope.setTag("event", envelope.event);
-        scope.setTag("service", serviceName);
-        scope.setTag("env", deployEnv);
-        if (ctx) {
-          scope.setTag("trace_id", ctx.traceId);
-          scope.setTag("span_id", ctx.spanId);
-        }
-        if (envelope.attrs) {
-          scope.setContext("attrs", redactObject(envelope.attrs));
-        }
-        Sentry.captureException(err);
-      });
-    });
-  }
+  const enriched = emit({ ...envelope, severity: envelope.severity ?? "error" }, ctx ?? null);
 
-  emit({ ...envelope, severity: envelope.severity ?? "error" }, ctx ?? null);
+  // Dispatch to the ERRORS destination (Sentry scoped captureException). No-op
+  // when errors is unconfigured. By the fail-closed registry contract this can
+  // NEVER reach the logs-only Axiom adapter (its captureException is a no-op
+  // anyway). The enriched envelope carries service/env/trace under reserved
+  // attrs so the adapter can rebuild Sentry scope tags.
+  if (enriched) registry?.forRole("errors")?.captureException(err, enriched);
 }
 
 // ─── Internal: emit ───────────────────────────────────────────────────────
+//
+// Owns the console mirror + sampling, and builds the enriched+redacted
+// envelope handed to destination adapters. Returns null when the event was
+// sampled out (so callers skip dispatch).
 
-function emit(envelope: Envelope, ctx: TraceContext | null): void {
+function emit(envelope: Envelope, ctx: TraceContext | null): Envelope | null {
   const severity: Severity = envelope.severity ?? "info";
-  if (severity === "debug" && Math.random() > DEBUG_SAMPLE_RATE) return;
+  if (severity === "debug" && Math.random() > DEBUG_SAMPLE_RATE) return null;
+
+  const traceId = ctx?.traceId ?? randHex(16);
+  const spanId = ctx?.spanId ?? randHex(8);
+  const redactedAttrs = redactObject(envelope.attrs ?? {});
 
   const event = {
-    trace_id: ctx?.traceId ?? randHex(16),
-    span_id: ctx?.spanId ?? randHex(8),
+    trace_id: traceId,
+    span_id: spanId,
     service: serviceName,
     env: deployEnv,
     event: envelope.event,
     severity,
-    attrs: redactObject(envelope.attrs ?? {}),
+    attrs: redactedAttrs,
     ts: Date.now(),
   };
 
@@ -267,27 +337,20 @@ function emit(envelope: Envelope, ctx: TraceContext | null): void {
   else if (severity === "warn") console.warn(line);
   else console.log(line);
 
-  if (initialized && severity !== "debug") {
-    safeFireAndForget(() => {
-      Sentry.addBreadcrumb({
-        category: event.event,
-        level: sentryLevel(severity),
-        data: event.attrs as { [k: string]: unknown },
-      });
-    });
-  }
-}
-
-function sentryLevel(s: Severity): Sentry.SeverityLevel {
-  return s === "warn" ? "warning" : (s as Sentry.SeverityLevel);
-}
-
-function safeFireAndForget(fn: () => void): void {
-  try {
-    Promise.resolve().then(fn).catch(() => {});
-  } catch {
-    /* swallow */
-  }
+  // Enriched envelope for adapter dispatch: redacted user attrs plus reserved
+  // correlation keys (service/env/trace) the Sentry adapter reads for scope
+  // tags. The reserved keys also give Axiom log/trace correlation for free.
+  return {
+    event: envelope.event,
+    severity,
+    attrs: {
+      ...redactedAttrs,
+      [SENTRY_RESERVED_ATTRS.service]: serviceName,
+      [SENTRY_RESERVED_ATTRS.env]: deployEnv,
+      [SENTRY_RESERVED_ATTRS.traceId]: traceId,
+      [SENTRY_RESERVED_ATTRS.spanId]: spanId,
+    },
+  };
 }
 
 function redactValue(key: string, value: unknown): unknown {

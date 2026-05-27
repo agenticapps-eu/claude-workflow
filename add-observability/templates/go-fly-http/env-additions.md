@@ -118,6 +118,38 @@ The skill's scan subcommand flags outbound `http.Get` / `http.Post` /
 `client.Do` call sites that don't use a tracing transport as
 medium-confidence findings.
 
+## Axiom (logs destination — default)
+
+When `logs=axiom` is active (the default role map), set the following in
+addition to the Sentry vars above.
+
+| Var | Where | Required | Example |
+|---|---|---|---|
+| `AXIOM_TOKEN` | fly secrets | required if logs=axiom | `xaat-...` (ingest-scoped) |
+| `AXIOM_DATASET` | `fly.toml` `[env]` | required if logs=axiom | `myapp-prod` |
+| `AXIOM_INGEST_URL` | `fly.toml` `[env]` | optional | `https://api.eu.axiom.co/v1/datasets/<ds>/ingest` |
+| `OBS_DESTINATIONS` | `fly.toml` `[env]` or fly secrets | optional | `errors=sentry,logs=axiom` (overrides baked default) |
+
+**`AXIOM_TOKEN`** must be an ingest-scoped token. Set it as a Fly secret so
+it never appears in `fly.toml`:
+
+```bash
+fly secrets set AXIOM_TOKEN="xaat-..." -a {{SERVICE_NAME}}
+```
+
+**`AXIOM_INGEST_URL`** only needs to be set if you are using a non-default
+Axiom region (e.g. EU: `https://api.eu.axiom.co/v1/datasets/<ds>/ingest`) or
+a self-hosted Axiom instance. Omit for the standard US endpoint.
+
+**`OBS_DESTINATIONS`** overrides the baked default role map at runtime. The
+default (`errors=sentry,logs=axiom`) is compiled in at scaffold time; use
+this var only when you need to change the mapping without re-scaffolding (e.g.
+temporarily disable Axiom with `logs=none`).
+
+**Fail-safe:** if both `SENTRY_DSN` and `AXIOM_TOKEN`/`AXIOM_DATASET` are
+absent, the wrapper falls back to stdout-only emission (§10.5 fail-safe
+preserved — no events are lost and the service continues).
+
 ## `.gitignore`
 
 The skill adds:

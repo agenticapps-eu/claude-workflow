@@ -28,6 +28,41 @@ they leave the browser.
 - refresh_token
 - access_token
 
+## Destination roles
+
+Default role map (compiled in at scaffold time; the browser bundle cannot
+override this at runtime — `OBS_DESTINATIONS` is a server-side env var
+and is not applicable in a Vite client bundle):
+
+| Role | Default destination |
+|---|---|
+| `errors` | `sentry` |
+| `logs` | `axiom` (via same-origin proxy) |
+| `analytics` | `none` |
+
+**Browser hard rule:** the Axiom adapter activates only when
+`VITE_AXIOM_PROXY_URL` is set. It POSTs to that same-origin proxy with no
+Authorization header — the proxy injects the ingest token server-side.
+`VITE_AXIOM_TOKEN` and `VITE_AXIOM_DATASET` are intentionally not read by
+this stack: they would be bundled into client JS and exfiltrated. Errors
+can only ever go to Sentry — the Axiom adapter declares no `errors` role.
+
+**Redaction:** PII redaction (see "Redacted attributes" above) runs once
+in the wrapper before dispatch to any destination. No adapter ever
+receives an unredacted envelope.
+
+**Per-role no-op:** when a destination is not configured (`VITE_SENTRY_DSN`
+absent for errors; `VITE_AXIOM_PROXY_URL` absent for logs), `forRole(...)`
+returns null and that role's events are silently dropped (console-only
+fallback). The app continues without error in either case (§10.5 fail-safe).
+
+**Correlation keys:** the Axiom log payload includes reserved correlation
+attributes `__service`, `__env`, `__trace_id`, `__span_id` (deployment
+metadata + trace/span IDs from the active `TraceContext`). These are NOT
+PII — they are used to correlate logs with Sentry traces in Axiom's
+query UI. If a project wants them stripped, remove them from the
+`axiom.ts` adapter's `emit` body before the proxy POST.
+
 ## Project event names
 
 <!-- add domain events here -->

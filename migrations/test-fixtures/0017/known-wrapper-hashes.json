@@ -1,0 +1,36 @@
+{
+  "_comment": "Migration 0017 hand-modified detection baseline. See HASHING-NOTE.md for the canonicalisation (structural masking) method, version coverage rationale, and the token-substitution handling. Keys: <stack> -> <add-observability-wrapper-version> -> { wrapper_file, materialized_path, sha256 }. sha256 is the digest of the CANONICAL (masked) form of the OLD (pre-1.16.0) template wrapper on the claude-workflow `main` branch at add-observability v0.4.x. Masking collapses every token-substitution site to a fixed placeholder so a real substituted wrapper canonicalises to the same digest, while any change outside a token site differs (fail-closed). Regenerate with migrations/test-fixtures/0017/regen-hashes.sh, which imports the masking program verbatim from the apply engine. cf-cloudflare-pages is intentionally absent: it never shipped a wrapper before 1.16.0.",
+  "hash_algorithm": "sha256",
+  "canonicalization": "structural-masking-v1",
+  "schema_version": 2,
+  "stacks": {
+    "ts-cloudflare-worker": {
+      "0.4.x": {
+        "wrapper_file": "lib-observability.ts",
+        "materialized_path": "src/lib/observability/index.ts",
+        "sha256": "bcad3d5504dd5b630f62e7fb9f0e4b529bae02b9a444c2ebd71b8b76e5f467c8"
+      }
+    },
+    "ts-supabase-edge": {
+      "0.4.x": {
+        "wrapper_file": "index.ts",
+        "materialized_path": "supabase/functions/_shared/observability/index.ts",
+        "sha256": "68935e52c17eb9ec9b39f40c6d6597d3bc743ce7dbe57d40a6b158fd5cba78a4"
+      }
+    },
+    "ts-react-vite": {
+      "0.4.x": {
+        "wrapper_file": "lib-observability.ts",
+        "materialized_path": "src/lib/observability/index.ts",
+        "sha256": "376fcbed2299d6cca5f9b75ee243b1b45656ff0a901caad602818c28a61b283c"
+      }
+    },
+    "go-fly-http": {
+      "0.4.x": {
+        "wrapper_file": "observability.go",
+        "materialized_path": "internal/observability/observability.go",
+        "sha256": "dd38ac9326be7ba51262c9ae164d05407c73059224c07236c03810983cc08eb4"
+      }
+    }
+  }
+}

@@ -67,6 +67,126 @@ If zero stacks are detected, exit with the message "No supported
 stacks detected. See `add-observability/templates/` for the list of
 supported stack IDs." No files modified.
 
+### Phase 1.5 — Destination role assignment
+
+Phase 21 (P4) makes `init` **destination-aware**. Each observability
+ROLE — `errors`, `logs`, `analytics` — is mapped to a named
+destination adapter (`sentry`, `axiom`, or `none`). The wrapper
+templates ship a role-based registry (`destinations/registry.ts` for
+TS stacks, `destinations.go` for `go-fly-http`); this phase resolves
+the role map that init bakes into each wrapper.
+
+This phase reads only metadata and the `--destinations` flag; it
+modifies no files. The resolved map is carried into Phase 2 (target
+resolution), Phase 4 (which adapter files to copy), Phase 5 (the baked
+constant substitution), and Phase 6 (the CLAUDE.md `observability:`
+block).
+
+**Inputs**
+
+- **`--destinations errors=sentry,logs=axiom`** (optional): a
+  comma-separated list of `role=dest` pairs. Roles are `errors`,
+  `logs`, `analytics`; destinations are `sentry`, `axiom`, `none`.
+  Parsed into a role map. When the flag is **absent**, use the stack's
+  `meta.yaml` `destinations.defaults` (canonically
+  `{ errors: sentry, logs: axiom, analytics: none }`).
+
+**Resolution + fail-closed validation (per stack)**
+
+For each detected stack, build the effective role map by starting from
+that stack's `meta.yaml` `destinations.defaults` and applying any
+`--destinations` override on top — but **only where the override is
+both well-formed AND legal**. This MIRRORS the wrapper's runtime
+`resolveConfig` rule (see `destinations/registry.ts` `resolveConfig` /
+`destinations.go` `resolveConfig`) so init and the wrapper agree on
+what is legal:
+
+- A named destination is accepted for a role ONLY if that destination
+  declares the role in the stack's `meta.yaml`
+  `destinations.roles_supported` (the meta-level mirror of the
+  wrapper's `ADAPTER_SUPPORTED_ROLES` / Go `adapterSupportedRoles`).
+  `sentry ⇒ errors,logs`; `axiom ⇒ logs,analytics` (**NO errors**).
+- **Reject unsupported mappings**: e.g. `errors=axiom` — Axiom has no
+  `errors` role — is rejected; the baked default (`errors=sentry`) is
+  kept and a single warning is printed. This is the hard
+  never-route-errors-to-a-logs-sink safety gate (§10.6).
+- **Unknown role or destination token** → ignore the pair + warn.
+- **Malformed pair** (no `=`, empty key/value) → ignore. Duplicate
+  keys → last valid wins. Tokens trimmed + lowercased before matching.
+- Net effect (matching the wrapper): a malformed or hostile
+  `--destinations` can only ever NARROW toward the safe stack default —
+  it can never widen `errors` onto a logs-only adapter.
+
+Print the resolved per-stack map so the user sees exactly what will be
+baked:
+
+```
+Destination roles (resolved):
+  <stack-1>: errors=sentry, logs=axiom, analytics=none
+  <stack-2>: errors=sentry, logs=none,  analytics=none
+```
+
+**What the resolved map controls downstream**
+
+1. **Copy ONLY role-referenced adapter files** into
+   `<wrapper-dir>/destinations/` (Phase 4). For a map that references
+   only `axiom` (e.g. `errors=none,logs=axiom`), copy `axiom.*` +
+   `registry.*` and **NOT** `sentry.*`. For `go-fly-http` (single-file
+   `destinations.go`), keep the whole file but the baked default
+   selects which adapter the registry constructs. The `registry.*` /
+   `destinations.go` registry file is ALWAYS copied — it is the
+   dispatch layer, not an adapter.
+2. **Substitute the resolved map into the wrapper's baked
+   `DESTINATIONS_CONFIG` constant** (Phase 5). The template ships
+   `DESTINATIONS_CONFIG = { errors:"sentry", logs:"axiom",
+   analytics:"none" }` (Go: `bakedDefault()`); rewrite it to the
+   resolved map. This constant is the runtime role-map source (CLAUDE.md
+   is NOT readable at production runtime); `OBS_DESTINATIONS` can still
+   override it at runtime, re-validated fail-closed by `resolveConfig`.
+3. **Write the resolved map into CLAUDE.md's `observability:` block**
+   as `destinations: { errors, logs, analytics }` (Phase 6 / consent
+   gate 3 — see the v0.4.0 block shape in Phase 6).
+4. **Write env stubs ONLY for active destinations** (Phase 2 /
+   Phase 4). If `logs=none` and `errors=sentry`, write the Sentry env
+   stub (`SENTRY_DSN`) but NOT the Axiom env stubs
+   (`AXIOM_TOKEN`/`AXIOM_DATASET`). If `errors=none,logs=axiom`, write
+   the Axiom stubs but NOT `SENTRY_DSN`. A destination mapped to no
+   role contributes no env stub.
+
+**Worked test scenario (verification reference)**
+
+Given `--destinations errors=none,logs=axiom` against a single TS
+stack (e.g. `ts-cloudflare-worker`), init MUST produce:
+
+- **Adapters copied**: `destinations/registry.ts` + `destinations/axiom.ts`
+  present in the wrapper dir; `destinations/sentry.ts` **absent** (no
+  role references `sentry`).
+- **Baked constant**: the wrapper's `DESTINATIONS_CONFIG` equals
+  `{ errors: "none", logs: "axiom", analytics: "none" }`.
+- **CLAUDE.md**: the `observability:` block carries
+  `destinations: { errors: none, logs: axiom, analytics: none }` at
+  `spec_version: 0.4.0`.
+- **Env stubs**: `AXIOM_TOKEN` + `AXIOM_DATASET` stubs written;
+  `SENTRY_DSN` stub **absent** (no role references `sentry`).
+- A fail-closed attempt `--destinations errors=axiom` keeps
+  `errors=sentry` (the stack default) and warns — it never routes
+  errors to the logs-only Axiom adapter.
+
+> **Why no executable init fixture.** This `init` procedure is an
+> agent-followed markdown runbook, not an executable binary, so there
+> is no `add-observability init` command a shell fixture can invoke
+> (the `migrations/test-fixtures/init-*` dirs are before/expected-after
+> reference pairs an agent diffs against, not harness-run tests). The
+> automatable guarantee that backstops Phase 1.5 is the
+> **meta.yaml ↔ adapter role-table consistency check** in
+> `migrations/run-tests.sh` (`test_meta_destinations_consistency`):
+> it asserts every stack's `meta.yaml` `destinations.roles_supported`
+> exactly matches that stack's wrapper `ADAPTER_SUPPORTED_ROLES`
+> (TS) / `adapterSupportedRoles` (Go). If those drift, init's
+> fail-closed validation (which reads `roles_supported`) would diverge
+> from the wrapper's runtime `resolveConfig` (which reads the adapter
+> table) — the check makes that drift a test failure.
+
 ### Phase 2 — Resolve targets
 
 For each detected stack:
@@ -408,7 +528,8 @@ The materialisation work for this stack happens in Phase 4. Per
 
 | Target | Source template |
 |--------|-----------------|
-| `functions/_lib/observability/index.ts` | wrapper (same shape as Worker's `lib-observability.ts` after token substitution; the `meta.yaml` declares `inherits_wrapper_from: ts-cloudflare-worker`) |
+| `functions/_lib/observability/index.ts` | wrapper from this stack's OWN `templates/ts-cloudflare-pages/lib-observability.ts` (Phase 21 / P2 gave cf-pages its own wrapper + full contract harness — it no longer inherits from `ts-cloudflare-worker`; the `inherits_wrapper_from` key was removed from `meta.yaml`), with `{{...}}` token + baked `DESTINATIONS_CONFIG` substitutions applied |
+| `functions/_lib/observability/destinations/{registry,sentry,axiom}.ts` | role-referenced destination adapters — only the adapters named by the resolved role map are copied (Phase 1.5); `registry.ts` is always copied |
 | `functions/_middleware.ts` | `templates/ts-cloudflare-pages/_middleware.ts` copied verbatim, with `{{ENV_VAR_*}}` substitutions applied |
 | `functions/_lib/observability/policy.md` | per-stack policy.md (see T10) |
 
@@ -973,25 +1094,40 @@ source of truth for field shapes, types, defaults, and the validation
 contract. The procedure below describes the writer behaviour; the
 template document describes the data.
 
-**Canonical block shape** (v0.3.1 defaults):
+**Canonical block shape** (v0.4.0 multi-destination, Phase 21 / P4):
 
 ```yaml
 observability:
-  spec_version: 0.3.0
-  destinations:
-    - errors: sentry
-    - logs: structured-json-stdout
+  spec_version: 0.4.0
+  destinations: { errors: sentry, logs: axiom, analytics: none }
   policy: <primary-stack-wrapper-dir>/policy.md
   enforcement:
     baseline: .observability/baseline.json
     pre_commit: optional
 ```
 
-**Optional fields not emitted by default at v0.3.1:**
+The `destinations:` map is the resolved role map from Phase 1.5 —
+NOT a fixed literal. Write whatever role map init resolved for the
+primary stack (e.g. `{ errors: sentry, logs: none, analytics: none }`
+when `--destinations logs=none` was passed). This block is the
+**record of the decision**, not the production runtime source — the
+wrapper reads its baked `DESTINATIONS_CONFIG` (Phase 5) /
+`OBS_DESTINATIONS` env at runtime, because CLAUDE.md is not readable
+in production (D2).
 
-- `destinations: - analytics: <vendor>` — OPTIONAL per spec §10.8.
-  Init omits the `analytics:` line; users who route analytics-class
-  events through the wrapper add it manually.
+> **Shape change vs v0.3.x.** Earlier init versions wrote
+> `spec_version: 0.3.0` with a list-style `destinations:` (e.g.
+> `- errors: sentry` / `- logs: structured-json-stdout`). Phase 21
+> moves to the §10.8 v0.4.0 map shape `{ errors, logs, analytics }`.
+> Migration 0017 rewrites the v0.3.0 list block to this v0.4.0 map
+> block in already-initialised projects via the anchor-managed range.
+
+**Optional fields and the `none` value:**
+
+- `analytics:` is ALWAYS emitted at v0.4.0 (the map is a complete
+  triple); when no analytics destination is routed its value is
+  `none`. This differs from the v0.3.x list shape, which omitted the
+  `analytics:` line entirely.
 - `enforcement.ci: <ci-workflow-path>` — OPTIONAL per spec §10.8
   line 160. Init omits this field because the current option-4 shape
   ships no auto-installed CI workflow (per PLAN T11 + the
