@@ -83,6 +83,16 @@ _substitute_tokens() {
 materialize_substituted_react() { materialize_clean_react "$1"; }
 materialize_substituted_go()    { materialize_clean_go "$1"; }
 
+# Anchor-wrapped (migration 0014 / init idiom): a substituted-clean wrapper whose
+# content is bracketed by `// agenticapps:observability:start/end` markers. Must
+# still classify CLEAN — the canonicaliser strips the markers before hashing.
+materialize_anchored_react() {
+  materialize_clean_react "$1"
+  local f="$1/index.ts" tmp; tmp=$(mktemp)
+  { echo "// agenticapps:observability:start"; cat "$f"; echo "// agenticapps:observability:end"; } > "$tmp"
+  mv "$tmp" "$f"
+}
+
 # Hand-modified: clean wrapper + an extra hand-added line → hash mismatch.
 materialize_dirty_worker() {
   materialize_clean_worker "$1"

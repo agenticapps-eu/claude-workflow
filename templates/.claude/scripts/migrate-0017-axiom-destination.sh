@@ -198,6 +198,14 @@ BEGIN { P = "\x00TOK\x00"; in_redact = 0 }
 {
   line = $0
 
+  # Anchor markers (migration 0014 / init wrap the managed region with
+  # `// agenticapps:observability:start` … `:end`, plus the /* … */ and #
+  # comment variants other stacks use). Drop them BEFORE hashing so an
+  # otherwise-pristine anchor-wrapped wrapper canonicalises to the anchor-free
+  # baseline and classifies CLEAN — without them the markers survived masking
+  # and every anchored wrapper was wrongly refused.
+  if (line ~ /agenticapps:observability:(start|end)/) { next }
+
   # REDACTED_KEYS array body — collapse ONLY genuine list elements (quoted
   # strings / the template token / blanks). Any non-element line inside the
   # array is a hand modification and is emitted verbatim (alters the hash).
