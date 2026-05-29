@@ -471,8 +471,16 @@ run_ts_supabase_edge() {
   # implementation that cron-monitor.test.ts (covered by the *.test.ts glob
   # below) imports. No existence gate per PLAN R02.
   substitute_tokens "$SRC/cron-monitor.ts" "$OBS_DIR/cron-monitor.ts"
+
+  # Phase 22 — healthz snippet (T08). COPY-ONLY template (D9). Impl is
+  # `.ts` (not `.test.ts`) so the test-glob below misses it — explicit
+  # existence-gated copy. The test file IS picked up by the glob.
+  if [[ -f "$SRC/healthz-snippet.ts" ]]; then
+    substitute_tokens "$SRC/healthz-snippet.ts" "$OBS_DIR/healthz-snippet.ts"
+  fi
+
   # Copy every *.test.ts (index contract suite + phase-21 axiom suite +
-  # phase-22 cron-monitor suite).
+  # phase-22 cron-monitor suite + phase-22 healthz-snippet suite).
   for f in "$SRC"/*.test.ts; do
     [[ -f "$f" ]] || continue
     substitute_tokens "$f" "$OBS_DIR/$(basename "$f")"
