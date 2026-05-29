@@ -42,7 +42,20 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 )
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+// defaultHealthzProbeTimeout is the per-probe deadline applied when
+// HealthzDeps.ProbeTimeout is zero. 2 s matches the TS stacks' default.
+//
+// D-03 (narrowed for Go per codex MEDIUM-5 / R-rev-3): Go's handler-latency
+// approach differs from the TS AbortController pattern: the DB probe wraps
+// r.Context() in context.WithTimeout so cancellation flows through the driver;
+// the upstream probe uses a goroutine + select with time.After (no signal path
+// on the stdlib http.Client.Get surface). Both honour ProbeTimeout == 0 → 2 s.
+const defaultHealthzProbeTimeout = 2 * time.Second
 
 // ─── Probe interfaces ─────────────────────────────────────────────────────────
 
@@ -63,13 +76,17 @@ type upstreamProbe interface {
 // Leave fields nil to skip a probe; a probe set to nil never contributes
 // to the `checks` map. Zero probes configured → fail-closed (R06).
 type HealthzDeps struct {
-	// DB is probed via PingContext using the request's context. Treat any
-	// returned error as a failed probe.
+	// DB is probed via PingContext using a timeout-bounded context derived
+	// from the request context. context.DeadlineExceeded → "timeout" sentinel.
 	DB dbProbe
 	// Upstream is probed via Get("https://internal/healthz") (adapt the URL
 	// in the impl below if your upstream uses a different path). Any 5xx
-	// response, or any returned error, flips the probe to false.
+	// response, or any returned error, flips the probe to false. A probe that
+	// does not return within ProbeTimeout → "timeout" sentinel (race-only via
+	// time.After; stdlib http.Client.Get has no signal path).
 	Upstream upstreamProbe
+	// ProbeTimeout is the per-probe deadline. Zero → defaultHealthzProbeTimeout (2 s).
+	ProbeTimeout time.Duration
 }
 
 // ─── Handler ─────────────────────────────────────────────────────────────────
@@ -83,32 +100,59 @@ type HealthzDeps struct {
 //	503 + {"status":"degraded","checks":{...}}             one+ probes failed
 //	503 + {"status":"degraded","reason":...,"checks":{}}   no probes (R06)
 //
-// Per-probe errors are swallowed and recorded as `false`; one probe failing
-// never short-circuits the others.
+// Per-probe errors are swallowed and recorded as `false` or `"timeout"`;
+// one probe failing never short-circuits the others.
 func HealthzHandler(deps HealthzDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		checks := map[string]bool{}
+		checks := map[string]any{}
+
+		probeTimeout := deps.ProbeTimeout
+		if probeTimeout == 0 {
+			probeTimeout = defaultHealthzProbeTimeout
+		}
 
 		if deps.DB != nil {
-			if err := deps.DB.PingContext(r.Context()); err == nil {
+			// DB probe: context.WithTimeout so the driver honours cancellation.
+			// context.DeadlineExceeded → "timeout" sentinel (R-rev-3 / D-03).
+			ctx, cancel := context.WithTimeout(r.Context(), probeTimeout)
+			defer cancel()
+			if err := deps.DB.PingContext(ctx); err == nil {
 				checks["db"] = true
+			} else if err == context.DeadlineExceeded {
+				checks["db"] = "timeout"
 			} else {
 				checks["db"] = false
 			}
 		}
 
 		if deps.Upstream != nil {
-			resp, err := deps.Upstream.Get("https://internal/healthz")
-			switch {
-			case err != nil:
-				checks["upstream"] = false
-			case resp == nil:
-				checks["upstream"] = false
-			default:
-				checks["upstream"] = resp.StatusCode < 500
-				if resp.Body != nil {
-					_ = resp.Body.Close()
+			// Upstream probe: race-only via goroutine + time.After.
+			// stdlib http.Client.Get has no AbortSignal/context path on the
+			// upstreamProbe interface, so we use a goroutine race.
+			type result struct {
+				resp *http.Response
+				err  error
+			}
+			done := make(chan result, 1)
+			go func() {
+				resp, err := deps.Upstream.Get("https://internal/healthz")
+				done <- result{resp, err}
+			}()
+			select {
+			case res := <-done:
+				switch {
+				case res.err != nil:
+					checks["upstream"] = false
+				case res.resp == nil:
+					checks["upstream"] = false
+				default:
+					checks["upstream"] = res.resp.StatusCode < 500
+					if res.resp.Body != nil {
+						_ = res.resp.Body.Close()
+					}
 				}
+			case <-time.After(probeTimeout):
+				checks["upstream"] = "timeout"
 			}
 		}
 
@@ -120,14 +164,14 @@ func HealthzHandler(deps HealthzDeps) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"status": "degraded",
 				"reason": "no probes configured — adapt healthz_snippet.go to your dependencies",
-				"checks": map[string]bool{},
+				"checks": map[string]any{},
 			})
 			return
 		}
 
 		allOK := true
-		for _, ok := range checks {
-			if !ok {
+		for _, v := range checks {
+			if v != true {
 				allOK = false
 				break
 			}
