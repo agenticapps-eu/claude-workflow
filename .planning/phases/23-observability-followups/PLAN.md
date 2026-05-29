@@ -52,7 +52,7 @@ must_haves:
     - "add-observability/SKILL.md version field is 0.7.0"
     - "add-observability/CHANGELOG.md has a 0.7.0 entry with: (a) F2 per-stack heterogeneous timeout (D-03 narrowed); (b) F5 GUARDED Shape A — pre-callback errors fall back to unmonitored, post-callback errors propagate (R02/R04 regression narrowed to post-callback); (c) withIsolationScope semantic honest note (handler-set scope state may not leak to outer capture after isolation unwinds, per codex MEDIUM); (d) D-07 honest reframe (default refuse no longer touches clean roots; dirty roots still receive recovery artifacts)"
     - "docs/decisions/0029-cron-monitor-sdk-composition.md exists in Wave 0 (NOT Wave 5 — moved earlier per codex Suggestion 7) with Context, Decision (Guarded Shape A), Alternatives Rejected including original-Shape-A + B + C + D + F (5 rejected), Codex's pre-callback-throw empirical evidence, and Consequences"
-    - "gitnexus_detect_changes() runs as the last acceptance criterion of EACH wave-closing task (Wave 1: Task 1.7; Wave 2: Task 2.3; Wave 3: Task 3.1; Wave 4: Task 4.2; Wave 5: Task 5.4) per codex Suggestion 8"
+    - "gitnexus_detect_changes() runs as the last acceptance criterion of EACH wave-closing task (Wave 1: Task 1.7; Wave 2: Task 2.3; Wave 3: Task 3.1; Wave 4: Task 4.2; Wave 5: Task 5.3) per codex Suggestion 8"
     - "G6 gate (REPLACED): named-test-presence check (grep for new test names in run-tests.sh + run-template-tests.sh output) + overall harness exit code 0. NO numeric counter (per codex MEDIUM-7 — harness has no test-total summary)"
     - "Full migration test harness (migrations/run-tests.sh) passes after all changes; full template test harness (add-observability/templates/run-template-tests.sh all) passes after all changes"
   artifacts:
@@ -150,7 +150,7 @@ Purpose:
 - Author ADR-0029 IN WAVE 0 (before code) capturing the F5 architectural decision with 5 rejected alternatives (incl. original Shape A) for `/gsd-review` audit
 
 Output:
-- 17 tasks across 6 waves (was 17 across 5; Wave 0 added per codex Suggestion 7)
+- 18 tasks across 6 waves (was 17 across 5; +2 in Wave 0 = Tasks 0.1 + 0.2; ADR-0029 task removed from former Wave 5 = net +1 per codex Suggestion 7)
 - 14+ modified files across 4 stacks, 1 migration engine, 1 test harness, 1 ADR, SKILL.md + CHANGELOG.md
 - 4 new TDD tests (F2 timeout × 4 stacks, F3 sigterm, F4 drift, F5 parity + pre-callback regression × 3 stacks)
 - 1 new migration fixture (07-allow-partial-emits-patches)
@@ -160,7 +160,7 @@ Revision provenance (codex/gemini review IDs):
 - R-rev-1: D-08 Guarded Shape A — codex HIGH-1 → Tasks 2.1/2.2/2.3
 - R-rev-2: Split trap design — codex HIGH-2 → Task 3.1
 - R-rev-3: F2 per-stack rework — codex MEDIUM-5 + gemini MEDIUM-1 → Tasks 1.4/1.5/1.6/1.7
-- R-rev-4: G6 gate replacement — codex MEDIUM-7 → Task 0.1 (harness extension) + Task 5.4 (named-test check)
+- R-rev-4: G6 gate replacement — codex MEDIUM-7 → Task 0.1 (harness extension) + Task 5.3 (named-test check)
 - R-rev-5: D-07 honest reframe — codex MEDIUM-6 → Tasks 4.1/4.2 + CHANGELOG
 - R-rev-6: Supabase Deno seam — codex MEDIUM-4 → Task 2.3
 - R-rev-7: ADR-0029 to Wave 0 — codex Suggestion 7 → Task 0.2 (was 5.1)
@@ -285,7 +285,7 @@ From migration 0017's analogue (templates/.claude/scripts/migrate-0017-axiom-des
 </context>
 
 <gitnexus_required_symbols>
-<!-- Per ./CLAUDE.md + codex Suggestion 8: every symbol edit MUST run gitnexus_impact({target, direction: "upstream"}) BEFORE the edit, AND gitnexus_detect_changes() at each WAVE-CLOSER task (not just final Task 5.4). -->
+<!-- Per ./CLAUDE.md + codex Suggestion 8: every symbol edit MUST run gitnexus_impact({target, direction: "upstream"}) BEFORE the edit, AND gitnexus_detect_changes() at each WAVE-CLOSER task (not just final Task 5.3). -->
 
 | Task | Symbol | File | Edit shape |
 |------|--------|------|------------|
@@ -308,7 +308,7 @@ Wave-closer gitnexus_detect_changes (per codex Suggestion 8):
 - Wave 2 closer: Task 2.3 → run `gitnexus_detect_changes()` after Supabase F5
 - Wave 3 closer: Task 3.1 → run `gitnexus_detect_changes()` after F3 trap
 - Wave 4 closer: Task 4.2 → run `gitnexus_detect_changes()` after D-07 0019 fix
-- Wave 5 closer: Task 5.4 → existing gitnexus_detect_changes() global gate
+- Wave 5 closer: Task 5.3 → existing gitnexus_detect_changes() global gate
 
 Acceptance check on each task: `gitnexus_impact` was run and reported risk level. If HIGH or CRITICAL: action requires explicit "proceed-anyway" rationale in commit body.
 </gitnexus_required_symbols>
