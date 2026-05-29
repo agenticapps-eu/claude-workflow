@@ -49,6 +49,9 @@
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
+/** D-03 default per-probe timeout in ms; override via healthzHandler 3rd arg. */
+export const DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS = 2000;
+
 /**
  * Bindings the healthz handler can probe. Both are optional — the operator
  * adds the bindings they actually use in their wrangler.toml. Any probe
@@ -59,7 +62,7 @@
  */
 export interface HealthzEnv {
   /** KV namespace; probe = `get("healthz-probe")`. Treat any throw as fail. */
-  OBSERVABILITY_KV?: { get: (key: string) => Promise<string | null> };
+  OBSERVABILITY_KV?: { get: (key: string, signal?: AbortSignal) => Promise<string | null> };
   /** Service binding to another worker; probe = fetch on its /healthz. */
   SERVICE_BINDING?: { fetch: (req: Request) => Promise<Response> };
 }
@@ -76,28 +79,70 @@ export interface HealthzEnv {
  *   503 + {status:"degraded", reason, checks:{}}      no probes configured (R06)
  *
  * The handler swallows any per-probe exception and records the probe as
- * `false`; an exception in one probe never short-circuits the others.
+ * `false` or `"timeout"`; an exception in one probe never short-circuits
+ * the others.
+ *
+ * D-03 (Worker keeps 3rd-arg override per codex MEDIUM-5): Worker's
+ * scheduled/fetch handler signature supports a 3rd opts arg. Pass
+ * `{ probeTimeoutMs: N }` to override the default 2000ms timeout.
  */
-export async function healthzHandler(_req: Request, env: HealthzEnv): Promise<Response> {
-  const checks: Record<string, boolean> = {};
+export async function healthzHandler(
+  _req: Request,
+  env: HealthzEnv,
+  opts?: { probeTimeoutMs?: number },
+): Promise<Response> {
+  const checks: Record<string, boolean | "timeout"> = {};
+  const probeTimeoutMs = opts?.probeTimeoutMs ?? DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS;
 
   if (env.OBSERVABILITY_KV) {
+    // Per gemini MEDIUM-1: AbortController + setTimeout + try/finally pattern.
+    // NOT Promise.race + abort-rejection — prevents unhandled promise rejections.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(
+      () => controller.abort(new DOMException("probe timeout", "TimeoutError")),
+      probeTimeoutMs,
+    );
     try {
-      await env.OBSERVABILITY_KV.get("healthz-probe");
+      await new Promise<void>((resolve, reject) => {
+        controller.signal.addEventListener("abort", () =>
+          reject(new DOMException("aborted", "TimeoutError")),
+        );
+        env.OBSERVABILITY_KV!.get("healthz-probe", controller.signal)
+          .then(() => resolve())
+          .catch(reject);
+      });
       checks.kv = true;
-    } catch {
-      checks.kv = false;
+    } catch (e) {
+      checks.kv =
+        e instanceof DOMException &&
+        (e.name === "TimeoutError" || e.name === "AbortError")
+          ? "timeout"
+          : false;
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
   if (env.SERVICE_BINDING) {
+    // Service binding fetch accepts signal directly via Request options.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(
+      () => controller.abort(new DOMException("probe timeout", "TimeoutError")),
+      probeTimeoutMs,
+    );
     try {
       const res = await env.SERVICE_BINDING.fetch(
-        new Request("https://internal/healthz"),
+        new Request("https://internal/healthz", { signal: controller.signal }),
       );
       checks.serviceBinding = res.status < 500;
-    } catch {
-      checks.serviceBinding = false;
+    } catch (e) {
+      checks.serviceBinding =
+        e instanceof DOMException &&
+        (e.name === "TimeoutError" || e.name === "AbortError")
+          ? "timeout"
+          : false;
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
@@ -118,7 +163,7 @@ export async function healthzHandler(_req: Request, env: HealthzEnv): Promise<Re
     );
   }
 
-  const allOk = probeNames.every((k) => checks[k]);
+  const allOk = probeNames.every((k) => checks[k] === true);
   return new Response(
     JSON.stringify({ status: allOk ? "ok" : "degraded", checks }),
     {

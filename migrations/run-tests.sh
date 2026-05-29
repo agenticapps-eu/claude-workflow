@@ -68,6 +68,21 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# ─── SPLIT TRAP (codex HIGH-2 / R-rev-2) ─────────────────────────────────────
+# Mirrors the split-trap shape in migrate-0019-sentry-crons-and-healthz.sh.
+# EXIT is silent (no cleanup output on normal harness exit).
+# INT → exit 130; TERM → exit 143.
+_runtests_cleanup_fired=0
+_runtests_do_cleanup() {
+  [ "$_runtests_cleanup_fired" -eq 1 ] && return 0
+  _runtests_cleanup_fired=1
+  # harness-level cleanup (intentionally empty — no shared state to tear down)
+  :
+}
+trap '_runtests_do_cleanup'        EXIT
+trap '_runtests_do_cleanup; exit 130' INT
+trap '_runtests_do_cleanup; exit 143' TERM
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2131,6 +2146,224 @@ test_migration_0019() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# F4 — SKILL.md version drift test (D-06 / G4)
+# Asserts skill/SKILL.md version equals the highest-numbered migration's to_version.
+# ─────────────────────────────────────────────────────────────────────────────
+
+test_skill_md_version_matches_latest_migration_to_version() {
+  # NOTE (D-04): intentionally minimal grep + awk parser. Fragile against
+  # YAML variations (quoted values, indented keys, trailing comments).
+  # SKILL.md frontmatter is fixed-shape (`version: X.Y.Z` on its own line);
+  # if that ever changes, this test must be updated.
+
+  local skill_version latest_migration_file migration_to_version
+
+  skill_version=$(grep ^version: skill/SKILL.md | awk '{print $2}')
+  latest_migration_file=$(ls migrations/[0-9][0-9][0-9][0-9]-*.md | sort | tail -1)
+  migration_to_version=$(grep ^to_version: "$latest_migration_file" | awk '{print $2}')
+
+  local migration_num
+  migration_num=$(basename "$latest_migration_file" | cut -c1-4)
+
+  if [ "$skill_version" = "$migration_to_version" ]; then
+    echo "  ${GREEN}PASS${RESET}: test-skill-md-version-matches-latest-migration-to-version"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}FAIL${RESET}: SKILL.md at v${skill_version} but migration ${migration_num} declares to_version: v${migration_to_version}"
+    FAIL=$((FAIL+1))
+  fi
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# F3 — SIGTERM split-trap + path-validated --pause-between-passes (R-rev-2)
+# Verifies:
+#   Case 1 — SIGTERM mid-apply: engine exits 143, no half-written files.
+#   Case 2 — silent-on-success: EXIT trap emits NO "cleanup" output on exit 0.
+#   Case 3 — no secret leak: SIGTERM stderr has no SENTRY_DSN/API_KEY/TOKEN.
+#   Case 4 — path validation: /etc/passwd rejected (exit 2), allow-listed OK.
+# ─────────────────────────────────────────────────────────────────────────────
+
+test_sigterm_mid_apply_preserves_state() {
+  echo ""
+  echo "${YELLOW}━━━ F3 SIGTERM split-trap + --pause-between-passes ━━━${RESET}"
+
+  local ENGINE="$REPO_ROOT/templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh"
+  local TEMPLATES="$REPO_ROOT/add-observability/templates"
+
+  # ── Shared project setup helper ─────────────────────────────────────────────
+  _setup_sigterm_project() {
+    local dir="$1"
+    mkdir -p "$dir/.claude/skills/agentic-apps-workflow"
+    cat > "$dir/.claude/skills/agentic-apps-workflow/SKILL.md" <<'EOF'
+---
+name: agentic-apps-workflow
+version: 1.17.0
+implements_spec: 0.4.0
+description: synthetic test fixture for migration 0019
+---
+EOF
+    local wroot="$dir/src/lib/observability"
+    mkdir -p "$wroot"
+    cp "$TEMPLATES/ts-cloudflare-worker/lib-observability.ts" "$wroot/lib-observability.ts"
+    cp "$TEMPLATES/ts-cloudflare-worker/middleware.ts"        "$wroot/middleware.ts"
+  }
+
+  # ── Case 4 — path validation (cheapest; no signal needed) ──────────────────
+  # 4a. /etc/passwd must be rejected with exit 2 + expected error message.
+  local bad_stderr; bad_stderr=$(mktemp)
+  local bad_exit
+  set +e
+  bash "$ENGINE" --pause-between-passes /etc/passwd 2>"$bad_stderr"
+  bad_exit=$?
+  set -e
+  if [ "$bad_exit" -ne 2 ]; then
+    echo "  ${RED}✗${RESET} path validation: expected exit 2 for /etc/passwd, got $bad_exit"
+    FAIL=$((FAIL+1))
+    rm -f "$bad_stderr"
+    return
+  fi
+  if ! grep -q "test-only flag with non-allow-listed path" "$bad_stderr"; then
+    echo "  ${RED}✗${RESET} path validation: expected 'test-only flag with non-allow-listed path' in stderr"
+    FAIL=$((FAIL+1))
+    rm -f "$bad_stderr"
+    return
+  fi
+  rm -f "$bad_stderr"
+
+  # 4b. With TMPDIR unset: /etc/passwd still rejected (${TMPDIR:-/tmp} default used).
+  local bad_exit2
+  set +e
+  ( unset TMPDIR; bash "$ENGINE" --pause-between-passes /etc/passwd >/dev/null 2>&1 )
+  bad_exit2=$?
+  set -e
+  if [ "$bad_exit2" -ne 2 ]; then
+    echo "  ${RED}✗${RESET} path validation (TMPDIR unset): expected exit 2, got $bad_exit2"
+    FAIL=$((FAIL+1))
+    return
+  fi
+
+  # 4c. Allow-listed TMPDIR path: engine must NOT emit the path-validation error.
+  #     (Engine may still exit non-zero for other reasons — e.g. all-clean gate —
+  #     when run without --project-dir pointing at a clean sandbox. What matters is
+  #     the absence of the path-validation rejection message in stderr.)
+  local allowed_sig="${TMPDIR:-/tmp}/sigterm-test-pathcheck"
+  local allowed_stderr; allowed_stderr=$(mktemp)
+  set +e
+  bash "$ENGINE" --pause-between-passes "$allowed_sig" >/dev/null 2>"$allowed_stderr"
+  set -e
+  if grep -q "test-only flag with non-allow-listed path" "$allowed_stderr"; then
+    echo "  ${RED}✗${RESET} path validation: allow-listed TMPDIR path incorrectly rejected (path-validation message present)"
+    FAIL=$((FAIL+1))
+    rm -f "$allowed_stderr"
+    return
+  fi
+  rm -f "$allowed_stderr"
+
+  # 4d. Allow-listed fixture prefix: no path-validation rejection message.
+  local fixture_sig="$REPO_ROOT/migrations/test-fixtures/0019/06-multi-root-mixed-clean-dirty-refuses-all/sigterm-foo"
+  local fixture_stderr; fixture_stderr=$(mktemp)
+  set +e
+  bash "$ENGINE" --pause-between-passes "$fixture_sig" >/dev/null 2>"$fixture_stderr"
+  set -e
+  if grep -q "test-only flag with non-allow-listed path" "$fixture_stderr"; then
+    echo "  ${RED}✗${RESET} path validation: allow-listed fixture path incorrectly rejected (path-validation message present)"
+    FAIL=$((FAIL+1))
+    rm -f "$fixture_stderr"
+    return
+  fi
+  rm -f "$fixture_stderr"
+
+  # ── Case 2 — silent-on-success (EXIT trap must emit nothing on exit 0) ──────
+  local clean_dir; clean_dir=$(mktemp -d "${TMPDIR:-/tmp}/sigterm-test-clean-XXXX")
+  _setup_sigterm_project "$clean_dir"
+  local normal_stderr; normal_stderr=$(mktemp)
+  local normal_exit
+  set +e
+  bash "$ENGINE" --templates-dir "$TEMPLATES" --project-dir "$clean_dir" \
+    >/dev/null 2>"$normal_stderr"
+  normal_exit=$?
+  set -e
+  if [ "$normal_exit" -ne 0 ]; then
+    echo "  ${RED}✗${RESET} silent-on-success: normal run expected exit 0, got $normal_exit"
+    FAIL=$((FAIL+1))
+    rm -rf "$clean_dir"; rm -f "$normal_stderr"
+    return
+  fi
+  if grep -q "cleanup" "$normal_stderr"; then
+    echo "  ${RED}✗${RESET} silent-on-success: EXIT trap leaked 'cleanup' output on exit 0 (codex HIGH-2)"
+    echo "      stderr was:"
+    sed 's/^/        /' "$normal_stderr" | head -10
+    FAIL=$((FAIL+1))
+    rm -rf "$clean_dir"; rm -f "$normal_stderr"
+    return
+  fi
+  rm -rf "$clean_dir"; rm -f "$normal_stderr"
+
+  # ── Case 1 + 3 — SIGTERM: exit 143 + no secrets in cleanup output ───────────
+  local sig_dir; sig_dir=$(mktemp -d "${TMPDIR:-/tmp}/sigterm-test-XXXX")
+  local SIG="$sig_dir/sigterm-test-signal"
+  _setup_sigterm_project "$sig_dir"
+
+  local sigterm_stderr; sigterm_stderr=$(mktemp)
+  bash "$ENGINE" --templates-dir "$TEMPLATES" --project-dir "$sig_dir" \
+    --pause-between-passes "$SIG" \
+    >/dev/null 2>"$sigterm_stderr" &
+  local ENGINE_PID=$!
+
+  # Wait up to 10 seconds for the signal file to appear.
+  local i
+  for i in $(seq 1 50); do
+    [ -f "$SIG" ] && break
+    sleep 0.2
+  done
+
+  if [ ! -f "$SIG" ]; then
+    echo "  ${RED}✗${RESET} SIGTERM: engine never reached pause (signal file absent after 10s)"
+    kill -9 "$ENGINE_PID" 2>/dev/null || true
+    wait "$ENGINE_PID" 2>/dev/null || true
+    FAIL=$((FAIL+1))
+    rm -rf "$sig_dir"; rm -f "$sigterm_stderr"
+    return
+  fi
+
+  kill -TERM "$ENGINE_PID" 2>/dev/null || true
+  local engine_exit
+  set +e
+  wait "$ENGINE_PID"
+  engine_exit=$?
+  set -e
+
+  # Case 1: SIGTERM must produce exit 143.
+  if [ "$engine_exit" -ne 143 ]; then
+    echo "  ${RED}✗${RESET} SIGTERM: expected exit 143, got $engine_exit"
+    FAIL=$((FAIL+1))
+    rm -rf "$sig_dir"; rm -f "$sigterm_stderr"
+    return
+  fi
+
+  # Case 1b: no half-written cron-monitor.ts.
+  if find "$sig_dir" -name "cron-monitor.ts" -type f | grep -q .; then
+    echo "  ${RED}✗${RESET} SIGTERM: cron-monitor.ts found (half-written after SIGTERM)"
+    FAIL=$((FAIL+1))
+    rm -rf "$sig_dir"; rm -f "$sigterm_stderr"
+    return
+  fi
+
+  # Case 3: no secrets in cleanup output (T-23-05).
+  if grep -qE "(SENTRY_DSN|API_KEY|TOKEN)=" "$sigterm_stderr"; then
+    echo "  ${RED}✗${RESET} T-23-05: secret variable leaked in SIGTERM stderr"
+    FAIL=$((FAIL+1))
+    rm -rf "$sig_dir"; rm -f "$sigterm_stderr"
+    return
+  fi
+
+  rm -rf "$sig_dir"; rm -f "$sigterm_stderr"
+
+  echo "  ${GREEN}PASS${RESET}: test-sigterm-mid-apply-preserves-state"
+  PASS=$((PASS+1))
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Dispatcher
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -2200,6 +2433,27 @@ fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "destinations" ]; then
   test_meta_destinations_consistency
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "test-skill-md-version-matches-latest-migration-to-version" ]; then
+  # Function exists after Task 1.3 lands. Guard with declare -F so this commit doesn't
+  # try to run it before Task 1.3 defines it. Increments SKIP when not yet defined
+  # so the harness exits 0 rather than "NO TESTS RAN" during the Wave 0 → Wave 1 window.
+  if declare -F test_skill_md_version_matches_latest_migration_to_version >/dev/null 2>&1; then
+    test_skill_md_version_matches_latest_migration_to_version
+  elif [ -n "$FILTER" ]; then
+    echo "${YELLOW}SKIP${RESET}: test-skill-md-version-matches-latest-migration-to-version (function not yet defined)"
+    SKIP=$((SKIP+1))
+  fi
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "test-sigterm-mid-apply-preserves-state" ]; then
+  if declare -F test_sigterm_mid_apply_preserves_state >/dev/null 2>&1; then
+    test_sigterm_mid_apply_preserves_state
+  elif [ -n "$FILTER" ]; then
+    echo "${YELLOW}SKIP${RESET}: test-sigterm-mid-apply-preserves-state (function not yet defined)"
+    SKIP=$((SKIP+1))
+  fi
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────

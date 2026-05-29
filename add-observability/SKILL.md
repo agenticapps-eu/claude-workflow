@@ -1,6 +1,6 @@
 ---
 name: add-observability
-version: 0.6.0
+version: 0.7.0
 implements_spec: 0.3.2
 description: |
   Generate or audit an observability wrapper that satisfies AgenticApps

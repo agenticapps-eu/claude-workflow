@@ -24,7 +24,8 @@
  *   - SERVICE_BINDING   — service binding; probe = `fetch("/healthz")`
  */
 
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS } from "./healthz-snippet";
 import { healthzHandler } from "./healthz-snippet";
 
 describe("healthzHandler — fail-closed default (R06)", () => {
@@ -114,5 +115,94 @@ describe("healthzHandler — any probe failure → degraded", () => {
       status: "degraded",
       checks: { serviceBinding: false },
     });
+  });
+});
+
+// ─── F2 per-probe timeout tests (Phase 23 / D-03 / R-rev-3 + R-rev-9) ────────
+
+describe("healthzHandler — per-probe timeout (F2)", () => {
+  it("Test 1: fast probe resolves within timeout → status ok", async () => {
+    const env = {
+      OBSERVABILITY_KV: {
+        get: vi.fn().mockImplementation(async () => {
+          // resolves quickly (no delay)
+          return null;
+        }),
+      },
+    };
+    const res = await healthzHandler(new Request("https://stub/healthz"), env);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual({ status: "ok", checks: { kv: true } });
+  });
+
+  it("Test 2: probe hanging > default timeout → degraded with 'timeout' sentinel within 2200ms", async () => {
+    const env = {
+      OBSERVABILITY_KV: {
+        get: vi.fn().mockImplementation(
+          (_key: string, signal?: AbortSignal) =>
+            new Promise<null>((_resolve, reject) => {
+              if (signal) {
+                signal.addEventListener("abort", () =>
+                  reject(new DOMException("aborted", "AbortError")),
+                );
+              }
+              // Never resolves — simulates hung probe
+            }),
+        ),
+      },
+    };
+    const start = Date.now();
+    const res = await healthzHandler(new Request("https://stub/healthz"), env);
+    const elapsed = Date.now() - start;
+    expect(elapsed).toBeLessThan(DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS + 200);
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.status).toBe("degraded");
+    expect(body.checks.kv).toBe("timeout");
+  }, 10000);
+
+  it("Test 3: caller passes probeTimeoutMs override → probe aborts at custom timeout", async () => {
+    const env = {
+      OBSERVABILITY_KV: {
+        get: vi.fn().mockImplementation(
+          (_key: string, signal?: AbortSignal) =>
+            new Promise<null>((_resolve, reject) => {
+              if (signal) {
+                signal.addEventListener("abort", () =>
+                  reject(new DOMException("aborted", "AbortError")),
+                );
+              }
+              // Hangs for 1000ms — longer than 500ms override
+            }),
+        ),
+      },
+    };
+    const start = Date.now();
+    const res = await healthzHandler(new Request("https://stub/healthz"), env, {
+      probeTimeoutMs: 500,
+    });
+    const elapsed = Date.now() - start;
+    expect(elapsed).toBeLessThan(700); // 500ms timeout + 200ms slack
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.checks.kv).toBe("timeout");
+  }, 5000);
+
+  it("Test 5 (gemini MEDIUM-1): no unhandled rejection after fast probe completes", async () => {
+    const unhandledRejections: unknown[] = [];
+    const listener = (reason: unknown) => unhandledRejections.push(reason);
+    process.on("unhandledRejection", listener);
+
+    const env = {
+      OBSERVABILITY_KV: { get: vi.fn().mockResolvedValue(null) },
+    };
+    await healthzHandler(new Request("https://stub/healthz"), env);
+
+    // Allow microtask queue to flush any pending rejections
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    process.off("unhandledRejection", listener);
+    expect(unhandledRejections).toHaveLength(0);
   });
 });

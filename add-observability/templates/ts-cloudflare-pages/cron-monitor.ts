@@ -14,12 +14,13 @@
 //   - There is no standard innermost composition (D5c) — operator invokes
 //     externally.
 //
-// Sentry SDK interaction is wrapped in try/swallow + opt-in debug log
-// so an SDK throw during captureCheckIn doesn't break the cron — the
-// heartbeat is not in the critical path. See PLAN R02/R03/R04.
+// Phase 23 / ADR-0029: refactored from hand-rolled captureCheckIn lifecycle to
+// Guarded Shape A — composes Sentry.withMonitor with a handlerStarted flag so
+// a pre-callback transport failure falls back to unmonitored execution (cron
+// always runs). Post-callback errors propagate to the caller. See D-08.
 //
 
-import { captureCheckIn } from "@sentry/cloudflare";
+import * as Sentry from "@sentry/cloudflare";
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -47,10 +48,6 @@ const SLUG_ENV_PREFIX = "SENTRY_CRON_MONITOR_SLUG_";
 
 function isConfigured(env: Record<string, unknown>): boolean {
   return typeof env.SENTRY_DSN === "string" && (env.SENTRY_DSN as string).length > 0;
-}
-
-function isDebug(env: Record<string, unknown>): boolean {
-  return env.SENTRY_DEBUG === "1";
 }
 
 /**
@@ -97,38 +94,24 @@ function buildMonitorConfig(
   return out;
 }
 
-/**
- * R04 — surface swallowed errors only when `SENTRY_DEBUG=1`.
- * The Error object reaches the log call's argument list (test asserts via
- * `expect.arrayContaining([expect.any(Error)])`).
- */
-function debugLog(env: Record<string, unknown>, msg: string, err: unknown): void {
-  if (isDebug(env)) {
-    // eslint-disable-next-line no-console
-    console.error(msg, err);
-  }
-}
-
 // ─── Public wrapper ───────────────────────────────────────────────────────────
 
 /**
  * withCronMonitor — wraps a generic `() => Promise<R>` thunk with Sentry Crons
- * heartbeats (in_progress → ok | error) for Pages Functions cron-like work.
+ * heartbeats via `Sentry.withMonitor` for Pages Functions cron-like work.
  *
  * Unlike the Worker variant, env is NOT ambient — Pages Functions receive env
  * via the request context, so the wrapper's returned function takes env as
  * its single argument and forwards control to the inner handler.
  *
- * Behaviour:
- *  - No-ops when `SENTRY_DSN` is unset (fail-safe per PLAN R02).
+ * Guarded Shape A (ADR-0029 / D-08):
+ *  - No-ops when `SENTRY_DSN` is unset (fail-safe per R02).
  *  - Slug resolves per D6 (explicit > env > auto-derive on handlerName).
- *  - `monitorConfig` (schedule + maxRuntime) is forwarded as Sentry's 2nd arg
- *    on the in_progress checkin only; subsequent ok/error checkins pass
- *    only the first arg (Sentry treats the monitor as already-configured).
- *  - SDK exceptions during checkin are caught and swallowed; opt-in
- *    `SENTRY_DEBUG=1` surfaces them via `console.error`.
- *  - Handler exceptions are re-thrown after the error checkin so the outer
- *    caller still observes them.
+ *  - `monitorConfig` (schedule + maxRuntime) forwarded as Sentry's 3rd arg.
+ *  - Pre-callback transport failure → falls back to unmonitored handler run
+ *    (cron always executes — Guarded Shape A guarantee).
+ *  - Post-callback errors (handler throw OR ok/error check-in transport) →
+ *    propagate to outer caller (no longer swallowed; SENTRY_DEBUG removed).
  */
 export function withCronMonitor<R>(
   handler: () => Promise<R>,
@@ -143,40 +126,25 @@ export function withCronMonitor<R>(
     const monitorSlug = resolveSlug(config, env);
     const monitorConfig = buildMonitorConfig(config);
 
-    // in_progress checkin — captures checkInId for the completion call.
-    let checkInId: string | undefined;
+    // Guarded Shape A (ADR-0029 / D-08):
+    // handlerStarted distinguishes pre-callback transport failure (fall back to
+    // unmonitored) from post-callback errors (propagate to caller).
+    let handlerStarted = false;
     try {
-      checkInId =
-        monitorConfig !== undefined
-          ? (captureCheckIn(
-              { monitorSlug, status: "in_progress" },
-              monitorConfig,
-            ) as string)
-          : (captureCheckIn({ monitorSlug, status: "in_progress" }) as string);
-    } catch (e) {
-      debugLog(env, "[withCronMonitor] in_progress checkin failed:", e);
-    }
-
-    try {
-      const result = await handler();
-      if (checkInId !== undefined) {
-        try {
-          // No monitorConfig on completion — only in_progress upserts.
-          captureCheckIn({ checkInId, monitorSlug, status: "ok" });
-        } catch (e) {
-          debugLog(env, "[withCronMonitor] ok checkin failed:", e);
-        }
-      }
-      return result;
+      return await Sentry.withMonitor(
+        monitorSlug,
+        () => {
+          handlerStarted = true;
+          return handler();
+        },
+        monitorConfig,
+      ) as R;
     } catch (err) {
-      if (checkInId !== undefined) {
-        try {
-          captureCheckIn({ checkInId, monitorSlug, status: "error" });
-        } catch (e) {
-          debugLog(env, "[withCronMonitor] error checkin failed:", e);
-        }
+      if (!handlerStarted) {
+        // Sentry transport failed before handler ran — fall back to unmonitored.
+        return handler();
       }
-      // Re-throw original — outer caller observes the original error.
+      // handler-thrown OR post-callback errors propagate to outer caller.
       throw err;
     }
   };

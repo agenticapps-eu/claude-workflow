@@ -31,10 +31,18 @@
 #       [--dry-run]                    # classify only; no writes
 #       [--project-dir <dir>]          # default: CWD
 #
+# D-07 (R-rev-5 HONEST REFRAME): on default refuse, recovery artifacts
+# (.observability-0019.patch + .gitignore entries) are written ONLY to DIRTY
+# roots (not clean roots). Clean roots are listed but not patched.
+# Pass --allow-partial (or set ALLOW_PARTIAL=1) to also emit patches for clean
+# roots (restores v0.6.0 "patches everywhere on refuse" behaviour).
+#
 # Exit codes:
 #   0  success: all eligible roots migrated (or idempotent no-op, or no wrapper)
-#   2  refused: >=1 hand-modified root. DEFAULT mode = ZERO writes to ANY root.
-#               --allow-partial mode  = clean roots applied, dirty skipped.
+#   2  refused: >=1 hand-modified root. DEFAULT mode = ZERO writes to CLEAN roots;
+#               DIRTY roots receive .observability-0019.patch for splice recovery.
+#               --allow-partial mode  = clean roots applied, dirty roots skipped;
+#               patches emitted to ALL roots for reference.
 #   3  pre-flight abort (wrong version / bad inputs) — ZERO writes.
 set -uo pipefail
 
@@ -42,9 +50,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ─── argument parsing ────────────────────────────────────────────────────────
 TEMPLATES_DIR=""
+# Save env value BEFORE overwriting so the D-07 env-var opt-in can read it.
+_ALLOW_PARTIAL_ENV="${ALLOW_PARTIAL:-}"
 ALLOW_PARTIAL=0
 DRY_RUN=0
 PROJECT_DIR="$PWD"
+PAUSE_SIGFILE=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -52,6 +63,23 @@ while [ $# -gt 0 ]; do
     --allow-partial) ALLOW_PARTIAL=1; shift ;;
     --dry-run)       DRY_RUN=1; shift ;;
     --project-dir)   PROJECT_DIR="$2"; shift 2 ;;
+    --pause-between-passes)
+      PAUSE_SIGFILE="$2"
+      # T-23-07 REWORKED (codex HIGH-2): ${TMPDIR:-/tmp} default + explicit allow-list prefix.
+      # Only two allow-listed patterns permitted — this flag is test-only; production must not use it.
+      _tmp="${TMPDIR:-/tmp}"
+      case "$PAUSE_SIGFILE" in
+        "$_tmp"/sigterm-test-*) : ;;
+        */migrations/test-fixtures/0019/*/sigterm-*) : ;;
+        *)
+          echo "migrate-0019: --pause-between-passes is a test-only flag with non-allow-listed path: $PAUSE_SIGFILE" >&2
+          echo "migrate-0019: allowed prefixes are \${TMPDIR:-/tmp}/sigterm-test-* or migrations/test-fixtures/0019/*/sigterm-*" >&2
+          exit 2
+          ;;
+      esac
+      echo "migrate-0019: WARNING — --pause-between-passes is a test-only flag; do not use in production" >&2
+      shift 2
+      ;;
     *) echo "migrate-0019: unknown arg: $1" >&2; exit 3 ;;
   esac
 done
@@ -74,9 +102,42 @@ cd "$PROJECT_DIR" || { echo "migrate-0019: cannot cd to $PROJECT_DIR" >&2; exit 
 
 SKILL_FILE=".claude/skills/agentic-apps-workflow/SKILL.md"
 
+# ─── SPLIT TRAP (T-23-05 + codex HIGH-2) ─────────────────────────────────────
+# EXIT runs silently on every exit (success + signal). Idempotent. NO warning.
+# INT  runs cleanup THEN exit 130 (signal-compatible).
+# TERM runs cleanup THEN exit 143 (signal-compatible).
+# Separate handlers prevent "cleanup" from appearing on normal successful exits,
+# which is the codex HIGH-2 KEY ASSERTION tested by run-tests.sh Case 2.
+_cleanup_fired=0
+_do_cleanup() {
+  [ "$_cleanup_fired" -eq 1 ] && return 0
+  _cleanup_fired=1
+  # Idempotent state teardown. NO env-var echo, NO partial-file dump (T-23-05).
+  [ -n "$PAUSE_SIGFILE" ] && [ -f "$PAUSE_SIGFILE" ] && rm -f "$PAUSE_SIGFILE" 2>/dev/null || true
+}
+on_exit()  { _do_cleanup; }           # silent on success AND on signal
+on_int()   { _do_cleanup; exit 130; } # SIGINT  → exit 130
+on_term()  { _do_cleanup; exit 143; } # SIGTERM → exit 143
+trap on_exit EXIT
+trap on_int  INT
+trap on_term TERM
+
 # ─── logging helpers (mirror 0017's prose tone) ──────────────────────────────
 info() { echo "migrate-0019: $*"; }
 warn() { echo "migrate-0019: $*" >&2; }
+
+# ─── D-07: ALLOW_PARTIAL env var opt-in ──────────────────────────────────────
+# CLI --allow-partial wins; env var is a convenience for automation scripts.
+# _ALLOW_PARTIAL_ENV was captured before arg parsing overwrote ALLOW_PARTIAL=0.
+# Supports ALLOW_PARTIAL=1, ALLOW_PARTIAL=true, ALLOW_PARTIAL=yes.
+if [ "$ALLOW_PARTIAL" -eq 0 ]; then
+  case "$_ALLOW_PARTIAL_ENV" in
+    1|true|yes)
+      ALLOW_PARTIAL=1
+      info "ALLOW_PARTIAL env var detected — treating as --allow-partial."
+      ;;
+  esac
+fi
 
 # ─── sha256 helper (portable BSD/GNU) ────────────────────────────────────────
 sha256_of() {
@@ -562,14 +623,23 @@ emit_refuse_artifacts() {
     warn "               (c) optionally splice .observability-0019.patch manually."
   done
 
-  # Also emit patches for the would-be-clean roots, so the operator has the
-  # full context even after the atomic refusal.
+  # D-07 (R-rev-5 HONEST REFRAME): default refuse no longer writes to CLEAN roots.
+  # DIRTY roots still receive .observability-0019.patch + .gitignore entries for splice recovery.
+  # --allow-partial (or ALLOW_PARTIAL=1 env) restores v0.6.0 "patches everywhere on refuse"
+  # for operators with existing manual-recovery automation.
   if [ ${#CLEAN_DIRS[@]} -gt 0 ]; then
-    warn "  would-be-clean roots (patches emitted for reference):"
-    for i in "${!CLEAN_DIRS[@]}"; do
-      warn "    CLEAN: ${CLEAN_DIRS[$i]}  (stack: ${CLEAN_STACKS[$i]})"
-      emit_refuse_artifacts_for "${CLEAN_DIRS[$i]}" "${CLEAN_STACKS[$i]}" "CLEAN-skipped"
-    done
+    if [ "$ALLOW_PARTIAL" -eq 1 ]; then
+      warn "  would-be-clean roots (patches emitted under --allow-partial for reference):"
+      for i in "${!CLEAN_DIRS[@]}"; do
+        warn "    CLEAN: ${CLEAN_DIRS[$i]}  (stack: ${CLEAN_STACKS[$i]})"
+        emit_refuse_artifacts_for "${CLEAN_DIRS[$i]}" "${CLEAN_STACKS[$i]}" "CLEAN-skipped"
+      done
+    else
+      info "  would-be-clean roots (patches NOT emitted by default; pass --allow-partial or set ALLOW_PARTIAL=1 to emit patches for clean roots too):"
+      for i in "${!CLEAN_DIRS[@]}"; do
+        info "    CLEAN: ${CLEAN_DIRS[$i]}  (stack: ${CLEAN_STACKS[$i]})"
+      done
+    fi
   fi
 }
 
@@ -587,6 +657,20 @@ if [ ${#DIRTY_DIRS[@]} -gt 0 ]; then
     exit 2
   fi
   warn "--allow-partial — migrating clean roots, skipping dirty ones."
+fi
+
+# ─── pass-boundary signal-file rendezvous (test-only) ────────────────────────
+# When --pause-between-passes is set, create the signal file to wake the test,
+# then spin-wait until it is removed (or 30s elapses). A SIGTERM delivered during
+# this wait triggers on_term → exit 143. This is the only safe interrupt point
+# between the two passes: pass 1 (classify) is read-only; pass 2 (apply) must
+# not be interrupted mid-write.
+if [ -n "$PAUSE_SIGFILE" ]; then
+  : > "$PAUSE_SIGFILE"
+  for _pbi in $(seq 1 300); do
+    [ ! -f "$PAUSE_SIGFILE" ] && break
+    sleep 0.1
+  done
 fi
 
 # ─── pass 2: apply (R08 binding — only reached if all-clean OR --allow-partial) ──
@@ -718,7 +802,10 @@ if [ ${#DIRTY_DIRS[@]} -gt 0 ]; then
   warn "completed with ${#DIRTY_DIRS[@]} dirty root(s) skipped (--allow-partial)."
   printf '  skipped (hand-modified): %s\n' "${DIRTY_DIRS[@]}" >&2
 fi
-if [ ${#DIRTY_DIRS[@]} -gt 0 ] || [ ${#APPLY_FAILED[@]} -gt 0 ]; then
+if [ ${#APPLY_FAILED[@]} -gt 0 ]; then
   exit 2
 fi
+# With --allow-partial, dirty roots are expected and skipped — not a failure.
+# In default mode, DIRTY_DIRS > 0 means the all-clean gate above already exited 2;
+# reaching here means ALLOW_PARTIAL=1, so dirty roots are intentionally skipped.
 exit 0
