@@ -68,6 +68,21 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# ─── SPLIT TRAP (codex HIGH-2 / R-rev-2) ─────────────────────────────────────
+# Mirrors the split-trap shape in migrate-0019-sentry-crons-and-healthz.sh.
+# EXIT is silent (no cleanup output on normal harness exit).
+# INT → exit 130; TERM → exit 143.
+_runtests_cleanup_fired=0
+_runtests_do_cleanup() {
+  [ "$_runtests_cleanup_fired" -eq 1 ] && return 0
+  _runtests_cleanup_fired=1
+  # harness-level cleanup (intentionally empty — no shared state to tear down)
+  :
+}
+trap '_runtests_do_cleanup'        EXIT
+trap '_runtests_do_cleanup; exit 130' INT
+trap '_runtests_do_cleanup; exit 143' TERM
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
