@@ -266,6 +266,7 @@ run_ts_cloudflare_pages() {
   # Phase 24 — recordLLMResponseMeta helper (T24.1.2). Test wired in RED;
   # impl in GREEN. Byte-identical to worker stack.
   substitute_tokens "$SRC/llm-response-meta.test.ts" "$OBS_DIR/llm-response-meta.test.ts"
+  substitute_tokens "$SRC/llm-response-meta.ts"      "$OBS_DIR/llm-response-meta.ts"
 
   # destinations/ sub-dir (role-based registry + adapters, phase 21).
   if [[ -d "$SRC/destinations" ]]; then
