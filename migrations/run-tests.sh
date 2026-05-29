@@ -2202,6 +2202,27 @@ if [ -z "$FILTER" ] || [ "$FILTER" = "destinations" ]; then
   test_meta_destinations_consistency
 fi
 
+if [ -z "$FILTER" ] || [ "$FILTER" = "test-skill-md-version-matches-latest-migration-to-version" ]; then
+  # Function exists after Task 1.3 lands. Guard with declare -F so this commit doesn't
+  # try to run it before Task 1.3 defines it. Increments SKIP when not yet defined
+  # so the harness exits 0 rather than "NO TESTS RAN" during the Wave 0 → Wave 1 window.
+  if declare -F test_skill_md_version_matches_latest_migration_to_version >/dev/null 2>&1; then
+    test_skill_md_version_matches_latest_migration_to_version
+  elif [ -n "$FILTER" ]; then
+    echo "${YELLOW}SKIP${RESET}: test-skill-md-version-matches-latest-migration-to-version (function not yet defined)"
+    SKIP=$((SKIP+1))
+  fi
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "test-sigterm-mid-apply-preserves-state" ]; then
+  if declare -F test_sigterm_mid_apply_preserves_state >/dev/null 2>&1; then
+    test_sigterm_mid_apply_preserves_state
+  elif [ -n "$FILTER" ]; then
+    echo "${YELLOW}SKIP${RESET}: test-sigterm-mid-apply-preserves-state (function not yet defined)"
+    SKIP=$((SKIP+1))
+  fi
+fi
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Summary
 # ─────────────────────────────────────────────────────────────────────────────
