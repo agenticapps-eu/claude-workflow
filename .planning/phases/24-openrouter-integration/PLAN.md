@@ -15,9 +15,17 @@ files_modified:
   - add-observability/openrouter-integration.md
   - add-observability/templates/openrouter-monitor/package.json
   - add-observability/templates/openrouter-monitor/wrangler.toml
+  - add-observability/templates/openrouter-monitor/tsconfig.json
   - add-observability/templates/openrouter-monitor/README.md
   - add-observability/templates/openrouter-monitor/src/index.ts
-  - add-observability/templates/openrouter-monitor/src/index.test.ts
+  - add-observability/templates/openrouter-monitor/src/check-credit.ts
+  - add-observability/templates/openrouter-monitor/src/check-credit.test.ts
+  - add-observability/templates/openrouter-monitor/src/observability/index.ts
+  - add-observability/templates/openrouter-monitor/src/observability/middleware.ts
+  - add-observability/templates/openrouter-monitor/src/observability/cron-monitor.ts
+  - add-observability/templates/openrouter-monitor/src/observability/destinations/index.ts
+  - add-observability/templates/openrouter-monitor/src/observability/destinations/sentry.ts
+  - add-observability/templates/openrouter-monitor/src/observability/destinations/axiom.ts
   - add-observability/init/INIT.md
   - add-observability/SKILL.md
   - add-observability/CHANGELOG.md
@@ -30,7 +38,7 @@ must_haves:
   truths:
     - "ADR-0030 exists at docs/decisions/0030-openrouter-integration-sdk-first.md with Context / Decision / Alternatives Rejected (including the dropped raw-fetch wrapLLMCall + bundled pricing.json + Anthropic-specific helper) / Consequences sections; links to ADR-0014 and ADR-0029; AUTHORED IN WAVE 0 so executors in Wave 1+ can cite it."
     - "Helper file llm-response-meta.ts ships in 3 TS stacks (ts-cloudflare-worker, ts-cloudflare-pages, ts-supabase-edge). NOT in ts-react-vite (browser must not hold OpenRouter keys) and NOT in go-fly-http (no Go LLM consumer in scope)."
-    - "Each stack's llm-response-meta.ts: (a) imports Envelope type from ./lib-observability (NOT from ./index — that path does not exist); (b) declares LogEventFn = (envelope: Envelope) => void locally; (c) exports recordLLMResponseMeta(logEvent, raw, usage, ctx) — dependency-injected logEvent per §10.6 destination-independence."
+    - "Each stack's llm-response-meta.ts: (a) imports Envelope type from the stack's canonical wrapper module per CONTEXT D-04a — worker/pages use `./index` (matches harness `lib-observability.ts → index.ts` rename + matches `meta.yaml target.wrapper_path: src/lib/observability/index.ts` for customer scaffolds); supabase-edge uses `./index.ts` (Deno explicit-extension; supabase source dir already has `index.ts` directly); (b) declares LogEventFn = (envelope: Envelope) => void locally (LogEventFn is NOT exported by lib-observability.ts); (c) exports recordLLMResponseMeta(logEvent, raw, usage, ctx) — dependency-injected logEvent per §10.6 destination-independence."
     - "recordLLMResponseMeta emits envelope { event: 'llm.call_meta', severity: 'info', attrs: { model, service, rate_remaining, rate_reset, cached_tokens, prompt_tokens, completion_tokens, cache_ratio } }."
     - "cache_ratio computation uses an explicit divide-by-zero guard: prompt > 0 ? cached / prompt : 0. (NOT a JS truthy check; truthy works at runtime but explicit guard is the documented contract.)"
     - "service defaults to 'openrouter' when ctx.service is undefined."
@@ -42,9 +50,14 @@ must_haves:
     - "Runbook PII callout names callbot (PHI), cparx (financial), and fxsa (market signal — lower risk) as concrete examples + lists policy.md as the consent gate."
     - "Runbook section 1 includes a context7-verified Sentry import path for the current @sentry/cloudflare version. Other Sentry SDK packages (@sentry/node, @sentry/deno) are noted as 'see your SDK's docs — the integration name is the same'."
     - "add-observability/templates/openrouter-monitor/ exists as a standalone scaffold (not a subcommand): package.json (name openrouter-monitor, scripts test/deploy), wrangler.toml (cron '*/15 * * * *', main src/index.ts, kv_namespaces omitted), README.md, src/index.ts, src/index.test.ts."
-    - "Monitor src/index.ts: (a) exports default { scheduled }; (b) scheduled handler is wrapped with withCronMonitor; (c) GETs https://openrouter.ai/api/v1/key with Authorization: Bearer ${env.OPENROUTER_API_KEY}; (d) parses spend + cap from response body; (e) emits logEvent({event:'openrouter.credit_pulse', severity:'info', attrs:{used, limit, used_ratio}}) ALWAYS; (f) emits logEvent({event:'openrouter.credit_low', severity:'warning'}) when used_ratio >= WARNING_RATIO and < CRITICAL_RATIO; (g) captureError(new OpenRouterBudgetCriticalError(used_ratio)) when used_ratio >= CRITICAL_RATIO; (h) captureError(new OpenRouterHealthcheckFailedError(status)) when /api/v1/key returns non-2xx."
+    - "Monitor scaffold uses the FULL wrapper-composition chain: `export default withSentry((env) => ({ dsn: env.SENTRY_DSN, ..., sendDefaultPii: false }), { scheduled: withObservabilityScheduled(withCronMonitor(checkCredit, { monitorSlug })) })`. The composition is mandatory — `withObservabilityScheduled` calls `init()` which configures the destinations registry; without it, `logEvent`/`captureError` no-op silently (codex HIGH-3 fix). The bundled `observability/` subtree (`index.ts` + `middleware.ts` + `cron-monitor.ts` + `destinations/*`) ships with the scaffold per D-09 (codex HIGH-2 fix)."
+    - "Monitor handler `check-credit.ts`: (a) GETs https://openrouter.ai/api/v1/key with Authorization: Bearer ${env.OPENROUTER_API_KEY}; (b) parses spend + cap from response body (`data.usage` + `data.limit`; `limit: null` for unlimited keys → used_ratio = 0, pulse only); (c) emits `logEvent({event:'openrouter.credit_pulse', severity:'info', attrs:{used, limit, used_ratio}})` ALWAYS; (d) emits `logEvent({event:'openrouter.credit_low', severity:'warn', attrs:{...}})` when `used_ratio >= WARNING_RATIO` and `< CRITICAL_RATIO` — NOTE the literal `'warn'` not `'warning'` (codex HIGH-4 fix; matches `Severity = 'debug'|'info'|'warn'|'error'|'fatal'` union in lib-observability.ts:27); (e) `captureError(new OpenRouterBudgetCriticalError(used_ratio), {...})` when `used_ratio >= CRITICAL_RATIO`; (f) `captureError(new OpenRouterHealthcheckFailedError(status), {...})` when `/api/v1/key` returns non-2xx, fetch throws (network error → status 0), or `res.json()` throws (malformed body → status -1); (g) on misconfigured thresholds (`WARNING_RATIO >= CRITICAL_RATIO`) emits `logEvent({event:'openrouter.misconfigured_thresholds', severity:'warn', ...})` and falls back to defaults 0.85/0.95."
     - "Monitor env defaults: OPENROUTER_WARNING_RATIO = 0.85 (parsed as float, falls back if missing/NaN); OPENROUTER_CRITICAL_RATIO = 0.95 (same)."
-    - "Monitor src/index.test.ts ships ≥6 fixtures: (a) under WARNING — pulse only; (b) at WARNING (== 0.85) — pulse + credit_low warn; (c) at CRITICAL (== 0.95) — pulse + BudgetCriticalError captured; (d) 401 from /api/v1/key — HealthcheckFailedError(401); (e) 500 from /api/v1/key — HealthcheckFailedError(500); (f) withCronMonitor fail-safe — handler still runs when SENTRY_DSN unconfigured."
+    - "Monitor src/check-credit.test.ts ships 12 fixtures (CONTEXT D-15 revised): (1) under WARNING — pulse only; (2) at WARNING exactly (== 0.85) — pulse + credit_low warn; (3) between WARNING and CRITICAL (0.90) — pulse + credit_low warn; (4) at CRITICAL exactly (== 0.95) — pulse + OpenRouterBudgetCriticalError captured; (5) 401 — HealthcheckFailedError(401); (6) 500 — HealthcheckFailedError(500); (7) 429 rate-limited — HealthcheckFailedError(429); (8) network throw (fetch rejects) — HealthcheckFailedError(0); (9) malformed JSON body — HealthcheckFailedError(-1); (10) limit:null (OpenRouter unlimited-key shape) — used_ratio = 0, pulse only, no warn/critical; (11) inverted thresholds (WARNING_RATIO=0.95, CRITICAL_RATIO=0.85) — misconfig warn + fallback to defaults; (12) invalid env vars (NaN/negative/>1) — fallback to default 0.85. withCronMonitor fail-safe (DSN unset → handler still runs per ADR-0029 Guarded Shape A) is covered by the existing cron-monitor.test.ts contract suite shipped in Phase 23 — NOT re-tested here."
+    - "Monitor scaffold package.json pins '@sentry/cloudflare': '^10.2.0' (D-17 — AI Monitoring minimum). Runbook §1 + INIT.md §5.5 detection both lead with the version prerequisite."
+    - "Monitor README.md has a 'Security & Secret Lifecycle' subsection (D-18) covering: keys:read scope (T1 mitigation), per-environment keys, 90-day rotation cadence with procedure, accidental-commit prevention (.gitignore + secret-scan hook), leak-response runbook, operator-offboarding rotation."
+    - "Runbook §2 (PII GATE) includes the synthetic / non-user data carve-out (D-19): `recordInputs:true`/`recordOutputs:true` are allowed ONLY for non-user/synthetic/approved-eval-dataset traces with written policy.md approval. Concrete acceptable examples listed; non-acceptable examples explicit (real user prompts, PHI, financial PII, chat-history)."
+    - "INIT.md §5.5 detection grep broadened per D-13: matches package.json (or workspace package.jsons) for 'openai' or '@anthropic-ai/sdk' AND any of (i) *.ts/*.tsx/*.js/*.mts file containing 'openrouter.ai' (case-insensitive); (ii) wrangler.toml/wrangler.jsonc [env.production.vars] containing OPENROUTER_API_KEY; (iii) .dev.vars/.env.example setting OPENROUTER_API_KEY. Action (a) checks installed @sentry/* version >= 10.2.0 before offering integration insertion."
     - "Monitor README.md leads with 'Use a keys:read-scoped OpenRouter API key' callout (not the generation key) and documents threshold tuning + cron tuning + Sentry alert wiring."
     - "Monitor uses NO second Sentry.init — emits via the project's standard wrapper (logEvent + captureError from the destinations registry). Monitor's src/index.ts has zero direct @sentry/cloudflare imports beyond what withCronMonitor itself transitively pulls."
     - "INIT.md Phase 5 has a new §'Optional: LLM observability' subsection that: (a) runs detection grep (package.json contains 'openai' or '@anthropic-ai/sdk' AND src/ contains 'openrouter.ai'); (b) offers 3 consent-gated actions on match — (i) insert openAIIntegration into existing Sentry init, (ii) copy llm-response-meta.ts, (iii) skip; (c) defaults to (iii) on --yes runs (consent gate 4 matches the existing gate-1/2/3 convention)."
@@ -83,9 +96,15 @@ must_haves:
     - path: "add-observability/templates/openrouter-monitor/src/index.ts"
       provides: "Scheduled handler — keys-balance check, threshold-gated alerts, withCronMonitor-wrapped."
       contains: "withCronMonitor"
-    - path: "add-observability/templates/openrouter-monitor/src/index.test.ts"
-      provides: "6+ fixture cases (under/warning/critical/401/500/fail-safe)."
+    - path: "add-observability/templates/openrouter-monitor/src/check-credit.ts"
+      provides: "Handler logic — separated from composition for testability. Imports logEvent/captureError from ./observability (bundled wrapper)."
       contains: "OpenRouterBudgetCriticalError"
+    - path: "add-observability/templates/openrouter-monitor/src/check-credit.test.ts"
+      provides: "12 fixture cases per CONTEXT D-15 (under/at-warning/between/at-critical/401/500/429/network/malformed/limit-null/inverted/invalid-env)."
+      contains: "OpenRouterBudgetCriticalError"
+    - path: "add-observability/templates/openrouter-monitor/src/observability/"
+      provides: "Bundled wrapper subtree (copied from ts-cloudflare-worker template). index.ts + middleware.ts + cron-monitor.ts + destinations/*. Required for withObservabilityScheduled to init() the destinations registry (codex HIGH-2 fix)."
+      contains: "withObservabilityScheduled"
     - path: "add-observability/templates/openrouter-monitor/README.md"
       provides: "Standalone-scaffold deploy guide + keys:read scope warning + threshold tuning."
       contains: "keys:read"
@@ -262,7 +281,7 @@ must_haves:
     //   const { data, response } = await client.chat.completions.create(req).withResponse();
     //   recordLLMResponseMeta(logEvent, response, data.usage, { model: req.model });
 
-    import type { Envelope } from "./lib-observability";
+    import type { Envelope } from "./index";
 
     export type LogEventFn = (envelope: Envelope) => void;
 
@@ -332,7 +351,7 @@ must_haves:
     - Task 1.1 artifacts (helper + tests) — file shape is the SAME across stacks (per-stack-template-duplication)
   </read_first>
   <action>
-    Mirror Task 1.1 verbatim, into `add-observability/templates/ts-cloudflare-pages/`. The helper file is byte-identical to ts-cloudflare-worker except for the relative import (still `./lib-observability` — both stacks use the same name). The test file is byte-identical.
+    Mirror Task 1.1 verbatim, into `add-observability/templates/ts-cloudflare-pages/`. The helper file is byte-identical to ts-cloudflare-worker — same `./index` import (both stacks materialise `lib-observability.ts` as `index.ts`). The test file is byte-identical.
 
     RED commit: `test(24): RED — recordLLMResponseMeta tests (ts-cloudflare-pages)`.
     GREEN commit: `feat(24): GREEN — recordLLMResponseMeta (ts-cloudflare-pages)`.
@@ -361,9 +380,44 @@ must_haves:
     - Task 1.1 artifacts (helper file shape)
   </read_first>
   <action>
-    Mirror Task 1.1 into `add-observability/templates/ts-supabase-edge/`. The helper file is byte-identical to ts-cloudflare-worker. The test file should follow the existing Deno test convention used by `lib-observability.test.ts` in this stack (likely `Deno.test(...)` instead of Vitest's `it(...)` — verify by reading the existing test file first).
+    Per-stack divergence per CONTEXT D-04a:
 
-    If the Deno harness uses identical Vitest-compatible `it()` (some stacks do via `npm:` imports), keep the test file byte-identical to 1.1's. Otherwise rewrite the test cases against Deno's test API while preserving the 7 cases and assertions.
+    **`llm-response-meta.ts` (Deno-style import — supabase-edge uses `./index.ts` not `./index`)**:
+
+    ```typescript
+    import type { Envelope } from "./index.ts";  // Deno explicit-extension; matches existing index.test.ts:24 import style
+    // rest of the helper body is byte-identical to Task 1.1
+    ```
+
+    The supabase-edge source dir already has `index.ts` (no harness rename — source = materialised name). Existing files like `cron-monitor.ts` and `axiom.test.ts` use `npm:@sentry/deno@^8.0.0` / `https://deno.land/std@.../assert/mod.ts` import styles — Deno-native imports.
+
+    **`llm-response-meta.test.ts` (Deno test runner — `Deno.test(...)` not `describe/it`)**:
+
+    Verified via `add-observability/templates/ts-supabase-edge/index.test.ts:14` — the supabase-edge harness uses Deno's built-in test runner (`deno test -A --no-check` in run-template-tests.sh:308), not Vitest. Use the existing Deno test convention from `index.test.ts`:
+
+    ```typescript
+    import { assertEquals, assertNotEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+    import { recordLLMResponseMeta } from "./llm-response-meta.ts";
+
+    Deno.test("recordLLMResponseMeta — cache hit produces correct cache_ratio", () => {
+      const captured: Array<...> = [];
+      const logEvent = (env: ...) => captured.push(env);
+      const response = new Response("", { headers: { "x-ratelimit-remaining": "42", "x-ratelimit-reset": "1700000000" } });
+      recordLLMResponseMeta(logEvent, response, {
+        prompt_tokens: 1000,
+        completion_tokens: 200,
+        prompt_tokens_details: { cached_tokens: 800 },
+      }, { model: "anthropic/claude-3.5-sonnet" });
+      assertEquals(captured.length, 1);
+      assertEquals(captured[0].attrs.cache_ratio, 0.8);
+    });
+
+    // ...repeat for the other 6 fixtures from Task 1.1 (7 total per CONTEXT D-15)
+    ```
+
+    All 7 fixtures from Task 1.1 are mirrored, just rewritten against the Deno test API + std/assert.
+
+    **Harness wiring** (CONTEXT D-15): supabase-edge harness already uses glob `for f in "$SRC"/*.test.ts` (run-template-tests.sh:472) to copy test files — `llm-response-meta.test.ts` is auto-picked up. But the `.ts` impl needs an explicit substitute_tokens line. RED commit creates only the `.test.ts` (auto-picked-up; deno test fails with "Module not found './llm-response-meta.ts'"). GREEN commit creates the `.ts` impl AND adds `substitute_tokens "$SRC/llm-response-meta.ts" "$OBS_DIR/llm-response-meta.ts"` in the supabase-edge block.
 
     RED commit: `test(24): RED — recordLLMResponseMeta tests (ts-supabase-edge)`.
     GREEN commit: `feat(24): GREEN — recordLLMResponseMeta (ts-supabase-edge)`.
@@ -466,13 +520,21 @@ must_haves:
 </task>
 
 <task type="auto" tdd="true">
-  <name>Task 2.2 (Wave 2): openrouter-monitor Worker scaffold + tests</name>
+  <name>Task 2.2 (Wave 2): openrouter-monitor Worker scaffold + tests (REV 2 — full composition + bundled subtree)</name>
   <files>
     add-observability/templates/openrouter-monitor/package.json
     add-observability/templates/openrouter-monitor/wrangler.toml
+    add-observability/templates/openrouter-monitor/tsconfig.json
     add-observability/templates/openrouter-monitor/README.md
     add-observability/templates/openrouter-monitor/src/index.ts
-    add-observability/templates/openrouter-monitor/src/index.test.ts
+    add-observability/templates/openrouter-monitor/src/check-credit.ts
+    add-observability/templates/openrouter-monitor/src/check-credit.test.ts
+    add-observability/templates/openrouter-monitor/src/observability/index.ts
+    add-observability/templates/openrouter-monitor/src/observability/middleware.ts
+    add-observability/templates/openrouter-monitor/src/observability/cron-monitor.ts
+    add-observability/templates/openrouter-monitor/src/observability/destinations/index.ts
+    add-observability/templates/openrouter-monitor/src/observability/destinations/sentry.ts
+    add-observability/templates/openrouter-monitor/src/observability/destinations/axiom.ts
   </files>
   <depends_on>Tasks 0.1</depends_on>
   <read_first>
@@ -485,7 +547,7 @@ must_haves:
   <action>
     Create `add-observability/templates/openrouter-monitor/` with five files.
 
-    **`package.json`** (minimal):
+    **`package.json`** — `@sentry/cloudflare` pinned `^10.2.0` per D-17 (AI Monitoring minimum):
     ```json
     {
       "name": "openrouter-monitor",
@@ -494,15 +556,32 @@ must_haves:
       "type": "module",
       "scripts": {
         "test": "vitest run",
-        "deploy": "wrangler deploy"
+        "deploy": "wrangler deploy",
+        "typecheck": "tsc --noEmit"
       },
       "dependencies": {
-        "@sentry/cloudflare": "^9.0.0"
+        "@sentry/cloudflare": "^10.2.0"
       },
       "devDependencies": {
         "@cloudflare/workers-types": "^4.20240909.0",
+        "typescript": "^5.4.0",
         "vitest": "^2.0.0",
         "wrangler": "^3.0.0"
+      }
+    }
+    ```
+
+    **`tsconfig.json`** — standard Workers TS config:
+    ```json
+    {
+      "compilerOptions": {
+        "target": "ES2022",
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "strict": true,
+        "skipLibCheck": true,
+        "types": ["@cloudflare/workers-types"],
+        "lib": ["ES2022"]
       }
     }
     ```
@@ -526,28 +605,108 @@ must_haves:
     #   OPENROUTER_CRITICAL_RATIO    — defaults to 0.95
     ```
 
-    **`README.md`**:
-    Leads with:
+    **`README.md`** — leads with the security callout, then ships a "Security & Secret Lifecycle" subsection per D-18:
 
-    > ⚠️ **Use a keys:read-scoped OpenRouter API key** — never the generation key. A leaked generation key would burn the org's budget cap.
+    > ⚠️ **Use a keys:read-scoped OpenRouter API key** — never the generation key. A leaked generation key would burn the org's budget cap within minutes.
 
-    Sections: Install · Configure (secrets table + ratio env vars) · Deploy (`wrangler deploy`) · Tune (cron frequency · ratio thresholds · Sentry alert wiring on `OpenRouterBudgetCriticalError`) · Fork into a monorepo · Troubleshooting (failed healthcheck = `OpenRouterHealthcheckFailedError(status)`).
+    Sections (in order):
+    1. **Install** — `npm install` + Sentry SDK 10.2.0+ note (D-17).
+    2. **Configure** — secrets table (OPENROUTER_API_KEY, SENTRY_DSN, AXIOM_*) + ratio env vars (OPENROUTER_WARNING_RATIO=0.85, OPENROUTER_CRITICAL_RATIO=0.95) + `wrangler secret put` workflow.
+    3. **Deploy** — `wrangler deploy`; verify first run; check `wrangler tail` for `openrouter.credit_pulse` events.
+    4. **Tune** — cron frequency (default `*/15 * * * *`); ratio thresholds (project-specific); Sentry alert wiring on `OpenRouterBudgetCriticalError` (issue rule → notification channel); Axiom dashboard wiring on `openrouter.credit_pulse` time-series.
+    5. **Security & Secret Lifecycle** (D-18):
+       - **Scope**: `keys:read` ONLY. Why: a `keys:read` leak exposes spend metadata; a generation-key leak burns budget cap. Cost of containment = orders of magnitude lower with read-only scope.
+       - **Per-environment**: separate `OPENROUTER_API_KEY_DEV` / `OPENROUTER_API_KEY_PROD` (or per-stack `wrangler secret put` bindings on different Worker names). A dev-env leak must NOT expose prod metadata.
+       - **Rotation**: 90-day cadence. Procedure: (a) create new `keys:read` key in OpenRouter dashboard; (b) `wrangler secret put OPENROUTER_API_KEY` (new value); (c) verify next scheduled run via `wrangler tail` shows `credit_pulse` with the new key working; (d) revoke old key in OpenRouter dashboard. Downtime: ≤5 min.
+       - **Accidental commit prevention**: `.gitignore` covers `.dev.vars`, `*.env`, `*.env.local`; `wrangler.toml` declares secrets only as **comments** (the actual value goes via `wrangler secret put`, never in source). Recommended pre-commit hook: `gitleaks detect` or `trufflehog filesystem .` scanning for OpenRouter key prefix `sk-or-v1-`.
+       - **Leak response runbook**: (1) revoke the leaked key in OpenRouter dashboard FIRST (every minute = budget burn risk); (2) rotate per the rotation procedure above; (3) audit `wrangler tail` history for unexpected credit_pulse origins; (4) file a security incident report; (5) post-mortem.
+       - **Operator offboarding**: when an operator with deploy access leaves, rotate the key (their shell history, clipboard, 1Password vault may retain the value).
+    6. **Fork into a monorepo** — copy the entire `openrouter-monitor/` dir into your repo at a path of your choosing; update `wrangler.toml`'s `name` field; the bundled `src/observability/` subtree is self-contained (no cross-package imports). If you already have an observability wrapper from your main app, replace the bundled subtree with a symlink/import to your existing one.
+    7. **Troubleshooting**:
+       - No events firing: check `wrangler tail`. If you see nothing on the cron trigger, verify `SENTRY_DSN` is set (without it, `init()` no-ops the registry and `logEvent` silently drops). The healthz of the monitor itself can be checked by inspecting Sentry's monitor for `openrouter-credit-check` slug (Guarded Shape A — ADR-0029).
+       - `OpenRouterHealthcheckFailedError` with `status: 0` = network failure (DNS, TLS, OpenRouter outage). With `status: -1` = malformed body (API contract changed; check OpenRouter status page).
+       - `OpenRouterBudgetCriticalError` firing but you think it shouldn't: check `wrangler tail` for the latest `credit_pulse` event — `used_ratio` is the source of truth.
 
-    **`src/index.ts`** (RED first — write `src/index.test.ts` before this):
+    **Bundle the observability subtree FIRST** (codex HIGH-2 fix). Copy these files verbatim from `add-observability/templates/ts-cloudflare-worker/` into the scaffold (no rename — the source-tree `lib-observability.ts` materialises as `observability/index.ts` in the scaffold since the scaffold is the "materialised view" of a customer project):
+
+    - `lib-observability.ts` → `src/observability/index.ts`
+    - `middleware.ts` → `src/observability/middleware.ts`
+    - `cron-monitor.ts` → `src/observability/cron-monitor.ts`
+    - `destinations/index.ts` + `destinations/sentry.ts` + `destinations/axiom.ts` → `src/observability/destinations/*`
+
+    These are the canonical Phase 22/23 files. The monitor does NOT modify them; it CONSUMES them.
+
+    **`src/index.ts`** — entry point with FULL composition chain (codex HIGH-3 fix):
 
     ```typescript
     // SPDX-License-Identifier: MIT
     //
-    // OpenRouter credit-check Worker — polls /api/v1/key every 15 min,
-    // emits credit_pulse always, credit_low warn at >= WARNING_RATIO,
-    // captureError(OpenRouterBudgetCriticalError) at >= CRITICAL_RATIO.
-    // Wrapped with withCronMonitor (ADR-0029) — monitor has its own heartbeat.
+    // OpenRouter credit-check Worker — entry point.
+    // Composition chain (REQUIRED — see ADR-0014, ADR-0029, ADR-0030):
     //
-    // Architecture: ADR-0030.
-    // Runbook: add-observability/openrouter-integration.md
+    //   withSentry(env)(withObservabilityScheduled(withCronMonitor(checkCredit, ...)))
+    //
+    //   withSentry(env)                    — outermost: Sentry.init(env.SENTRY_DSN, ...)
+    //   withObservabilityScheduled(...)    — calls init(env, ctx) → configures destinations
+    //                                        registry; without this, logEvent/captureError
+    //                                        no-op SILENTLY.
+    //   withCronMonitor(checkCredit, ...)  — Sentry Crons heartbeat (Guarded Shape A).
+    //   checkCredit                        — the handler (see ./check-credit).
+    //
+    // Architecture: ADR-0030. Runbook: add-observability/openrouter-integration.md
 
-    import { withCronMonitor } from "./cron-monitor";
-    import { logEvent, captureError } from "./lib-observability";
+    import { withSentry } from "@sentry/cloudflare";
+    import { withObservabilityScheduled } from "./observability/middleware";
+    import { withCronMonitor } from "./observability/cron-monitor";
+    import { checkCredit } from "./check-credit";
+
+    interface Env {
+      OPENROUTER_API_KEY: string;
+      OPENROUTER_WARNING_RATIO?: string;
+      OPENROUTER_CRITICAL_RATIO?: string;
+      SENTRY_DSN: string;
+      DEPLOY_ENV?: string;
+      SERVICE_NAME?: string;
+    }
+
+    export default withSentry(
+      (env: Env) => ({
+        dsn: env.SENTRY_DSN,
+        environment: env.DEPLOY_ENV ?? "production",
+        release: env.SERVICE_NAME ?? "openrouter-monitor",
+        tracesSampleRate: 0.1,
+        sendDefaultPii: false,
+        // NOTE: openAIIntegration NOT added here — the monitor makes NO LLM calls.
+        // The Sentry.init is solely so logEvent/captureError emit through the
+        // registry (which withObservabilityScheduled configures via init()).
+      }),
+      {
+        scheduled: withObservabilityScheduled(
+          withCronMonitor(checkCredit, {
+            monitorSlug: "openrouter-credit-check",
+            handlerName: "scheduled",
+          }),
+        ),
+      },
+    );
+    ```
+
+    **`src/check-credit.ts`** — handler logic, separated for testability (no `Sentry.init`, no `withSentry`/`withObservabilityScheduled`/`withCronMonitor` — those are wired in `index.ts`):
+
+    ```typescript
+    // SPDX-License-Identifier: MIT
+    //
+    // OpenRouter credit-check handler. Polls /api/v1/key, emits credit_pulse
+    // always, credit_low warn at >= WARNING_RATIO, BudgetCriticalError at
+    // >= CRITICAL_RATIO, HealthcheckFailedError on transport/parse failure.
+    //
+    // §10.6 destination-independence: this handler has ZERO direct Sentry
+    // SDK calls. All emissions go through logEvent/captureError from the
+    // bundled wrapper (which dispatches through the destinations registry).
+    //
+    // ADR-0030.
+
+    import { logEvent, captureError } from "./observability";
 
     export class OpenRouterBudgetCriticalError extends Error {
       constructor(public readonly used_ratio: number) {
@@ -557,8 +716,12 @@ must_haves:
     }
 
     export class OpenRouterHealthcheckFailedError extends Error {
-      constructor(public readonly status: number) {
-        super(`OpenRouter /api/v1/key returned ${status}`);
+      constructor(
+        public readonly status: number,
+        public readonly cause_kind: "http" | "network" | "parse" = "http",
+      ) {
+        const kindLabel = cause_kind === "network" ? "network failure" : cause_kind === "parse" ? "malformed body" : `HTTP ${status}`;
+        super(`OpenRouter /api/v1/key healthcheck failed: ${kindLabel}`);
         this.name = "OpenRouterHealthcheckFailedError";
       }
     }
@@ -567,38 +730,80 @@ must_haves:
       OPENROUTER_API_KEY: string;
       OPENROUTER_WARNING_RATIO?: string;
       OPENROUTER_CRITICAL_RATIO?: string;
-      SENTRY_DSN?: string;
     }
 
     const DEFAULT_WARNING_RATIO = 0.85;
     const DEFAULT_CRITICAL_RATIO = 0.95;
 
     function parseRatio(raw: string | undefined, fallback: number): number {
-      if (!raw) return fallback;
+      if (raw === undefined || raw === "") return fallback;
       const n = parseFloat(raw);
       return Number.isFinite(n) && n >= 0 && n <= 1 ? n : fallback;
     }
 
-    async function checkCredit(_controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
-      const warningRatio = parseRatio(env.OPENROUTER_WARNING_RATIO, DEFAULT_WARNING_RATIO);
-      const criticalRatio = parseRatio(env.OPENROUTER_CRITICAL_RATIO, DEFAULT_CRITICAL_RATIO);
+    export async function checkCredit(
+      _controller: ScheduledController,
+      env: Env,
+      _ctx: ExecutionContext,
+    ): Promise<void> {
+      let warningRatio = parseRatio(env.OPENROUTER_WARNING_RATIO, DEFAULT_WARNING_RATIO);
+      let criticalRatio = parseRatio(env.OPENROUTER_CRITICAL_RATIO, DEFAULT_CRITICAL_RATIO);
 
-      const res = await fetch("https://openrouter.ai/api/v1/key", {
-        headers: { Authorization: `Bearer ${env.OPENROUTER_API_KEY}` },
-      });
-      if (!res.ok) {
-        captureError(new OpenRouterHealthcheckFailedError(res.status), {
+      // Misconfig: inverted thresholds → log + fall back to defaults (D-12).
+      if (warningRatio >= criticalRatio) {
+        logEvent({
+          event: "openrouter.misconfigured_thresholds",
+          severity: "warn",
+          attrs: { warningRatio, criticalRatio, fallback_to: { warning: DEFAULT_WARNING_RATIO, critical: DEFAULT_CRITICAL_RATIO } },
+        });
+        warningRatio = DEFAULT_WARNING_RATIO;
+        criticalRatio = DEFAULT_CRITICAL_RATIO;
+      }
+
+      // Fetch — separate try/catch for network errors (D-15 fixture 8).
+      let res: Response;
+      try {
+        res = await fetch("https://openrouter.ai/api/v1/key", {
+          headers: { Authorization: `Bearer ${env.OPENROUTER_API_KEY}` },
+        });
+      } catch (err) {
+        captureError(new OpenRouterHealthcheckFailedError(0, "network"), {
           event: "openrouter.healthcheck_failed",
           severity: "error",
-          attrs: { status: res.status },
+          attrs: { status: 0, cause: "network", message: err instanceof Error ? err.message : String(err) },
         });
         return;
       }
-      const body = (await res.json()) as { data?: { usage?: number; limit?: number | null } };
+
+      if (!res.ok) {
+        // Covers 401 / 429 / 500 / any non-2xx (D-15 fixtures 5/6/7).
+        captureError(new OpenRouterHealthcheckFailedError(res.status, "http"), {
+          event: "openrouter.healthcheck_failed",
+          severity: "error",
+          attrs: { status: res.status, cause: "http" },
+        });
+        return;
+      }
+
+      // Parse — separate try/catch for malformed body (D-15 fixture 9).
+      let body: { data?: { usage?: number; limit?: number | null } };
+      try {
+        body = (await res.json()) as { data?: { usage?: number; limit?: number | null } };
+      } catch (err) {
+        captureError(new OpenRouterHealthcheckFailedError(-1, "parse"), {
+          event: "openrouter.healthcheck_failed",
+          severity: "error",
+          attrs: { status: -1, cause: "parse", message: err instanceof Error ? err.message : String(err) },
+        });
+        return;
+      }
+
       const used = body.data?.usage ?? 0;
+      // limit:null means unlimited per OpenRouter API. Treat as ratio 0 — pulse only (D-15 fixture 10).
       const limit = body.data?.limit ?? 0;
       const used_ratio = limit > 0 ? used / limit : 0;
 
+      // Always emit pulse for the Axiom time-series.
       logEvent({
         event: "openrouter.credit_pulse",
         severity: "info",
@@ -612,62 +817,179 @@ must_haves:
           attrs: { used, limit, used_ratio, threshold: criticalRatio },
         });
       } else if (used_ratio >= warningRatio) {
+        // Severity literal MUST be "warn" not "warning" (matches Severity union).
         logEvent({
           event: "openrouter.credit_low",
-          severity: "warning",
+          severity: "warn",
           attrs: { used, limit, used_ratio, threshold: warningRatio },
         });
       }
     }
-
-    export default {
-      scheduled: withCronMonitor(checkCredit, { monitorSlug: "openrouter-credit-check" }),
-    };
     ```
 
-    **Note on imports**: `withCronMonitor` and the observability primitives import from local files. The scaffold ships its own copies of `cron-monitor.ts` and `lib-observability.ts` (carry from `ts-cloudflare-worker/` template — standalone scaffold means no cross-template path dependencies). Initial scaffold materialisation copies these two files in.
+    **Why split into `index.ts` + `check-credit.ts`?** The composition chain (`withSentry` / `withObservabilityScheduled` / `withCronMonitor`) lives in `index.ts` — it's the production wiring. The handler logic (`checkCredit`) lives in `check-credit.ts` and is unit-tested in isolation by mocking only `./observability`. This keeps the test surface focused on credit-check logic without re-validating the wrapper chain (which has its own contract tests in Phase 22/23).
 
-    Alternative: scaffold references the worker template's files via relative path `../ts-cloudflare-worker/cron-monitor`. Reject — breaks "standalone scaffold" mental model and forces a working monorepo on the consumer.
+    **`src/check-credit.test.ts`** (RED first) — 12 fixtures per CONTEXT D-15:
 
-    **`src/index.test.ts`** (RED first):
+    ```typescript
+    import { describe, it, expect, vi, beforeEach } from "vitest";
+    import { checkCredit, OpenRouterBudgetCriticalError, OpenRouterHealthcheckFailedError } from "./check-credit";
 
-    Fixtures (use vitest's `fetch` mock):
+    // Mock only the bundled wrapper — checkCredit interacts with it via injection.
+    vi.mock("./observability", () => ({
+      logEvent: vi.fn(),
+      captureError: vi.fn(),
+    }));
+    import { logEvent, captureError } from "./observability";
 
-    1. `under WARNING` — fixture body `{data: {usage: 10, limit: 100}}` → cap loop captures logEvent calls; assert ONE call with `event:"openrouter.credit_pulse"`. No warning, no error.
-    2. `at WARNING (exactly 0.85)` — `{data: {usage: 85, limit: 100}}` → pulse + `credit_low warn`.
-    3. `between WARNING and CRITICAL (0.90)` — `{data: {usage: 90, limit: 100}}` → pulse + `credit_low warn`.
-    4. `at CRITICAL (exactly 0.95)` — `{data: {usage: 95, limit: 100}}` → pulse + `captureError(OpenRouterBudgetCriticalError)`.
-    5. `401 unauthorized` — fetch returns 401 → `captureError(OpenRouterHealthcheckFailedError)` with status 401, no other emissions.
-    6. `500 upstream error` — fetch returns 500 → `captureError(OpenRouterHealthcheckFailedError(500))`.
-    7. `withCronMonitor fail-safe` — when `SENTRY_DSN` is unset, handler still runs (cron must always execute per ADR-0029 Guarded Shape A).
-    8. `env.OPENROUTER_WARNING_RATIO override` — set to "0.70" → trigger warn at 0.75 spend.
-    9. `env.OPENROUTER_WARNING_RATIO invalid (NaN, negative, >1)` → falls back to default 0.85.
+    beforeEach(() => {
+      vi.clearAllMocks();
+      // Default fetch mock — overridden per test.
+      global.fetch = vi.fn() as never;
+    });
 
-    Mock `logEvent` and `captureError` via vi.mock of the local `./lib-observability` path.
+    function makeEnv(overrides: Partial<Parameters<typeof checkCredit>[1]> = {}) {
+      return {
+        OPENROUTER_API_KEY: "sk-or-v1-test",
+        ...overrides,
+      } as Parameters<typeof checkCredit>[1];
+    }
 
-    RED commit: `test(24): RED — openrouter-monitor handler tests`.
-    GREEN commit: `feat(24): GREEN — openrouter-monitor scaffold + handler`.
+    const noController = {} as ScheduledController;
+    const noCtx = {} as ExecutionContext;
 
-    Verify the monitor doesn't ship a second `Sentry.init` call — `grep -L "Sentry.init" src/index.ts` should match (the init is handled by withCronMonitor + the observability wrapper transitively).
+    // Fixtures map 1:1 to CONTEXT D-15 fixtures 1-12.
+
+    describe("checkCredit", () => {
+      it("(1) under WARNING — pulse only", async () => {
+        global.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: { usage: 10, limit: 100 } })));
+        await checkCredit(noController, makeEnv(), noCtx);
+        expect(logEvent).toHaveBeenCalledTimes(1);
+        expect(logEvent).toHaveBeenCalledWith(expect.objectContaining({ event: "openrouter.credit_pulse" }));
+        expect(captureError).not.toHaveBeenCalled();
+      });
+
+      it("(2) at WARNING exactly (0.85) — pulse + credit_low warn", async () => {
+        global.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: { usage: 85, limit: 100 } })));
+        await checkCredit(noController, makeEnv(), noCtx);
+        expect(logEvent).toHaveBeenCalledTimes(2);
+        expect(logEvent).toHaveBeenNthCalledWith(2, expect.objectContaining({ event: "openrouter.credit_low", severity: "warn" }));
+        expect(captureError).not.toHaveBeenCalled();
+      });
+
+      it("(3) between WARNING and CRITICAL (0.90) — pulse + credit_low warn", async () => { /* ... */ });
+      it("(4) at CRITICAL exactly (0.95) — pulse + BudgetCriticalError", async () => {
+        global.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: { usage: 95, limit: 100 } })));
+        await checkCredit(noController, makeEnv(), noCtx);
+        expect(captureError).toHaveBeenCalledWith(
+          expect.any(OpenRouterBudgetCriticalError),
+          expect.objectContaining({ event: "openrouter.credit_critical" }),
+        );
+      });
+      it("(5) 401 — HealthcheckFailedError(401)", async () => {
+        global.fetch = vi.fn().mockResolvedValue(new Response("", { status: 401 }));
+        await checkCredit(noController, makeEnv(), noCtx);
+        expect(captureError).toHaveBeenCalledWith(
+          expect.objectContaining({ status: 401, cause_kind: "http" }),
+          expect.any(Object),
+        );
+      });
+      it("(6) 500 — HealthcheckFailedError(500)", async () => { /* same shape, status 500 */ });
+      it("(7) 429 — HealthcheckFailedError(429)", async () => { /* same shape, status 429 */ });
+      it("(8) network throw — HealthcheckFailedError(0, 'network')", async () => {
+        global.fetch = vi.fn().mockRejectedValue(new TypeError("network error"));
+        await checkCredit(noController, makeEnv(), noCtx);
+        expect(captureError).toHaveBeenCalledWith(
+          expect.objectContaining({ status: 0, cause_kind: "network" }),
+          expect.any(Object),
+        );
+      });
+      it("(9) malformed JSON — HealthcheckFailedError(-1, 'parse')", async () => {
+        global.fetch = vi.fn().mockResolvedValue(new Response("not json"));
+        await checkCredit(noController, makeEnv(), noCtx);
+        expect(captureError).toHaveBeenCalledWith(
+          expect.objectContaining({ status: -1, cause_kind: "parse" }),
+          expect.any(Object),
+        );
+      });
+      it("(10) limit:null (unlimited key) — pulse only, no warn/critical", async () => {
+        global.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: { usage: 99999, limit: null } })));
+        await checkCredit(noController, makeEnv(), noCtx);
+        expect(logEvent).toHaveBeenCalledTimes(1);
+        expect(logEvent).toHaveBeenCalledWith(expect.objectContaining({ attrs: expect.objectContaining({ used_ratio: 0, limit: 0 }) }));
+        expect(captureError).not.toHaveBeenCalled();
+      });
+      it("(11) inverted thresholds — misconfig warn + fallback to defaults", async () => {
+        global.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: { usage: 90, limit: 100 } })));
+        await checkCredit(noController, makeEnv({ OPENROUTER_WARNING_RATIO: "0.95", OPENROUTER_CRITICAL_RATIO: "0.85" }), noCtx);
+        // First emission is the misconfig warn; second is the pulse; third is credit_low (90/100 = 0.90 >= default 0.85).
+        expect(logEvent).toHaveBeenNthCalledWith(1, expect.objectContaining({ event: "openrouter.misconfigured_thresholds", severity: "warn" }));
+      });
+      it("(12) invalid env vars (NaN/negative/>1) — fallback to default", async () => {
+        for (const bad of ["not-a-number", "-1", "1.5", ""]) {
+          vi.clearAllMocks();
+          global.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: { usage: 85, limit: 100 } })));
+          await checkCredit(noController, makeEnv({ OPENROUTER_WARNING_RATIO: bad }), noCtx);
+          // 0.85 default kicks in → credit_low warn at 85/100.
+          expect(logEvent).toHaveBeenCalledWith(expect.objectContaining({ event: "openrouter.credit_low" }));
+        }
+      });
+    });
+    ```
+
+    The full impls of fixtures 3, 6, 7 follow the same shape — listed inline only as `/* ... */` stubs here; the actual test file ships full bodies for all 12.
+
+    RED commit: `test(24): RED — openrouter-monitor handler tests (12 fixtures)`.
+    GREEN commit: `feat(24): GREEN — openrouter-monitor scaffold + handler + composition chain`.
+
+    **§10.6 audit at GREEN time**:
+    - `grep -E "Sentry\." add-observability/templates/openrouter-monitor/src/check-credit.ts` — must return 0 matches.
+    - `grep -E "Sentry\.init" add-observability/templates/openrouter-monitor/src/index.ts` — must return 0 matches (init handled by `withSentry`, not direct call).
+    - `grep -E "@sentry/" add-observability/templates/openrouter-monitor/src/check-credit.ts` — must return 0 matches (handler imports nothing from `@sentry/*`).
   </action>
   <verify>
     <automated>
+      # File presence
       test -d add-observability/templates/openrouter-monitor &&
       test -f add-observability/templates/openrouter-monitor/package.json &&
       test -f add-observability/templates/openrouter-monitor/wrangler.toml &&
+      test -f add-observability/templates/openrouter-monitor/tsconfig.json &&
       test -f add-observability/templates/openrouter-monitor/README.md &&
       test -f add-observability/templates/openrouter-monitor/src/index.ts &&
-      test -f add-observability/templates/openrouter-monitor/src/index.test.ts &&
-      grep -q '"\*/15 \* \* \* \*"' add-observability/templates/openrouter-monitor/wrangler.toml &&
+      test -f add-observability/templates/openrouter-monitor/src/check-credit.ts &&
+      test -f add-observability/templates/openrouter-monitor/src/check-credit.test.ts &&
+      # Bundled observability subtree (D-09 fix)
+      test -f add-observability/templates/openrouter-monitor/src/observability/index.ts &&
+      test -f add-observability/templates/openrouter-monitor/src/observability/middleware.ts &&
+      test -f add-observability/templates/openrouter-monitor/src/observability/cron-monitor.ts &&
+      test -f add-observability/templates/openrouter-monitor/src/observability/destinations/index.ts &&
+      test -f add-observability/templates/openrouter-monitor/src/observability/destinations/sentry.ts &&
+      test -f add-observability/templates/openrouter-monitor/src/observability/destinations/axiom.ts &&
+      # Cron schedule
+      grep -qE '"\*/15 \* \* \* \*"' add-observability/templates/openrouter-monitor/wrangler.toml &&
+      # Full composition chain (D-09 — codex HIGH-3 fix)
+      grep -q "withSentry" add-observability/templates/openrouter-monitor/src/index.ts &&
+      grep -q "withObservabilityScheduled" add-observability/templates/openrouter-monitor/src/index.ts &&
       grep -q "withCronMonitor" add-observability/templates/openrouter-monitor/src/index.ts &&
-      grep -q "OpenRouterBudgetCriticalError" add-observability/templates/openrouter-monitor/src/index.ts &&
-      grep -q "OpenRouterHealthcheckFailedError" add-observability/templates/openrouter-monitor/src/index.ts &&
+      # Error classes + severity literal (D-12 — codex HIGH-4 fix)
+      grep -q "OpenRouterBudgetCriticalError" add-observability/templates/openrouter-monitor/src/check-credit.ts &&
+      grep -q "OpenRouterHealthcheckFailedError" add-observability/templates/openrouter-monitor/src/check-credit.ts &&
+      grep -q 'severity: "warn"' add-observability/templates/openrouter-monitor/src/check-credit.ts &&
+      ! grep -q 'severity: "warning"' add-observability/templates/openrouter-monitor/src/check-credit.ts &&
+      # Sentry SDK 10.2.0+ pin (D-17)
+      grep -q '"@sentry/cloudflare": "\^10\.' add-observability/templates/openrouter-monitor/package.json &&
+      # Security & Secret Lifecycle section (D-18)
       grep -q "keys:read" add-observability/templates/openrouter-monitor/README.md &&
-      ! grep -q "Sentry.init" add-observability/templates/openrouter-monitor/src/index.ts &&
-      (cd add-observability/templates/openrouter-monitor && npm install --prefer-offline --no-audit 2>&1 | tail -3 && npm test 2>&1 | tail -10) | grep -qE "passed|PASS"
+      grep -q "Security & Secret Lifecycle" add-observability/templates/openrouter-monitor/README.md &&
+      grep -q "rotation" add-observability/templates/openrouter-monitor/README.md &&
+      # §10.6 destination-independence audit (D-11)
+      ! grep -E "@sentry/" add-observability/templates/openrouter-monitor/src/check-credit.ts &&
+      ! grep -E "Sentry\.init\b" add-observability/templates/openrouter-monitor/src/index.ts &&
+      # Tests pass
+      (cd add-observability/templates/openrouter-monitor && npm install --prefer-offline --no-audit 2>&1 | tail -3 && npm run typecheck && npm test 2>&1 | tail -15) | grep -qE "passed|PASS"
     </automated>
   </verify>
-  <done>openrouter-monitor scaffold ships with handler + tests + README + wrangler.toml + package.json; tests pass; no second Sentry.init; withCronMonitor wraps the scheduled export.</done>
+  <done>openrouter-monitor scaffold ships with full composition chain + bundled observability subtree + handler in check-credit.ts + 12 fixtures + README with Security & Secret Lifecycle section + Sentry SDK 10.2.0+ pin; tests pass; typecheck passes; no direct `@sentry/*` imports in check-credit.ts; no Sentry.init call in index.ts (withSentry handles it).</done>
 </task>
 
 ## Wave 3 — INIT.md + version bumps + CHANGELOG (final)
@@ -793,7 +1115,7 @@ After Wave 3 completes:
 1. **Full migration test harness** — `bash migrations/run-tests.sh` — expected 181 PASS unchanged.
 2. **Full template test harness** — `bash add-observability/templates/run-template-tests.sh all` — expected all 5 stacks PASS; net new test count ≈ +15 (3 helper test files × ~5 cases each; the monitor scaffold's tests run via its own `npm test` via the Wave 2.2 task verify clause, not the template harness — note this in VERIFICATION.md so the auditor doesn't miss them).
 3. **gsd-tools.cjs detect-changes** — confirm only intended symbols touched. Expected: 4 new files in `add-observability/templates/openrouter-monitor/src/`, 3 pairs of helper/test files (one per TS stack), 1 new ADR, 1 runbook, 1 INIT.md edit, 2 SKILL.md frontmatter edits, 2 CHANGELOG appends.
-4. **§10.6 destination-independence audit** — `grep -rn "Sentry\." add-observability/templates/openrouter-monitor/src/index.ts` should return 0 matches (no direct SDK calls in handler logic).
+4. **§10.6 destination-independence audit** — `grep -rn "@sentry/\|Sentry\." add-observability/templates/openrouter-monitor/src/check-credit.ts` should return 0 matches (handler has no Sentry imports or calls; `index.ts` legitimately uses `withSentry` for the composition chain).
 5. **PII default verification** — `grep -n "recordInputs\|recordOutputs" add-observability/openrouter-integration.md` should show `:false` in every occurrence inside the runbook's own examples.
 
 ## Acceptance criteria (PR-ready)
