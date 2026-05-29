@@ -239,6 +239,12 @@ run_ts_cloudflare_pages() {
   substitute_tokens "$SRC/lib-observability.ts"      "$OBS_DIR/index.ts"
   substitute_tokens "$SRC/lib-observability.test.ts" "$OBS_DIR/index.test.ts"
 
+  # Phase 22 — Sentry Crons wrapper (T03). Pages variant: no scheduled
+  # handler signature; wrapper accepts a generic () => Promise<R> per D5c.
+  # Test file copied here; impl-file copy lands in the GREEN commit per
+  # PLAN R02 (RED commit ships only the failing test).
+  substitute_tokens "$SRC/cron-monitor.test.ts"     "$OBS_DIR/cron-monitor.test.ts"
+
   # destinations/ sub-dir (role-based registry + adapters, phase 21).
   if [[ -d "$SRC/destinations" ]]; then
     local DEST_DIR="$OBS_DIR/destinations"
