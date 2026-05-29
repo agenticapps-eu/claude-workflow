@@ -10,61 +10,108 @@
  *         () => Promise<R> and is invoked externally (no standard composition).
  *   D6  — 3-source slug resolution (explicit > env > auto-derive)
  *         Pages auto-shape: `${SERVICE_NAME}:${handlerName ?? "scheduled"}`.
- *   D12 — schedule + maxRuntimeSeconds forwarded as Sentry monitorConfig (2nd
- *         arg) on the in_progress checkin only
- *   R04 (PLAN revisions) — SENTRY_DEBUG=1 opt-in console.error in catch blocks
+ *   D12 — schedule + maxRuntimeSeconds forwarded as Sentry monitorConfig (3rd
+ *         arg to Sentry.withMonitor)
+ *
+ * Phase 23 / ADR-0029 — Guarded Shape A refactor:
+ *   D-08 — withCronMonitor now composes Sentry.withMonitor instead of hand-rolling
+ *           captureCheckIn lifecycle. Tests updated to assert withMonitor invocation
+ *           contract + handlerStarted guard behaviour.
  *
  * Sentry SDK is mocked at the module boundary so SDK shape doesn't matter at
  * test-time — only the invocation contract does.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { withCronMonitor } from "./cron-monitor";
 
-const captureCheckIn = vi.fn();
+const withMonitor = vi.fn();
 vi.mock("@sentry/cloudflare", () => ({
-  captureCheckIn: (...args: unknown[]) => captureCheckIn(...args),
+  withMonitor: (...args: unknown[]) => withMonitor(...args),
 }));
 
 beforeEach(() => {
-  captureCheckIn.mockReset();
-  captureCheckIn.mockReturnValueOnce("checkin-abc"); // 1st call returns checkInId
+  withMonitor.mockReset();
+  // Default: withMonitor calls its callback and returns the result.
+  withMonitor.mockImplementation(async (_slug: unknown, cb: () => unknown) => cb());
 });
 
-describe("withCronMonitor — cron checkin behavior", () => {
-  it("emits in_progress + ok on happy path", async () => {
+describe("withCronMonitor — Guarded Shape A (ADR-0029 / D-08)", () => {
+  it("calls Sentry.withMonitor with resolved slug and monitorConfig on happy path", async () => {
     const handler = vi.fn(async () => {});
-    const wrapped = withCronMonitor(handler, { monitorSlug: "fxsa-ingest-15min" });
+    const wrapped = withCronMonitor(handler, {
+      monitorSlug: "fxsa-ingest-15min",
+      schedule: { type: "crontab", value: "*/15 * * * *" },
+      maxRuntimeSeconds: 240,
+    });
     await wrapped({ SENTRY_DSN: "https://stub@sentry.io/1" });
 
+    expect(withMonitor).toHaveBeenCalledOnce();
+    expect(withMonitor).toHaveBeenCalledWith(
+      "fxsa-ingest-15min",
+      expect.any(Function),
+      { schedule: { type: "crontab", value: "*/15 * * * *" }, maxRuntime: 240 },
+    );
     expect(handler).toHaveBeenCalledOnce();
-    expect(captureCheckIn).toHaveBeenCalledTimes(2);
-    expect(captureCheckIn).toHaveBeenNthCalledWith(1, { monitorSlug: "fxsa-ingest-15min", status: "in_progress" });
-    expect(captureCheckIn).toHaveBeenNthCalledWith(2, { checkInId: "checkin-abc", monitorSlug: "fxsa-ingest-15min", status: "ok" });
   });
 
-  it("emits in_progress + error and re-throws on handler exception", async () => {
+  it("handler return value propagates through withMonitor callback", async () => {
+    const handler = vi.fn(async () => "result-value");
+    const wrapped = withCronMonitor(handler, { monitorSlug: "x" });
+    const result = await wrapped({ SENTRY_DSN: "https://stub@sentry.io/1" });
+    expect(result).toBe("result-value");
+  });
+
+  it("handler exception re-throws from withMonitor (post-callback error propagates)", async () => {
     const boom = new Error("handler exploded");
     const handler = vi.fn(async () => { throw boom; });
+    withMonitor.mockImplementation(async (_slug: unknown, cb: () => unknown) => cb());
     const wrapped = withCronMonitor(handler, { monitorSlug: "fxsa-ingest-15min" });
 
     await expect(
       wrapped({ SENTRY_DSN: "https://stub@sentry.io/1" }),
     ).rejects.toBe(boom);
 
-    expect(captureCheckIn).toHaveBeenCalledTimes(2);
-    expect(captureCheckIn).toHaveBeenNthCalledWith(1, { monitorSlug: "fxsa-ingest-15min", status: "in_progress" });
-    expect(captureCheckIn).toHaveBeenNthCalledWith(2, { checkInId: "checkin-abc", monitorSlug: "fxsa-ingest-15min", status: "error" });
+    expect(handler).toHaveBeenCalledOnce();
   });
 
-  it("no-ops cleanly when SENTRY_DSN is unset", async () => {
+  it("no-ops cleanly when SENTRY_DSN is unset (R02 fail-safe preserved)", async () => {
     const handler = vi.fn(async () => {});
     const wrapped = withCronMonitor(handler, { monitorSlug: "fxsa-ingest-15min" });
 
     await wrapped({} as Record<string, unknown>);
 
     expect(handler).toHaveBeenCalledOnce();
-    expect(captureCheckIn).not.toHaveBeenCalled();
+    expect(withMonitor).not.toHaveBeenCalled();
+  });
+
+  // Guarded Shape A — core guard: pre-callback transport throw → handler runs unmonitored.
+  it("D-08 guard: withMonitor throws BEFORE callback runs → handler still executes unmonitored", async () => {
+    const handler = vi.fn(async () => {});
+    // withMonitor throws without ever invoking the callback.
+    withMonitor.mockRejectedValue(new Error("Sentry transport failure"));
+
+    const wrapped = withCronMonitor(handler, { monitorSlug: "fxsa-ingest-15min" });
+    // Must NOT throw — falls back to unmonitored handler.
+    await wrapped({ SENTRY_DSN: "https://stub@sentry.io/1" });
+
+    expect(handler).toHaveBeenCalledOnce();
+  });
+
+  it("D-08 guard: withMonitor throws AFTER callback ran → error propagates (post-callback)", async () => {
+    const handler = vi.fn(async () => {});
+    // withMonitor calls callback then throws.
+    withMonitor.mockImplementation(async (_slug: unknown, cb: () => unknown) => {
+      await cb(); // callback ran — handlerStarted = true
+      throw new Error("post-callback transport failure");
+    });
+
+    const wrapped = withCronMonitor(handler, { monitorSlug: "fxsa-ingest-15min" });
+    await expect(
+      wrapped({ SENTRY_DSN: "https://stub@sentry.io/1" }),
+    ).rejects.toThrow("post-callback transport failure");
+
+    expect(handler).toHaveBeenCalledOnce();
   });
 });
 
@@ -79,13 +126,11 @@ describe("withCronMonitor — slug resolution (D6)", () => {
       SERVICE_NAME: "auto-loses",
     } as Record<string, unknown>);
 
-    expect(captureCheckIn).toHaveBeenNthCalledWith(1, expect.objectContaining({ monitorSlug: "explicit-wins" }));
+    expect(withMonitor).toHaveBeenCalledWith("explicit-wins", expect.any(Function), undefined);
   });
 
   it("falls back to SENTRY_CRON_MONITOR_SLUG_<handler> env when explicit absent", async () => {
     const handler = vi.fn(async () => {});
-    // handlerName "ingest-15min" → env key SENTRY_CRON_MONITOR_SLUG_INGEST_15MIN
-    // (hyphens become underscores per D6).
     const wrapped = withCronMonitor(handler, { handlerName: "ingest-15min" });
 
     await wrapped({
@@ -94,7 +139,7 @@ describe("withCronMonitor — slug resolution (D6)", () => {
       SERVICE_NAME: "auto-loses",
     } as Record<string, unknown>);
 
-    expect(captureCheckIn).toHaveBeenNthCalledWith(1, expect.objectContaining({ monitorSlug: "env-wins" }));
+    expect(withMonitor).toHaveBeenCalledWith("env-wins", expect.any(Function), undefined);
   });
 
   it("falls back to auto-derived ${SERVICE_NAME}:${handlerName} (default 'scheduled') when neither set", async () => {
@@ -106,12 +151,12 @@ describe("withCronMonitor — slug resolution (D6)", () => {
       SERVICE_NAME: "fxsa-pages",
     } as Record<string, unknown>);
 
-    expect(captureCheckIn).toHaveBeenNthCalledWith(1, expect.objectContaining({ monitorSlug: "fxsa-pages:scheduled" }));
+    expect(withMonitor).toHaveBeenCalledWith("fxsa-pages:scheduled", expect.any(Function), undefined);
   });
 });
 
-describe("withCronMonitor — monitorConfig forwarding (D12 / R03)", () => {
-  it("forwards monitorConfig on in_progress, omits on completion", async () => {
+describe("withCronMonitor — monitorConfig forwarding (D12 / ADR-0029)", () => {
+  it("passes monitorConfig as 3rd arg to withMonitor when schedule + maxRuntimeSeconds set", async () => {
     const handler = vi.fn(async () => {});
     const wrapped = withCronMonitor(handler, {
       monitorSlug: "x",
@@ -121,53 +166,17 @@ describe("withCronMonitor — monitorConfig forwarding (D12 / R03)", () => {
 
     await wrapped({ SENTRY_DSN: "https://stub@sentry.io/1" });
 
-    expect(captureCheckIn).toHaveBeenCalledTimes(2);
-    // 1st call (in_progress) — 2nd arg is monitorConfig with schedule + maxRuntime
-    expect(vi.mocked(captureCheckIn).mock.calls[0][1]).toEqual({
-      schedule: { type: "crontab", value: "*/15 * * * *" },
-      maxRuntime: 240,
-    });
-    // 2nd call (ok) — 2nd arg is undefined (Sentry already has monitor config)
-    expect(vi.mocked(captureCheckIn).mock.calls[1][1]).toBeUndefined();
+    expect(withMonitor).toHaveBeenCalledWith(
+      "x",
+      expect.any(Function),
+      { schedule: { type: "crontab", value: "*/15 * * * *" }, maxRuntime: 240 },
+    );
   });
 
-  it("omits monitorConfig entirely when neither schedule nor maxRuntimeSeconds is configured", async () => {
+  it("passes undefined as 3rd arg when neither schedule nor maxRuntimeSeconds configured", async () => {
     const handler = vi.fn(async () => {});
     const wrapped = withCronMonitor(handler, { monitorSlug: "x" });
     await wrapped({ SENTRY_DSN: "https://stub@sentry.io/1" });
-    expect(vi.mocked(captureCheckIn).mock.calls[0][1]).toBeUndefined();
-  });
-});
-
-describe("withCronMonitor — SENTRY_DEBUG opt-in logging (R04)", () => {
-  let errorSpy: ReturnType<typeof vi.spyOn>;
-
-  beforeEach(() => {
-    errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-  });
-
-  afterEach(() => {
-    errorSpy.mockRestore();
-  });
-
-  it("logs swallowed errors when SENTRY_DEBUG=1, silent otherwise", async () => {
-    // Make captureCheckIn throw on every call so the swallow-catch fires.
-    captureCheckIn.mockReset();
-    captureCheckIn.mockImplementation(() => { throw new Error("sentry SDK boom"); });
-
-    const handler = vi.fn(async () => {});
-
-    // SENTRY_DEBUG absent → silent
-    const wrappedSilent = withCronMonitor(handler, { monitorSlug: "x" });
-    await wrappedSilent({ SENTRY_DSN: "https://stub@sentry.io/1" });
-    expect(errorSpy).not.toHaveBeenCalled();
-
-    // SENTRY_DEBUG=1 → console.error called
-    const wrappedDebug = withCronMonitor(handler, { monitorSlug: "x" });
-    await wrappedDebug(
-      { SENTRY_DSN: "https://stub@sentry.io/1", SENTRY_DEBUG: "1" } as Record<string, unknown>,
-    );
-    expect(errorSpy).toHaveBeenCalled();
-    expect(errorSpy.mock.calls[0]).toEqual(expect.arrayContaining([expect.any(Error)]));
+    expect(withMonitor).toHaveBeenCalledWith("x", expect.any(Function), undefined);
   });
 });
