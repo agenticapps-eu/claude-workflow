@@ -17,6 +17,26 @@ No scaffolder version bump and **no migration**: the wrapper public interface (s
 - **`_resetForTest` completeness (gap #5, `ts-react-vite`)** — now also clears `spanStack`, resets `serviceName`/`deployEnv` to defaults, and restores `window.fetch` from the original (`init` stores the original reference, binds only the interceptor base) so the next `init` re-patches a clean global. Eliminates cross-suite test leakage.
 - **Regression coverage** — new tests across `ts-cloudflare-worker`, `ts-cloudflare-pages`, `ts-supabase-edge`, and `ts-react-vite` (incl. the browser Axiom cross-origin cases). Full template suite green (worker 43, pages 30, react-vite 41, supabase-edge 25, go-fly-http 25); migration suite 168 PASS / 0 FAIL.
 
+## [1.18.0] — 2026-05-29
+
+### Added — Sentry Crons heartbeats (`withCronMonitor`) + `/healthz` convention (issue Phase 22)
+
+- New optional `withCronMonitor` / `WithCronMonitor` wrapper exported by 4 stack templates (worker / pages / supabase-edge / go-fly-http). Composes innermost in the scheduled chain (worker); 2-deep `withObservability(withCronMonitor(...))` on supabase-edge (D5b); generic async-fn shape on pages (D5c); functional-options style in Go (D5d). Fail-safe when `SENTRY_DSN` is unset (zero checkins, no exception). 3-source slug resolution: explicit > env-var (`SENTRY_CRON_MONITOR_SLUG_<HANDLER>`) > auto-derived. Multi-cron workers must pass explicit `monitorSlug` (D11). `monitorConfig` (schedule + maxRuntime) forwarded as Sentry's 2nd arg on `in_progress` checkin only (D12). Opt-in `SENTRY_DEBUG=1` surfaces swallowed checkin errors. See `add-observability/uptime-setup-runbook.md` for Sentry UI configuration.
+- New `healthz-snippet.{ts,go}` template per stack — copy-only (operator decides where to mount). 200 ok / 503 degraded contract with per-check breakdown. **Fail-closed on zero probes configured** (R06 — returns 503 with `reason: "no probes configured"`). Intentionally NOT routed through `withObservability` (D4) to keep Sentry's transaction view free of probe noise. Top-of-file WARNING block instructs adapt-or-don't-mount.
+- New `add-observability/uptime-setup-runbook.md` — operator-facing walkthrough of Sentry UI configuration for Crons + Uptime + `policy.md` cross-link template + Part 4 Security & Public Exposure (`?detail=true` gating, `/healthz` vs `/readyz` deferral, probe authentication).
+- Migration 0019 (`from_version: 1.17.0`, `to_version: 1.18.0`) — additive adoption; refuses on hand-modified wrappers via content-hash check mirroring 0017's style-insensitive canonicalization. **2-pass atomic apply** (classify all roots → all-clean gate → apply) per codex's HIGH-severity review finding R08. 7 fixtures (fresh / already-applied / hand-modified-refuse / cparx-shape / fxsa-multi-module / mixed-clean-dirty-refuses-all / react-vite-only).
+- ADR-0028 records host-discretion-vs-spec-mandate decision (no spec amendment).
+
+### Fixed
+
+- `skill/SKILL.md` version drift: PR #52 declared `to_version: 1.17.0` (migration 0018) but left the SKILL.md frontmatter at `1.16.0`. Folded as commit 1 of this branch (`122aafa`) — keeps the 1:1 version-tracks-migrations invariant intact.
+
+### Compatibility
+
+- All v0.5.1 template exports byte-identical across 5 stacks. 170 existing template-suite tests pass unchanged; 58 new tests across cron-monitor + healthz contracts bring total to 228 PASS.
+- v1.17.0 projects can skip migration 0019; no breaking change.
+- react-vite stack: no changes (browser bundle has no scheduled handlers; no server-side healthz).
+
 ## [1.17.0] — 2026-05-27
 
 ### Added (GSD post-phase observability hook — advisory, issue #50)
