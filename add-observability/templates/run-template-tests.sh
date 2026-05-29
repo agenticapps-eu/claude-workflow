@@ -140,14 +140,9 @@ run_ts_cloudflare_worker() {
   # Phase 22 — healthz snippet (T06). COPY-ONLY template (D9): operator copies
   # into routes layer + adapts probes. Materialized with cron-monitor pair so
   # the in-repo contract suite catches regressions at template-edit time.
-  # Gated by file existence to keep RED commit (test only) → GREEN commit
-  # (test + impl) staging clean in CI.
-  if [[ -f "$SRC/healthz-snippet.test.ts" ]]; then
-    substitute_tokens "$SRC/healthz-snippet.test.ts" "$OBS_DIR/healthz-snippet.test.ts"
-  fi
-  if [[ -f "$SRC/healthz-snippet.ts" ]]; then
-    substitute_tokens "$SRC/healthz-snippet.ts" "$OBS_DIR/healthz-snippet.ts"
-  fi
+  # T18/R12: existence gates removed — files are part of the canonical set now.
+  substitute_tokens "$SRC/healthz-snippet.test.ts" "$OBS_DIR/healthz-snippet.test.ts"
+  substitute_tokens "$SRC/healthz-snippet.ts"      "$OBS_DIR/healthz-snippet.ts"
 
   # destinations/ sub-dir (role-based registry + adapters, phase 21).
   # Copy every .ts file (registry, adapters, and their tests) into the
@@ -259,13 +254,9 @@ run_ts_cloudflare_pages() {
 
   # Phase 22 — healthz snippet (T07). Pages variant: PagesFunction export
   # of `onRequest` instead of a bare handler. COPY-ONLY template per D9.
-  # Existence-gated to keep RED → GREEN staging clean.
-  if [[ -f "$SRC/healthz-snippet.test.ts" ]]; then
-    substitute_tokens "$SRC/healthz-snippet.test.ts" "$OBS_DIR/healthz-snippet.test.ts"
-  fi
-  if [[ -f "$SRC/healthz-snippet.ts" ]]; then
-    substitute_tokens "$SRC/healthz-snippet.ts" "$OBS_DIR/healthz-snippet.ts"
-  fi
+  # T18/R12: existence gates removed — files are part of the canonical set now.
+  substitute_tokens "$SRC/healthz-snippet.test.ts" "$OBS_DIR/healthz-snippet.test.ts"
+  substitute_tokens "$SRC/healthz-snippet.ts"      "$OBS_DIR/healthz-snippet.ts"
 
   # destinations/ sub-dir (role-based registry + adapters, phase 21).
   if [[ -d "$SRC/destinations" ]]; then
@@ -474,10 +465,9 @@ run_ts_supabase_edge() {
 
   # Phase 22 — healthz snippet (T08). COPY-ONLY template (D9). Impl is
   # `.ts` (not `.test.ts`) so the test-glob below misses it — explicit
-  # existence-gated copy. The test file IS picked up by the glob.
-  if [[ -f "$SRC/healthz-snippet.ts" ]]; then
-    substitute_tokens "$SRC/healthz-snippet.ts" "$OBS_DIR/healthz-snippet.ts"
-  fi
+  # copy. The test file IS picked up by the *.test.ts glob.
+  # T18/R12: existence gate removed — file is part of the canonical set now.
+  substitute_tokens "$SRC/healthz-snippet.ts" "$OBS_DIR/healthz-snippet.ts"
 
   # Copy every *.test.ts (index contract suite + phase-21 axiom suite +
   # phase-22 cron-monitor suite + phase-22 healthz-snippet suite).
@@ -621,6 +611,39 @@ run_stack() {
       ;;
   esac
 }
+
+# ─── Phase 22 / T18 / R12 — structural assertion: withCronMonitor export presence
+#
+# Asserts each of the 4 phase-22 stacks ships a `cron-monitor.{ts,go}` file
+# carrying the expected export. Catches a regression where an editor deletes
+# the impl while leaving the test file in place (the test would compile-fail
+# with an unrelated error; this assertion gives a clear top-of-run failure).
+#
+# Worker / pages / supabase-edge: `export function withCronMonitor`
+# Go: `func WithCronMonitor`
+# ──────────────────────────────────────────────────────────────────────────────
+TEMPLATES_ROOT="$SCRIPT_DIR"
+EXPECTED_TS_CRON_MONITORS=(
+  "$TEMPLATES_ROOT/ts-cloudflare-worker/cron-monitor.ts"
+  "$TEMPLATES_ROOT/ts-cloudflare-pages/cron-monitor.ts"
+  "$TEMPLATES_ROOT/ts-supabase-edge/cron-monitor.ts"
+)
+EXPECTED_GO_CRON_MONITOR="$TEMPLATES_ROOT/go-fly-http/cron_monitor.go"
+ASSERTION_FAILED=0
+for f in "${EXPECTED_TS_CRON_MONITORS[@]}"; do
+  if ! grep -q "export function withCronMonitor" "$f" 2>/dev/null; then
+    fail "T18 export-presence: missing 'export function withCronMonitor' in $f"
+    ASSERTION_FAILED=1
+  fi
+done
+if ! grep -q "func WithCronMonitor" "$EXPECTED_GO_CRON_MONITOR" 2>/dev/null; then
+  fail "T18 export-presence: missing 'func WithCronMonitor' in $EXPECTED_GO_CRON_MONITOR"
+  ASSERTION_FAILED=1
+fi
+if [[ $ASSERTION_FAILED -ne 0 ]]; then
+  fail "T18 structural assertion failed — refusing to run stack tests"
+  exit 1
+fi
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
