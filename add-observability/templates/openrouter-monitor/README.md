@@ -14,7 +14,7 @@ Architecture: [ADR-0030](../../../docs/decisions/0030-openrouter-integration-sdk
 npm install
 ```
 
-Requires `@sentry/cloudflare ≥ 10.2.0` (already pinned in `package.json`). The 10.2.0 minimum is for compatibility with Sentry's AI Monitoring `openAIIntegration` if you choose to add it later in the main app — the monitor itself doesn't use it (no LLM calls here).
+The monitor pins `@sentry/cloudflare ^8.0.0` — it makes no LLM calls, so it doesn't need the Sentry AI Monitoring SDK minimum of `≥ 10.2.0` (that constraint applies to your main app, not this monitor). If you fork the monitor into a repo that already uses `@sentry/cloudflare ^10.x`, you can bump this pin — the bundled `src/observability/` subtree is forward-compatible.
 
 ## 2. Configure
 
