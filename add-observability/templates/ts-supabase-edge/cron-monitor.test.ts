@@ -27,8 +27,8 @@
  * Run with: deno test -A --no-check cron-monitor.test.ts
  */
 
-import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { withCronMonitor, _setCaptureCheckInForTest } from "./cron-monitor.ts";
+import { assert, assertEquals, assertRejects } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { withCronMonitor, _setCaptureCheckInForTest, _setWithMonitorForTest } from "./cron-monitor.ts";
 
 // ─── Call-recorder for the Sentry SDK boundary ────────────────────────────────
 
@@ -282,6 +282,168 @@ Deno.test("withCronMonitor: omits monitorConfig entirely when neither schedule n
 });
 
 // ─── R04 SENTRY_DEBUG opt-in logging ─────────────────────────────────────────
+
+// ─── Phase 23 / ADR-0029 / D-08 — Guarded Shape A (F5.supabase) ──────────────
+//
+// These tests verify that withCronMonitor uses _withMonitorImpl (injectable via
+// _setWithMonitorForTest) instead of the hand-rolled captureCheckIn lifecycle.
+// The seam avoids module-boundary mocking which `deno test` doesn't support.
+//
+// F5.1 — withMonitor called with correct slug + monitorConfig
+// F5.2 — handler return value propagates
+// F5.3 — handler exception re-throws (post-callback propagation)
+// F5.4 — R02 fail-safe: no SENTRY_DSN → withMonitor not called
+// F5.6 — pre-callback transport throw → handler runs unmonitored (GUARD)
+// F5.7 — post-callback transport throw → error propagates
+
+interface WithMonitorCall {
+  slug: string;
+  // deno-lint-ignore no-explicit-any
+  monitorConfig: any;
+}
+
+function makeWithMonitorMock(behavior: "passthrough" | "throw-before" | "throw-after") {
+  const calls: WithMonitorCall[] = [];
+  // deno-lint-ignore no-explicit-any
+  const impl = async (slug: string, cb: () => any, monitorConfig?: unknown): Promise<unknown> => {
+    calls.push({ slug, monitorConfig });
+    if (behavior === "throw-before") {
+      throw new Error("Sentry transport failure (pre-callback)");
+    }
+    const result = await cb();
+    if (behavior === "throw-after") {
+      throw new Error("post-callback transport failure");
+    }
+    return result;
+  };
+  return { calls, impl };
+}
+
+Deno.test("F5.1 — withMonitor called with resolved slug and monitorConfig on happy path", async () => {
+  const mock = makeWithMonitorMock("passthrough");
+  _setWithMonitorForTest(mock.impl);
+  installEnv({ SENTRY_DSN: "https://stub@sentry.io/1" });
+  try {
+    let called = 0;
+    const handler = async (_req: Request): Promise<Response> => {
+      called += 1;
+      return new Response("ok");
+    };
+    const wrapped = withCronMonitor(handler, {
+      monitorSlug: "callbot-sweep",
+      schedule: { type: "crontab", value: "*/15 * * * *" },
+      maxRuntimeSeconds: 240,
+    });
+    await wrapped(new Request("https://stub/cron"));
+
+    assertEquals(called, 1);
+    assertEquals(mock.calls.length, 1);
+    assertEquals(mock.calls[0].slug, "callbot-sweep");
+    assertEquals(mock.calls[0].monitorConfig, {
+      schedule: { type: "crontab", value: "*/15 * * * *" },
+      maxRuntime: 240,
+    });
+  } finally {
+    // deno-lint-ignore no-explicit-any
+    _setWithMonitorForTest((_s: string, cb: () => any) => cb());
+    restoreEnv();
+  }
+});
+
+Deno.test("F5.2 — handler return value propagates through withMonitor callback", async () => {
+  const mock = makeWithMonitorMock("passthrough");
+  _setWithMonitorForTest(mock.impl);
+  installEnv({ SENTRY_DSN: "https://stub@sentry.io/1" });
+  try {
+    const handler = async (_req: Request): Promise<Response> => new Response("result-body", { status: 201 });
+    const wrapped = withCronMonitor(handler, { monitorSlug: "x" });
+    const res = await wrapped(new Request("https://stub/cron"));
+    assertEquals(res.status, 201);
+  } finally {
+    // deno-lint-ignore no-explicit-any
+    _setWithMonitorForTest((_s: string, cb: () => any) => cb());
+    restoreEnv();
+  }
+});
+
+Deno.test("F5.3 — handler exception re-throws from withMonitor (post-callback error propagates)", async () => {
+  const mock = makeWithMonitorMock("passthrough");
+  _setWithMonitorForTest(mock.impl);
+  installEnv({ SENTRY_DSN: "https://stub@sentry.io/1" });
+  try {
+    const boom = new Error("handler exploded");
+    const handler = async (_req: Request): Promise<Response> => { throw boom; };
+    const wrapped = withCronMonitor(handler, { monitorSlug: "x" });
+    await assertRejects(
+      () => wrapped(new Request("https://stub/cron")),
+      Error,
+      "handler exploded",
+    );
+    assertEquals(mock.calls.length, 1);
+  } finally {
+    // deno-lint-ignore no-explicit-any
+    _setWithMonitorForTest((_s: string, cb: () => any) => cb());
+    restoreEnv();
+  }
+});
+
+Deno.test("F5.4 — R02 fail-safe: no SENTRY_DSN → withMonitor not called", async () => {
+  const mock = makeWithMonitorMock("passthrough");
+  _setWithMonitorForTest(mock.impl);
+  installEnv({}); // no SENTRY_DSN
+  try {
+    let called = 0;
+    const handler = async (_req: Request): Promise<Response> => { called += 1; return new Response("ok"); };
+    const wrapped = withCronMonitor(handler, { monitorSlug: "x" });
+    await wrapped(new Request("https://stub/cron"));
+    assertEquals(called, 1);
+    assertEquals(mock.calls.length, 0);
+  } finally {
+    // deno-lint-ignore no-explicit-any
+    _setWithMonitorForTest((_s: string, cb: () => any) => cb());
+    restoreEnv();
+  }
+});
+
+Deno.test("F5.6 — D-08 guard: withMonitor throws BEFORE callback → handler still executes unmonitored", async () => {
+  const mock = makeWithMonitorMock("throw-before");
+  _setWithMonitorForTest(mock.impl);
+  installEnv({ SENTRY_DSN: "https://stub@sentry.io/1" });
+  try {
+    let called = 0;
+    const handler = async (_req: Request): Promise<Response> => { called += 1; return new Response("ok"); };
+    const wrapped = withCronMonitor(handler, { monitorSlug: "x" });
+    // Must NOT throw — falls back to unmonitored handler.
+    const res = await wrapped(new Request("https://stub/cron"));
+    assertEquals(called, 1);
+    assertEquals(res.status, 200);
+  } finally {
+    // deno-lint-ignore no-explicit-any
+    _setWithMonitorForTest((_s: string, cb: () => any) => cb());
+    restoreEnv();
+  }
+});
+
+Deno.test("F5.7 — D-08 guard: withMonitor throws AFTER callback ran → error propagates", async () => {
+  const mock = makeWithMonitorMock("throw-after");
+  _setWithMonitorForTest(mock.impl);
+  installEnv({ SENTRY_DSN: "https://stub@sentry.io/1" });
+  try {
+    let called = 0;
+    const handler = async (_req: Request): Promise<Response> => { called += 1; return new Response("ok"); };
+    const wrapped = withCronMonitor(handler, { monitorSlug: "x" });
+    await assertRejects(
+      () => wrapped(new Request("https://stub/cron")),
+      Error,
+      "post-callback transport failure",
+    );
+    assertEquals(called, 1);
+  } finally {
+    // deno-lint-ignore no-explicit-any
+    _setWithMonitorForTest((_s: string, cb: () => any) => cb());
+    restoreEnv();
+  }
+});
 
 Deno.test("withCronMonitor: logs swallowed errors when SENTRY_DEBUG=1, silent otherwise", async () => {
   // Make captureCheckIn throw on every call so the swallow-catch fires.
