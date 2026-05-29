@@ -2242,31 +2242,36 @@ EOF
     return
   fi
 
-  # 4c. Allow-listed TMPDIR path: engine proceeds past validation (may fail for
-  #     other reasons, but NOT exit 2 — path must be accepted).
+  # 4c. Allow-listed TMPDIR path: engine must NOT emit the path-validation error.
+  #     (Engine may still exit non-zero for other reasons — e.g. all-clean gate —
+  #     when run without --project-dir pointing at a clean sandbox. What matters is
+  #     the absence of the path-validation rejection message in stderr.)
   local allowed_sig="${TMPDIR:-/tmp}/sigterm-test-pathcheck"
-  local allowed_exit
+  local allowed_stderr; allowed_stderr=$(mktemp)
   set +e
-  bash "$ENGINE" --pause-between-passes "$allowed_sig" >/dev/null 2>&1
-  allowed_exit=$?
+  bash "$ENGINE" --pause-between-passes "$allowed_sig" >/dev/null 2>"$allowed_stderr"
   set -e
-  if [ "$allowed_exit" -eq 2 ]; then
-    echo "  ${RED}✗${RESET} path validation: allow-listed TMPDIR path incorrectly rejected (exit 2)"
+  if grep -q "test-only flag with non-allow-listed path" "$allowed_stderr"; then
+    echo "  ${RED}✗${RESET} path validation: allow-listed TMPDIR path incorrectly rejected (path-validation message present)"
     FAIL=$((FAIL+1))
+    rm -f "$allowed_stderr"
     return
   fi
+  rm -f "$allowed_stderr"
 
-  # 4d. Allow-listed fixture prefix: engine proceeds past validation.
+  # 4d. Allow-listed fixture prefix: no path-validation rejection message.
   local fixture_sig="$REPO_ROOT/migrations/test-fixtures/0019/06-multi-root-mixed-clean-dirty-refuses-all/sigterm-foo"
+  local fixture_stderr; fixture_stderr=$(mktemp)
   set +e
-  bash "$ENGINE" --pause-between-passes "$fixture_sig" >/dev/null 2>&1
-  allowed_exit=$?
+  bash "$ENGINE" --pause-between-passes "$fixture_sig" >/dev/null 2>"$fixture_stderr"
   set -e
-  if [ "$allowed_exit" -eq 2 ]; then
-    echo "  ${RED}✗${RESET} path validation: allow-listed fixture path incorrectly rejected (exit 2)"
+  if grep -q "test-only flag with non-allow-listed path" "$fixture_stderr"; then
+    echo "  ${RED}✗${RESET} path validation: allow-listed fixture path incorrectly rejected (path-validation message present)"
     FAIL=$((FAIL+1))
+    rm -f "$fixture_stderr"
     return
   fi
+  rm -f "$fixture_stderr"
 
   # ── Case 2 — silent-on-success (EXIT trap must emit nothing on exit 0) ──────
   local clean_dir; clean_dir=$(mktemp -d "${TMPDIR:-/tmp}/sigterm-test-clean-XXXX")

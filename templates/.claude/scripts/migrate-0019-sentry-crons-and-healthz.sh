@@ -31,10 +31,18 @@
 #       [--dry-run]                    # classify only; no writes
 #       [--project-dir <dir>]          # default: CWD
 #
+# D-07 (R-rev-5 HONEST REFRAME): on default refuse, recovery artifacts
+# (.observability-0019.patch + .gitignore entries) are written ONLY to DIRTY
+# roots (not clean roots). Clean roots are listed but not patched.
+# Pass --allow-partial (or set ALLOW_PARTIAL=1) to also emit patches for clean
+# roots (restores v0.6.0 "patches everywhere on refuse" behaviour).
+#
 # Exit codes:
 #   0  success: all eligible roots migrated (or idempotent no-op, or no wrapper)
-#   2  refused: >=1 hand-modified root. DEFAULT mode = ZERO writes to ANY root.
-#               --allow-partial mode  = clean roots applied, dirty skipped.
+#   2  refused: >=1 hand-modified root. DEFAULT mode = ZERO writes to CLEAN roots;
+#               DIRTY roots receive .observability-0019.patch for splice recovery.
+#               --allow-partial mode  = clean roots applied, dirty roots skipped;
+#               patches emitted to ALL roots for reference.
 #   3  pre-flight abort (wrong version / bad inputs) — ZERO writes.
 set -uo pipefail
 
@@ -42,6 +50,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ─── argument parsing ────────────────────────────────────────────────────────
 TEMPLATES_DIR=""
+# Save env value BEFORE overwriting so the D-07 env-var opt-in can read it.
+_ALLOW_PARTIAL_ENV="${ALLOW_PARTIAL:-}"
 ALLOW_PARTIAL=0
 DRY_RUN=0
 PROJECT_DIR="$PWD"
@@ -115,6 +125,19 @@ trap on_term TERM
 # ─── logging helpers (mirror 0017's prose tone) ──────────────────────────────
 info() { echo "migrate-0019: $*"; }
 warn() { echo "migrate-0019: $*" >&2; }
+
+# ─── D-07: ALLOW_PARTIAL env var opt-in ──────────────────────────────────────
+# CLI --allow-partial wins; env var is a convenience for automation scripts.
+# _ALLOW_PARTIAL_ENV was captured before arg parsing overwrote ALLOW_PARTIAL=0.
+# Supports ALLOW_PARTIAL=1, ALLOW_PARTIAL=true, ALLOW_PARTIAL=yes.
+if [ "$ALLOW_PARTIAL" -eq 0 ]; then
+  case "$_ALLOW_PARTIAL_ENV" in
+    1|true|yes)
+      ALLOW_PARTIAL=1
+      info "ALLOW_PARTIAL env var detected — treating as --allow-partial."
+      ;;
+  esac
+fi
 
 # ─── sha256 helper (portable BSD/GNU) ────────────────────────────────────────
 sha256_of() {
@@ -600,14 +623,23 @@ emit_refuse_artifacts() {
     warn "               (c) optionally splice .observability-0019.patch manually."
   done
 
-  # Also emit patches for the would-be-clean roots, so the operator has the
-  # full context even after the atomic refusal.
+  # D-07 (R-rev-5 HONEST REFRAME): default refuse no longer writes to CLEAN roots.
+  # DIRTY roots still receive .observability-0019.patch + .gitignore entries for splice recovery.
+  # --allow-partial (or ALLOW_PARTIAL=1 env) restores v0.6.0 "patches everywhere on refuse"
+  # for operators with existing manual-recovery automation.
   if [ ${#CLEAN_DIRS[@]} -gt 0 ]; then
-    warn "  would-be-clean roots (patches emitted for reference):"
-    for i in "${!CLEAN_DIRS[@]}"; do
-      warn "    CLEAN: ${CLEAN_DIRS[$i]}  (stack: ${CLEAN_STACKS[$i]})"
-      emit_refuse_artifacts_for "${CLEAN_DIRS[$i]}" "${CLEAN_STACKS[$i]}" "CLEAN-skipped"
-    done
+    if [ "$ALLOW_PARTIAL" -eq 1 ]; then
+      warn "  would-be-clean roots (patches emitted under --allow-partial for reference):"
+      for i in "${!CLEAN_DIRS[@]}"; do
+        warn "    CLEAN: ${CLEAN_DIRS[$i]}  (stack: ${CLEAN_STACKS[$i]})"
+        emit_refuse_artifacts_for "${CLEAN_DIRS[$i]}" "${CLEAN_STACKS[$i]}" "CLEAN-skipped"
+      done
+    else
+      info "  would-be-clean roots (patches NOT emitted by default; pass --allow-partial or set ALLOW_PARTIAL=1 to emit patches for clean roots too):"
+      for i in "${!CLEAN_DIRS[@]}"; do
+        info "    CLEAN: ${CLEAN_DIRS[$i]}  (stack: ${CLEAN_STACKS[$i]})"
+      done
+    fi
   fi
 }
 
@@ -770,7 +802,10 @@ if [ ${#DIRTY_DIRS[@]} -gt 0 ]; then
   warn "completed with ${#DIRTY_DIRS[@]} dirty root(s) skipped (--allow-partial)."
   printf '  skipped (hand-modified): %s\n' "${DIRTY_DIRS[@]}" >&2
 fi
-if [ ${#DIRTY_DIRS[@]} -gt 0 ] || [ ${#APPLY_FAILED[@]} -gt 0 ]; then
+if [ ${#APPLY_FAILED[@]} -gt 0 ]; then
   exit 2
 fi
+# With --allow-partial, dirty roots are expected and skipped — not a failure.
+# In default mode, DIRTY_DIRS > 0 means the all-clean gate above already exited 2;
+# reaching here means ALLOW_PARTIAL=1, so dirty roots are intentionally skipped.
 exit 0
