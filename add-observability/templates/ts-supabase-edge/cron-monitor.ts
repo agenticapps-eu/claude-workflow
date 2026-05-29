@@ -24,8 +24,11 @@
 
 // Import via the stack's npm: specifier — matches destinations/sentry.ts
 // (`npm:@sentry/deno@^8.0.0`) so deno test resolves the same module the
-// runtime uses. We only need `captureCheckIn` here.
-import { captureCheckIn as sentryCaptureCheckIn } from "npm:@sentry/deno@^8.0.0";
+// runtime uses.
+import * as Sentry from "npm:@sentry/deno@^8.0.0";
+const { captureCheckIn: sentryCaptureCheckIn } = Sentry as unknown as {
+  captureCheckIn: (...args: unknown[]) => unknown;
+};
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -71,6 +74,22 @@ export function _setCaptureCheckInForTest(fn: CaptureCheckInFn | null): void {
   captureCheckInFn = fn === null
     ? (sentryCaptureCheckIn as unknown as CaptureCheckInFn)
     : fn;
+}
+
+// Deno-friendly test seam (codex MEDIUM-4 / R-rev-6): the existing Supabase
+// suite avoids module-boundary mocking under `deno test`. This seam lets tests
+// inject a fake `withMonitor` without breaking that pattern. Production code
+// uses `Sentry.withMonitor` via the default reference below.
+// deno-lint-ignore no-explicit-any
+type WithMonitorFn = (slug: string, cb: () => any, monitorConfig?: unknown) => Promise<unknown>;
+// deno-lint-ignore no-explicit-any
+let _withMonitorImpl: WithMonitorFn = (Sentry as any).withMonitor as WithMonitorFn;
+
+/** @internal — test-only export. Sets the `withMonitor` implementation used
+ *  inside `withCronMonitor`. Restores to `Sentry.withMonitor` by default. */
+// deno-lint-ignore no-explicit-any
+export function _setWithMonitorForTest(impl: WithMonitorFn): void {
+  _withMonitorImpl = impl;
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
