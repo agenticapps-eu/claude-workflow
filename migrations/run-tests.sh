@@ -2045,6 +2045,92 @@ test_migration_0018() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Migration 0019 — Sentry Crons withCronMonitor + healthz snippets
+# ─────────────────────────────────────────────────────────────────────────────
+# Same harness shape as test_migration_0017 / 0018: per-fixture setup.sh
+# materialises a synthetic v1.17.0 project; per-fixture verify.sh invokes the
+# 0019 apply engine, asserts engine exit code + post-state, and exits 0/non-0.
+# expected-exit is the verify.sh exit code (0 across all current fixtures —
+# refuse-path fixtures still exit 0 from verify.sh once they have confirmed
+# the engine itself exited 2).
+test_migration_0019() {
+  echo ""
+  echo "${YELLOW}━━━ Migration 0019 — Sentry Crons + healthz (additive) ━━━${RESET}"
+
+  local fixtures="$REPO_ROOT/migrations/test-fixtures/0019"
+
+  if [ ! -d "$fixtures" ]; then
+    echo "  ${RED}SKIP${RESET}: fixtures directory missing"
+    SKIP=$((SKIP+1))
+    return
+  fi
+
+  # Sanity: the apply engine the fixtures invoke must exist + be executable.
+  local engine="$REPO_ROOT/templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh"
+  if [ ! -x "$engine" ]; then
+    echo "  ${RED}✗${RESET} apply engine missing/non-executable: $engine — RED state"
+    FAIL=$((FAIL+1))
+    return
+  fi
+
+  # Sanity: migration 0019 markdown itself exists (RED until GREEN commit).
+  local migration_file="$REPO_ROOT/migrations/0019-sentry-crons-and-healthz.md"
+  if [ ! -f "$migration_file" ]; then
+    echo "  ${RED}✗${RESET} migration file missing: $migration_file — RED state"
+    FAIL=$((FAIL+1))
+    return
+  fi
+
+  run_0019_fixture() {
+    local fixname="$1"
+    local fixdir="$fixtures/$fixname"
+    local tmp; tmp="$(mktemp -d -t "migration-0019-${fixname}-XXXXXX")"
+
+    if [ -x "$fixdir/setup.sh" ]; then
+      (
+        cd "$tmp" && \
+        REPO_ROOT="$REPO_ROOT" FIXTURES_ROOT="$fixtures" \
+          "$fixdir/setup.sh" >/dev/null 2>&1
+      ) || {
+        echo "  ${RED}✗${RESET} $fixname — setup.sh failed"
+        FAIL=$((FAIL+1))
+        rm -rf "$tmp"
+        return
+      }
+    fi
+
+    local verify_out verify_exit
+    verify_out=$(
+      cd "$tmp" && \
+      REPO_ROOT="$REPO_ROOT" \
+        bash "$fixdir/verify.sh" 2>&1
+    )
+    verify_exit=$?
+
+    local expected_exit
+    expected_exit=$(tr -d '\n' < "$fixdir/expected-exit")
+    if [ "$verify_exit" != "$expected_exit" ]; then
+      echo "  ${RED}✗${RESET} $fixname — verify exit $verify_exit, expected $expected_exit"
+      echo "      verify output:"
+      printf '%s\n' "$verify_out" | sed 's/^/        /' | head -15
+      FAIL=$((FAIL+1))
+      rm -rf "$tmp"
+      return
+    fi
+
+    echo "  ${GREEN}✓${RESET} $fixname"
+    PASS=$((PASS+1))
+    rm -rf "$tmp"
+  }
+
+  for fix in "$fixtures"/[0-9]*-*/; do
+    local name
+    name="$(basename "${fix%/}")"
+    run_0019_fixture "$name"
+  done
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Dispatcher
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -2102,6 +2188,10 @@ fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "0018" ]; then
   test_migration_0018
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "0019" ]; then
+  test_migration_0019
 fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "preflight" ]; then

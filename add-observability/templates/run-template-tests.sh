@@ -129,6 +129,21 @@ run_ts_cloudflare_worker() {
   substitute_tokens "$SRC/middleware.ts"              "$OBS_DIR/middleware.ts"
   substitute_tokens "$SRC/lib-observability.test.ts" "$OBS_DIR/index.test.ts"
 
+  # Phase 22 — Sentry Crons wrapper (T02 GREEN).
+  # cron-monitor.ts holds the implementation; cron-monitor.test.ts holds the
+  # contract suite. No existence gates per PLAN R02 — the runner materializes
+  # both unconditionally because they're now part of the worker template's
+  # canonical file set.
+  substitute_tokens "$SRC/cron-monitor.ts"          "$OBS_DIR/cron-monitor.ts"
+  substitute_tokens "$SRC/cron-monitor.test.ts"     "$OBS_DIR/cron-monitor.test.ts"
+
+  # Phase 22 — healthz snippet (T06). COPY-ONLY template (D9): operator copies
+  # into routes layer + adapts probes. Materialized with cron-monitor pair so
+  # the in-repo contract suite catches regressions at template-edit time.
+  # T18/R12: existence gates removed — files are part of the canonical set now.
+  substitute_tokens "$SRC/healthz-snippet.test.ts" "$OBS_DIR/healthz-snippet.test.ts"
+  substitute_tokens "$SRC/healthz-snippet.ts"      "$OBS_DIR/healthz-snippet.ts"
+
   # destinations/ sub-dir (role-based registry + adapters, phase 21).
   # Copy every .ts file (registry, adapters, and their tests) into the
   # materialized destinations/ dir so the registry tests run.
@@ -229,6 +244,19 @@ run_ts_cloudflare_pages() {
   mkdir -p "$OBS_DIR"
   substitute_tokens "$SRC/lib-observability.ts"      "$OBS_DIR/index.ts"
   substitute_tokens "$SRC/lib-observability.test.ts" "$OBS_DIR/index.test.ts"
+
+  # Phase 22 — Sentry Crons wrapper (T03 GREEN). Pages variant: no scheduled
+  # handler signature; wrapper accepts a generic () => Promise<R> per D5c.
+  # Materialized unconditionally as part of the pages template's canonical
+  # file set.
+  substitute_tokens "$SRC/cron-monitor.ts"          "$OBS_DIR/cron-monitor.ts"
+  substitute_tokens "$SRC/cron-monitor.test.ts"     "$OBS_DIR/cron-monitor.test.ts"
+
+  # Phase 22 — healthz snippet (T07). Pages variant: PagesFunction export
+  # of `onRequest` instead of a bare handler. COPY-ONLY template per D9.
+  # T18/R12: existence gates removed — files are part of the canonical set now.
+  substitute_tokens "$SRC/healthz-snippet.test.ts" "$OBS_DIR/healthz-snippet.test.ts"
+  substitute_tokens "$SRC/healthz-snippet.ts"      "$OBS_DIR/healthz-snippet.ts"
 
   # destinations/ sub-dir (role-based registry + adapters, phase 21).
   if [[ -d "$SRC/destinations" ]]; then
@@ -430,7 +458,19 @@ run_ts_supabase_edge() {
   mkdir -p "$OBS_DIR"
   substitute_tokens "$SRC/index.ts"      "$OBS_DIR/index.ts"
   substitute_tokens "$SRC/middleware.ts"  "$OBS_DIR/middleware.ts"
-  # Copy every *.test.ts (index contract suite + phase-21 axiom suite).
+  # Phase 22 — Sentry Crons wrapper (T04 GREEN). cron-monitor.ts holds the
+  # implementation that cron-monitor.test.ts (covered by the *.test.ts glob
+  # below) imports. No existence gate per PLAN R02.
+  substitute_tokens "$SRC/cron-monitor.ts" "$OBS_DIR/cron-monitor.ts"
+
+  # Phase 22 — healthz snippet (T08). COPY-ONLY template (D9). Impl is
+  # `.ts` (not `.test.ts`) so the test-glob below misses it — explicit
+  # copy. The test file IS picked up by the *.test.ts glob.
+  # T18/R12: existence gate removed — file is part of the canonical set now.
+  substitute_tokens "$SRC/healthz-snippet.ts" "$OBS_DIR/healthz-snippet.ts"
+
+  # Copy every *.test.ts (index contract suite + phase-21 axiom suite +
+  # phase-22 cron-monitor suite + phase-22 healthz-snippet suite).
   for f in "$SRC"/*.test.ts; do
     [[ -f "$f" ]] || continue
     substitute_tokens "$f" "$OBS_DIR/$(basename "$f")"
@@ -571,6 +611,39 @@ run_stack() {
       ;;
   esac
 }
+
+# ─── Phase 22 / T18 / R12 — structural assertion: withCronMonitor export presence
+#
+# Asserts each of the 4 phase-22 stacks ships a `cron-monitor.{ts,go}` file
+# carrying the expected export. Catches a regression where an editor deletes
+# the impl while leaving the test file in place (the test would compile-fail
+# with an unrelated error; this assertion gives a clear top-of-run failure).
+#
+# Worker / pages / supabase-edge: `export function withCronMonitor`
+# Go: `func WithCronMonitor`
+# ──────────────────────────────────────────────────────────────────────────────
+TEMPLATES_ROOT="$SCRIPT_DIR"
+EXPECTED_TS_CRON_MONITORS=(
+  "$TEMPLATES_ROOT/ts-cloudflare-worker/cron-monitor.ts"
+  "$TEMPLATES_ROOT/ts-cloudflare-pages/cron-monitor.ts"
+  "$TEMPLATES_ROOT/ts-supabase-edge/cron-monitor.ts"
+)
+EXPECTED_GO_CRON_MONITOR="$TEMPLATES_ROOT/go-fly-http/cron_monitor.go"
+ASSERTION_FAILED=0
+for f in "${EXPECTED_TS_CRON_MONITORS[@]}"; do
+  if ! grep -q "export function withCronMonitor" "$f" 2>/dev/null; then
+    fail "T18 export-presence: missing 'export function withCronMonitor' in $f"
+    ASSERTION_FAILED=1
+  fi
+done
+if ! grep -q "func WithCronMonitor" "$EXPECTED_GO_CRON_MONITOR" 2>/dev/null; then
+  fail "T18 export-presence: missing 'func WithCronMonitor' in $EXPECTED_GO_CRON_MONITOR"
+  ASSERTION_FAILED=1
+fi
+if [[ $ASSERTION_FAILED -ne 0 ]]; then
+  fail "T18 structural assertion failed — refusing to run stack tests"
+  exit 1
+fi
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
