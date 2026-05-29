@@ -2131,6 +2131,35 @@ test_migration_0019() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# F4 — SKILL.md version drift test (D-06 / G4)
+# Asserts skill/SKILL.md version equals the highest-numbered migration's to_version.
+# ─────────────────────────────────────────────────────────────────────────────
+
+test_skill_md_version_matches_latest_migration_to_version() {
+  # NOTE (D-04): intentionally minimal grep + awk parser. Fragile against
+  # YAML variations (quoted values, indented keys, trailing comments).
+  # SKILL.md frontmatter is fixed-shape (`version: X.Y.Z` on its own line);
+  # if that ever changes, this test must be updated.
+
+  local skill_version latest_migration_file migration_to_version
+
+  skill_version=$(grep ^version: skill/SKILL.md | awk '{print $2}')
+  latest_migration_file=$(ls migrations/[0-9][0-9][0-9][0-9]-*.md | sort | tail -1)
+  migration_to_version=$(grep ^to_version: "$latest_migration_file" | awk '{print $2}')
+
+  local migration_num
+  migration_num=$(basename "$latest_migration_file" | cut -c1-4)
+
+  if [ "$skill_version" = "$migration_to_version" ]; then
+    echo "  ${GREEN}PASS${RESET}: test-skill-md-version-matches-latest-migration-to-version"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}FAIL${RESET}: SKILL.md at v${skill_version} but migration ${migration_num} declares to_version: v${migration_to_version}"
+    FAIL=$((FAIL+1))
+  fi
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Dispatcher
 # ─────────────────────────────────────────────────────────────────────────────
 
