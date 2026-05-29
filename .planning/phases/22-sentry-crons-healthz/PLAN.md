@@ -8,7 +8,195 @@
 
 **Tech Stack:** TypeScript 5.x (Vitest 3.x runner) for worker/pages/supabase-edge; Go 1.21+ for go-fly-http; bash for the migration apply engine; existing `migrations/run-tests.sh` + `add-observability/templates/run-template-tests.sh` harnesses.
 
-**CONTEXT.md**: `.planning/phases/22-sentry-crons-healthz/CONTEXT.md` (locked design — Goals G1–G8, Decisions D1–D10).
+**CONTEXT.md**: `.planning/phases/22-sentry-crons-healthz/CONTEXT.md` (locked design — Goals G1–G8, Decisions D1–D12).
+
+---
+
+## REVISIONS — post REVIEWS.md (binding; supersedes body where conflict exists)
+
+> The multi-AI plan review (`.planning/phases/22-sentry-crons-healthz/22-REVIEWS.md`) surfaced 5 HIGH + 7 MEDIUM verified inconsistencies on 2026-05-29. Codex's claims were checked against the actual repo state. The following 11 revisions are **binding for execution**. Where a revision conflicts with task text below, the revision wins. Original task text is retained for context.
+
+### R01 — T01 simplification: drop supabase-edge and go-fly-http copy lines
+**OLD (T01 Step 3):** Add 4 `substitute_tokens` lines inside `test_go_fly_http()` for `cron_monitor.{go,_test.go}` + `healthz_snippet.{go,_test.go}`. Plus 4 lines inside `test_ts_supabase_edge()`.
+**NEW (binding):** Skip both. `add-observability/templates/run-template-tests.sh` line 434 already globs `for f in "$SRC"/*.test.ts; do substitute_tokens "$f" ...` for supabase-edge (covers all `*.ts` source files via the adjacent loop), and line 513 globs `*.go` for the Go stack. **T01 modifies only `test_ts_cloudflare_worker()` and `test_ts_cloudflare_pages()`** — 4 explicit copy lines each, no existence-gating because these are the only paths that don't already glob. Plan length saved: ~30 lines.
+
+### R02 — Remove existence-gated copy lines entirely
+**OLD (T01 Step 5):** Wrap each new `substitute_tokens` call with `[[ -f "$SRC/file" ]] && substitute_tokens ...`.
+**NEW (binding):** Do NOT add existence gates. T01 lands AFTER the first cron-monitor file exists in worker (commit ordering: T02 step 1 RED commit lands BEFORE T01). Either:
+- **Option A (recommended):** Reorder — T02 RED for worker lands first as commit 4, then T01 runner extension as commit 5. The runner extension references files that already exist.
+- **Option B:** Bundle T01 + T02-RED into a single combined commit ("test+infra: enable cron-monitor test discovery").
+
+Existence-gated copies were codex's foot-gun concern (silent skips on misspelled files). Eliminating the gate eliminates the foot-gun.
+
+### R03 — T02 / T03 / T04 / T05 implementations forward `monitorConfig` (schedule + maxRuntimeSeconds) on in_progress checkin
+**OLD (T02 Step 4 impl):** `captureCheckIn({ monitorSlug, status: "in_progress" })`.
+**NEW (binding):** When `config?.schedule` OR `config?.maxRuntimeSeconds` is set, pass them as Sentry's `monitorConfig` 2nd arg ONLY on the in_progress checkin:
+```ts
+const monitorConfig = (config?.schedule || config?.maxRuntimeSeconds)
+  ? { schedule: config?.schedule, maxRuntime: config?.maxRuntimeSeconds }
+  : undefined;
+checkInId = captureCheckIn(
+  { monitorSlug, status: "in_progress" },
+  monitorConfig,  // 2nd arg per Sentry SDK contract — UPSERTS monitor config in UI
+) as string;
+```
+Subsequent `ok`/`error` checkins pass only the first arg. Add 1 new test per stack ("forwards monitorConfig on in_progress, omits on completion") asserting the 2nd-arg shape via `vi.mocked(captureCheckIn).mock.calls[0][1]` (and Go equivalent). Resolves CONTEXT N5/D12 from "claimed but dead field" to actually-forwarded. Source: <https://docs.sentry.io/platforms/javascript/guides/koa/configuration/draining/>.
+
+### R04 — T02 / T03 / T04 / T05 add opt-in `SENTRY_DEBUG=1` console-log in catch blocks
+**OLD (T02 Step 4 impl):** `try { captureCheckIn(...) } catch { /* swallow */ }`.
+**NEW (binding):** Surface swallowed errors when `SENTRY_DEBUG=1`:
+```ts
+try { captureCheckIn(...); } catch (e) {
+  if (env.SENTRY_DEBUG === "1" || (globalThis as any).process?.env?.SENTRY_DEBUG === "1") {
+    console.error("[withCronMonitor] captureCheckIn threw:", e);
+  }
+}
+```
+Go equivalent uses `os.Getenv("SENTRY_DEBUG") == "1"`. Add 1 test per stack ("logs swallowed errors when SENTRY_DEBUG=1, silent otherwise"). Addresses gemini's LOW concern about silent heartbeat failures.
+
+### R05 — T05 Go `captureCheckinFn` return type is `*sentry.EventID`, not `sentry.EventID`
+**OLD (T05 Step 4 impl):** `var captureCheckinFn = func(checkIn *sentry.CheckIn) sentry.EventID { return sentry.CaptureCheckIn(checkIn, nil) }`.
+**NEW (binding):** Per [pkg.go.dev sentry-go](https://pkg.go.dev/github.com/getsentry/sentry-go), `sentry.CaptureCheckIn` returns `*sentry.EventID`. Update:
+```go
+var captureCheckinFn = func(checkIn *sentry.CheckIn, monitorConfig *sentry.MonitorConfig) *sentry.EventID {
+  return sentry.CaptureCheckIn(checkIn, monitorConfig)
+}
+```
+Helper file's `capturedCheckin.ID` field type becomes `*sentry.EventID`. Stub returns a non-nil pointer (`id := sentry.EventID("stub-id"); return &id`). Add code comment: `// Tests using this seam MUST NOT use t.Parallel() — captureCheckinFn is package-level.`
+
+### R06 — T06 / T07 / T08 / T09 healthz fail-closed on zero configured probes
+**OLD (T06 Step 3 impl):** `const allOk = Object.values(checks).every(Boolean); return new Response(JSON.stringify({ status: allOk ? "ok" : "degraded", checks }), { status: allOk ? 200 : 503, ... });`.
+**NEW (binding):** Empty `checks` map MUST fail-closed:
+```ts
+const probeNames = Object.keys(checks);
+if (probeNames.length === 0) {
+  return new Response(
+    JSON.stringify({ status: "degraded", reason: "no probes configured — adapt healthz-snippet.ts to your dependencies", checks: {} }),
+    { status: 503, headers: { "content-type": "application/json" } },
+  );
+}
+const allOk = probeNames.every((k) => checks[k]);
+// ... rest unchanged
+```
+Go equivalent: `if len(checks) == 0 { ... allOK=false; ... }`. Add 1 test per stack ("returns 503 with `reason: no probes configured` when no deps wired"). Addresses BOTH gemini's "permanent degraded" AND codex's "200-on-empty false-green" concerns.
+
+### R07 — T06 / T07 / T08 / T09 top-of-file comment promoted to multi-line WARNING block
+**OLD:** Single comment line `// Copy this file into your routes layer...`.
+**NEW (binding):** Multi-line block:
+```ts
+//
+// ╔════════════════════════════════════════════════════════════════════╗
+// ║ WARNING — healthz snippet is a TEMPLATE, not a library.            ║
+// ║                                                                    ║
+// ║ Before mounting:                                                   ║
+// ║  1. Copy this file into your routes layer (e.g. routes/healthz.ts) ║
+// ║  2. ADAPT the dependency probes to YOUR project's actual bindings. ║
+// ║     Unadapted probes for non-existent deps will report degraded.   ║
+// ║     Zero probes configured → endpoint returns 503 (fail-closed).   ║
+// ║  3. Review SECURITY: per-check breakdown leaks internal topology.  ║
+// ║     For public endpoints, consider `?detail=true` opt-in (T14      ║
+// ║     runbook describes the gating pattern).                         ║
+// ║                                                                    ║
+// ║ Do NOT import this file directly from elsewhere in your app.       ║
+// ╚════════════════════════════════════════════════════════════════════╝
+```
+Apply across all 4 healthz snippets (worker/pages/supabase-edge/go-fly-http; Go uses `//` comment lines without the box-drawing characters or with them — at executor discretion).
+
+### R08 — T10 apply engine is 2-pass: classify → all-clean gate → apply (mirror 0017)
+**OLD (T10 Step 2 sketch):** Single `for wrapper_dir in "${WRAPPER_DIRS[@]}"; do ... copy_new_files ...; done` loop.
+**NEW (binding):** Mirror `templates/.claude/scripts/migrate-0017-axiom-destination.sh` lines 305+. Pass 1 classifies every root as `CLEAN | DIRTY | ALREADY | UNSUPPORTED`; pass 2 only runs if `DIRTY_DIRS` is empty (all-clean gate). If any dirty, refuse atomically — emit `.observability-0019.patch` for each clean dir that would have been applied, exit non-zero, NO files written:
+```bash
+# Pass 1 — classify
+declare -a CLEAN_DIRS=() CLEAN_STACKS=()
+declare -a DIRTY_DIRS=() ALREADY_DIRS=() UNSUPPORTED_DIRS=()
+for wrapper_dir in "${WRAPPER_DIRS[@]}"; do
+  stack=$(detect_stack "$wrapper_dir")
+  case "$stack" in
+    ts-react-vite) ALREADY_DIRS+=("$wrapper_dir") ; continue ;;
+    unknown) UNSUPPORTED_DIRS+=("$wrapper_dir") ; continue ;;
+  esac
+  if [ -f "$wrapper_dir/cron-monitor.ts" ] || [ -f "$wrapper_dir/cron_monitor.go" ]; then
+    ALREADY_DIRS+=("$wrapper_dir") ; continue
+  fi
+  if is_known_clean_wrapper "$wrapper_dir" "$stack"; then
+    CLEAN_DIRS+=("$wrapper_dir"); CLEAN_STACKS+=("$stack")
+  else
+    DIRTY_DIRS+=("$wrapper_dir")
+  fi
+done
+
+# All-clean gate
+if [ ${#DIRTY_DIRS[@]} -gt 0 ]; then
+  for d in "${DIRTY_DIRS[@]}"; do emit_patch_for "$d" ; done
+  log_refuse "$DIRTY_DIRS"
+  exit 1
+fi
+
+# Pass 2 — apply
+for i in "${!CLEAN_DIRS[@]}"; do
+  copy_new_files "${CLEAN_DIRS[$i]}" "${CLEAN_STACKS[$i]}"
+done
+```
+Restores the atomic property 0017 was hardened around.
+
+### R09 — T11 add fixture 06: mixed clean+dirty multi-root proves atomic refusal
+**OLD (T11):** 5 fixtures (`01-fresh-apply` ... `05-multi-module-root`).
+**NEW (binding):** Add `migrations/test-fixtures/0019/06-mixed-clean-dirty-refuses-all/`:
+- `setup.sh`: materializes 2 clean v1.17.0 wrappers + 1 hand-modified wrapper in the same project root.
+- `expected-exit`: non-zero.
+- `verify.sh`: asserts NONE of the 3 wrappers got `cron-monitor.ts` created — proves atomic refusal. Also asserts `.observability-0019.patch` files exist for the 2 clean dirs (their would-be diffs were emitted), confirming operator can re-attempt after manually addressing the dirty wrapper.
+
+Plus add fixture `07-react-vite-only/`: project with only ts-react-vite stack present; expected-exit `0`; verify.sh asserts no files written and stdout includes "no eligible stacks". (Codex's dedicated react-vite-only path concern.)
+
+### R10 — T14 runbook adds "Security & Public Exposure" section
+**OLD (T14 outline):** 3 sections (Crons setup / Uptime setup / policy.md cross-link).
+**NEW (binding):** Add 4th section "Part 4 — Security & Public Exposure" covering:
+- `/healthz` endpoint info-disclosure risk when public-exposed (per-check breakdown reveals internal topology).
+- Recommended mitigation: gate per-check breakdown behind `?detail=true` query param, default response is `{"status":"ok"}` or `{"status":"degraded"}` only.
+- Optional split into `/healthz` (always 200 while alive — shallow) vs `/readyz` (deep deps — internal-only).
+- Sentry Uptime probe authentication: if `/healthz` is auth-gated, configure the probe with a long-lived Bearer token in Sentry's "Headers" config.
+
+### R11 — T17 byte-identical reframed from "git diff main" to "diff filename allowlist"
+**OLD (T17 Step 2):** `git diff main -- [list of existing wrapper files] ; Expected: NO output.`
+**NEW (binding):** Use a filename allowlist that asserts the diff includes ONLY new files + the version bumps + CHANGELOG + ADR + INIT.md + runbook:
+```bash
+ALLOWED=(
+  add-observability/templates/'*/cron-monitor.ts'
+  add-observability/templates/'*/cron_monitor.go'
+  add-observability/templates/'*/cron_monitor_test.go'
+  add-observability/templates/'*/cron-monitor.test.ts'
+  add-observability/templates/'*/healthz-snippet.ts'
+  add-observability/templates/'*/healthz_snippet.go'
+  add-observability/templates/'*/healthz-snippet.test.ts'
+  add-observability/templates/'*/healthz_snippet_test.go'
+  add-observability/templates/run-template-tests.sh
+  add-observability/init/INIT.md
+  add-observability/uptime-setup-runbook.md
+  add-observability/SKILL.md
+  skill/SKILL.md
+  migrations/0019-sentry-crons-and-healthz.md
+  migrations/run-tests.sh
+  migrations/test-fixtures/0019/
+  templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh
+  docs/decisions/0028-sentry-crons-healthz-conventions.md
+  CHANGELOG.md
+  .planning/phases/22-sentry-crons-healthz/
+)
+git diff --name-only main..HEAD | while read f; do
+  ok=0; for p in "${ALLOWED[@]}"; do [[ "$f" == $p ]] && { ok=1; break; }; done
+  [ "$ok" = 1 ] || { echo "DISALLOWED: $f"; exit 1; }
+done
+# AND: assert existing v0.5.1 wrapper files are NOT in the changed-files set:
+git diff --name-only main..HEAD | grep -E "(lib-observability\.ts|^.*/middleware\.ts$|^.*/_middleware\.ts$|^.*/middleware\.go$|^.*/observability\.go$|^.*/index\.ts$|^.*/destinations.*\.(ts|go)$)" && exit 1
+```
+Less brittle than byte-equal; honors the actual constraint (no edits to existing wrapper files).
+
+### R12 — NEW T18: post-completion cleanup (existence gates removed; export presence asserted)
+After T17 passes:
+- Remove any existence-gated copy lines left in `run-template-tests.sh` (per R02 they should never have landed, but verify).
+- Add an assertion to T16's Step 4 that `grep -rl "withCronMonitor" add-observability/templates/{ts-cloudflare-worker,ts-cloudflare-pages,ts-supabase-edge}/cron-monitor.ts && grep -rl "WithCronMonitor" add-observability/templates/go-fly-http/cron_monitor.go` returns all 4 expected files.
+
+Commit message: `chore(phase-22): T18 post-completion guardrails (export presence + no existence gates)`.
 
 ---
 

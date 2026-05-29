@@ -26,10 +26,10 @@ This phase ships three deliverables in one PR that close those gaps without chan
 
 | # | Goal | Evidence shape |
 |---|------|----------------|
-| G1 | `withCronMonitor` exported from 4 stacks (worker / pages / supabase-edge / go-fly-http); react-vite skipped | Per-stack `middleware.{ts,go}` exports `withCronMonitor` / `WithCronMonitor`; signature matches §3 of this CONTEXT; importable in isolation; `tsc --noEmit` / `go build` clean. |
+| G1 | `withCronMonitor` exported from 4 stacks (worker / pages / supabase-edge / go-fly-http); react-vite skipped | Per-stack NEW sibling files `cron-monitor.ts` (TS) / `cron_monitor.go` (Go) export `withCronMonitor` / `WithCronMonitor`; existing `middleware.{ts,go}` / `_middleware.ts` / `index.ts` files are NOT modified (preserves G2 byte-identical). Signature matches §3 of this CONTEXT; importable in isolation; `tsc --noEmit` / `go build` clean. |
 | G2 | All v0.5.1 template exports byte-identical (§10.1) | TS exports diff-clean against 1.17.0: `init`, `parseTraceparent`, `newRootContext`, `formatTraceparent`, `runWithContext`, `getActiveContext`, `startSpan`, `logEvent`, `captureError`, `withObservability`, `withObservabilityScheduled`, `instrumentedFetch`, `tracedFetch`. Go exports diff-clean: `Init`, `ParseTraceparent`, `NewRootContext`, `FormatTraceparent`, `WithContext`, `FromContext`, `StartSpan`, `LogEvent`, `CaptureError`, `Middleware`, `NewTracingTransport`, `Flush`. (`withSentry` is operator-applied from `@sentry/cloudflare` at the entry file — not a template export.) Existing 170 template-suite tests pass unchanged. |
 | G3 | Cron heartbeats fire in 3 cases, fail-safe in 1 | Per stack × 3 tests: (a) happy → `captureCheckIn(in_progress)` + `captureCheckIn(ok)`; (b) handler throws → `captureCheckIn(in_progress)` + `captureCheckIn(error)` + original error re-thrown; (c) `SENTRY_DSN` unset → 0 checkins, handler runs, no exception. ~12 new tests. |
-| G4 | Slug resolution honors 3-source precedence | Per-stack test: explicit `config.monitorSlug` wins → env var `SENTRY_CRON_MONITOR_SLUG_<HANDLER>` 2nd → auto-derived `${serviceName}:${cronExpr}` 3rd. Auto-derive falling back to `${serviceName}:scheduled` when cron expression unavailable (pages). |
+| G4 | Slug resolution honors 3-source precedence | Per-stack test: explicit `config.monitorSlug` wins → env var `SENTRY_CRON_MONITOR_SLUG_<HANDLER>` 2nd → auto-derived 3rd. Auto-derive shape: `${serviceName}:${cronExpression}` (worker — `controller.cron`); `${serviceName}:${handlerName}` (pages / supabase-edge — handlerName defaults to `"scheduled"` if unset); `${serviceName}:${cronExpression}` (go — explicit cron expression arg, defaults to `"scheduled"`). |
 | G5 | `healthz-snippet.{ts,go}` ships in 4 stacks with copy-only contract | Each snippet file has top-of-file `// Copy this file…` comment; in-file test asserts 200 `{"status":"ok"}` on stub-pass and 503 `{"status":"degraded", "checks": {...}}` on stub-fail with per-check breakdown. Snippet does **not** route through `withObservability` (Decision D, no Sentry transaction noise). |
 | G6 | Migration 0019 adopts the new exports on existing v1.17.0 projects with §10.7 consent | `migrations/0019-sentry-crons-and-healthz.md` (`from_version: 1.17.0`, `to_version: 1.18.0`) + 5 fixtures (`01-fresh-apply`, `02-already-applied`, `03-hand-modified-refuse`, `04-no-scheduled-handlers-project`, `05-multi-module-root`). Content-hash refuse on hand-modified wrappers mirrors 0017's style-insensitive canonicalization. |
 | G7 | Operator runbook published | `add-observability/uptime-setup-runbook.md` covers Crons-setup-per-slug, Uptime-setup-per-endpoint, `policy.md` "Out-of-process monitors" section template. ~150 lines. |
@@ -45,12 +45,24 @@ This phase ships three deliverables in one PR that close those gaps without chan
 
 **D4 — `/healthz` is NOT wrapped by `withObservability`.** Uptime probes hit `/healthz` every 1–15 min × N regions — that's noise that crowds Sentry's transaction view and obscures real traffic patterns. `/healthz` is observable via Sentry Uptime alone; the snippet uses raw `Response` / `http.HandlerFunc`. (Resolves prompt Open Q3.)
 
-**D5 — Composition order: `withSentry(withObservabilityScheduled(withCronMonitor(handler)))`** (worker & supabase-edge). `withCronMonitor` is innermost so its `try/catch` runs first on handler exceptions and the rethrown error still propagates to `withObservabilityScheduled`'s capture path. `withSentry` outermost so the Sentry hub is initialized before any `captureCheckIn` call. Documented per-stack in `init/INIT.md` Phase 5 rewrite-shape sections.
+**D5 — Composition order is per-stack (no unified rule across all 4 stacks):**
+
+- **D5a — Worker:** `withSentry(env)(withObservabilityScheduled(withCronMonitor(handler, { monitorSlug })))`. `withCronMonitor` innermost so its `try/catch` runs first on handler exceptions and the rethrown error still propagates to `withObservabilityScheduled`'s capture path. `withSentry` outermost so the Sentry hub is initialized before any `captureCheckIn` call.
+- **D5b — Supabase Edge:** `withObservability(withCronMonitor(handler, { monitorSlug }))`. The stack has NO `withObservabilityScheduled` export (Edge functions are HTTP handlers triggered by `pg_cron`, not scheduled handlers); and NO `withSentry` SDK wrap from `@sentry/cloudflare` — Sentry initialization happens inline in the existing `init()`. The wrapper layering is therefore 2-deep, not 3-deep.
+- **D5c — Pages:** No standard composition. `withCronMonitor` wraps a generic `() => Promise<R>` and is called by whatever externally triggers the Pages Function (a parallel Worker on cron, or Cloudflare Workflows). There is no `withObservabilityScheduled` to compose with.
+- **D5d — Go:** `WithCronMonitor(ctx, slug, expr, fn)` is a standalone helper called inside the operator's `time.NewTicker` loop or one-shot scheduled job. Composes only with the existing recover-and-capture middleware if the cron-driven code path also serves HTTP requests.
+
+Documented per-stack in `add-observability/init/INIT.md` Phase 5 rewrite-shape sections.
 
 **D6 — Slug resolution precedence (3-source):**
 1. Explicit `config.monitorSlug` arg.
-2. Env var `SENTRY_CRON_MONITOR_SLUG_<HANDLER_NAME>` (case-insensitive match, hyphens→underscores).
-3. Auto-derived: `${serviceName}:${cronExpression}` (worker, go), `${serviceName}:scheduled` (pages, supabase-edge when expression unavailable).
+2. Env var `SENTRY_CRON_MONITOR_SLUG_<HANDLER_NAME>` where `HANDLER_NAME` = `config.handlerName` (or `"SCHEDULED"` when unset), uppercased, hyphens → underscores.
+3. Auto-derived (per-stack shape — see G4 for the exact form):
+   - Worker: `${serviceName}:${controller.cron}` — uses the actual cron expression the runtime passed.
+   - Pages / Supabase Edge: `${serviceName}:${handlerName}` — operator-supplied `handlerName` (defaults to `"scheduled"`).
+   - Go: `${serviceName}:${cronExpression}` — operator-supplied `WithCronExpression("…")` option, defaults to `"scheduled"`.
+
+`serviceName` resolves from the `SERVICE_NAME` env var with fallback `"service"`. See D11 for the explicit-`monitorSlug` requirement on multi-cron workers.
 
 **D7 — Healthz snippet is copy-only, not auto-mounted.** Each snippet ships with a top-of-file warning comment and an in-file test that imports the handler function directly. `init` doesn't mount it; the runbook tells the operator where to copy it.
 
@@ -60,13 +72,19 @@ This phase ships three deliverables in one PR that close those gaps without chan
 
 **D10 — react-vite is fully skipped.** Browser bundle has no scheduled handlers; the wrapper export and the healthz snippet are server-side concepts. Migration 0019 treats a project as "no work to do" if the only stack present is react-vite.
 
+**D11 — Multi-cron workers must pass `monitorSlug` explicitly.** The env-var convention `SENTRY_CRON_MONITOR_SLUG_<HANDLER>` assumes a 1:1 handler-to-cron relationship. A Cloudflare Worker with a single `scheduled` export dispatched against multiple cron triggers (`crons = ["*/15 * * * *", "0 0 * * *"]` in `wrangler.toml`) cannot disambiguate via env — both invocations land on the same `SENTRY_CRON_MONITOR_SLUG_SCHEDULED` value. Operators with multi-cron handlers MUST select per-invocation by reading `controller.cron` and dispatching to `withCronMonitor({ monitorSlug: SLUG_BY_CRON[controller.cron] })`. Per-cron-expression env-key support (e.g. `SENTRY_CRON_MONITOR_SLUG_SCHEDULED_15MIN`) is deferred to a future minor; runbook documents the workaround.
+
+**D12 — `schedule` and `maxRuntimeSeconds` forwarded as Sentry monitor config on first checkin.** Sentry's `captureCheckIn(checkIn, monitorConfig?)` JS SDK and equivalent Go API accept an optional 2nd `monitorConfig` argument used to UPSERT the monitor's schedule + max-runtime in Sentry's UI. The wrapper passes `config.schedule` and `config.maxRuntimeSeconds` (when set) to `captureCheckIn`'s 2nd argument on the `in_progress` checkin only. Sentry treats subsequent same-slug checkins as already-configured. **Client-side timeout enforcement is OUT-OF-SCOPE** — `maxRuntimeSeconds` is metadata-only here; the wrapper does not start a `setTimeout` / `time.After` watchdog. Operator-side alerting on long-running checkins is configured in the Sentry UI.
+
 ## Out-of-scope (explicit non-goals)
 
 - **N1 — Spec change.** No PR to `agenticapps-workflow-core`. Implementation behavior under §10.6/§10.7; mandatory cron heartbeating across destinations is future §10.x work.
 - **N2 — Axiom destination changes.** Axiom adapter byte-identical; checkins don't mirror to Axiom.
 - **N3 — Adopting v1.18.0 in downstream repos.** fxsa / callbot / cparx adoption is downstream work covered by separate prompts (D / E / F in the user's sequencing plan). This PR only ships the scaffolder.
 - **N4 — Guardrail test for SKILL.md drift.** The drift bug (PR #52) is fixed by commit 1, but adding a test in `migrations/run-tests.sh` that asserts `skill/SKILL.md version === latest migration to_version` is intentionally out-of-scope to keep this PR focused on the cron+healthz feature. Tracked as a follow-up in the PR body.
-- **N5 — Per-handler `maxRuntimeSeconds` enforcement.** The `CronMonitorConfig.maxRuntimeSeconds` field is forwarded to Sentry as monitor config metadata, but this PR doesn't enforce it client-side via timeouts. (Operator can configure Sentry to alert when in_progress > X.)
+- **N5 — Per-handler `maxRuntimeSeconds` client-side enforcement.** Per D12, the field IS forwarded to Sentry as monitor-config metadata on the first checkin, but this PR doesn't enforce it client-side via `setTimeout` / `time.After`. (Operator configures Sentry to alert when in_progress > X via the monitor-config path.)
+- **N6 — Per-cron-expression env-key disambiguation for multi-cron workers.** Per D11, multi-cron handlers must pass `monitorSlug` explicitly; per-cron-expression env keys are a future-minor enhancement.
+- **N7 — `/healthz` vs `/readyz` split.** Codex's k8s-convention suggestion is deferred to a future minor. This phase ships a single `/healthz` endpoint with the WARNING + fail-closed-on-no-probes defaults (T06–T09).
 
 ## References
 
