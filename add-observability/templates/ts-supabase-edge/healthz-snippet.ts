@@ -50,6 +50,12 @@
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
+/** D-03 default per-probe timeout in ms.
+ * D-03 (narrowed for Supabase-Edge per codex MEDIUM-5): Deno runtime + restrictive
+ * test seam → env-var configuration matches Pages pattern. Worker keeps 3rd-arg path.
+ * Override via Deno.env.get("HEALTHZ_PROBE_TIMEOUT_MS"). */
+export const DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS = 2000;
+
 /**
  * Supabase-js probe surface — narrowed to the chain `from(table).select(s).limit(n)`
  * which is the only path this handler exercises. Operators pass a real
@@ -87,22 +93,52 @@ export interface HealthzDeps {
  * The supabase probe treats both a returned error object AND a thrown
  * promise as "failed" — supabase-js wraps most failures in `{error: ...}`
  * but transport-level explosions throw outright.
+ *
+ * D-03 (narrowed for Supabase-Edge per codex MEDIUM-5): Deno runtime + restrictive
+ * test seam → env-var configuration matches Pages pattern. Worker keeps 3rd-arg path.
  */
 export default async function healthzHandler(
   _req: Request,
   deps: HealthzDeps,
 ): Promise<Response> {
-  const checks: Record<string, boolean> = {};
+  const checks: Record<string, boolean | "timeout"> = {};
+
+  // D-03 (narrowed for Supabase-Edge per codex MEDIUM-5): env-var config via Deno.env.
+  const probeTimeoutMs =
+    Number(Deno.env.get("HEALTHZ_PROBE_TIMEOUT_MS")) || DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS;
 
   if (deps.supabase) {
+    // Per gemini MEDIUM-1: AbortController + setTimeout + try/finally + clearTimeout.
+    // NOT Promise.race + abort-rejection — prevents unhandled promise rejections.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(
+      () => controller.abort(new DOMException("probe timeout", "TimeoutError")),
+      probeTimeoutMs,
+    );
     try {
-      const { error } = await deps.supabase
-        .from("_healthz_probe")
-        .select("*")
-        .limit(0);
-      checks.supabase = error == null;
-    } catch {
-      checks.supabase = false;
+      await new Promise<void>((resolve, reject) => {
+        controller.signal.addEventListener("abort", () =>
+          reject(new DOMException("aborted", "TimeoutError")),
+        );
+        deps.supabase!
+          .from("_healthz_probe")
+          .select("*")
+          .limit(0)
+          .then(({ error }) => {
+            if (error == null) resolve();
+            else reject(new Error("supabase probe error"));
+          })
+          .catch(reject);
+      });
+      checks.supabase = true;
+    } catch (e) {
+      checks.supabase =
+        e instanceof DOMException &&
+        (e.name === "TimeoutError" || e.name === "AbortError")
+          ? "timeout"
+          : false;
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
@@ -120,7 +156,7 @@ export default async function healthzHandler(
     );
   }
 
-  const allOk = probeNames.every((k) => checks[k]);
+  const allOk = probeNames.every((k) => checks[k] === true);
   return new Response(
     JSON.stringify({ status: allOk ? "ok" : "degraded", checks }),
     {
