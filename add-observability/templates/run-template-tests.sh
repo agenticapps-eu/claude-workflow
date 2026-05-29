@@ -144,6 +144,10 @@ run_ts_cloudflare_worker() {
   substitute_tokens "$SRC/healthz-snippet.test.ts" "$OBS_DIR/healthz-snippet.test.ts"
   substitute_tokens "$SRC/healthz-snippet.ts"      "$OBS_DIR/healthz-snippet.ts"
 
+  # Phase 24 — recordLLMResponseMeta helper (T24.1.1). Test file wired in RED;
+  # impl file wired in GREEN (TDD discipline per workflow skill).
+  substitute_tokens "$SRC/llm-response-meta.test.ts" "$OBS_DIR/llm-response-meta.test.ts"
+
   # destinations/ sub-dir (role-based registry + adapters, phase 21).
   # Copy every .ts file (registry, adapters, and their tests) into the
   # materialized destinations/ dir so the registry tests run.
