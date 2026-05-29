@@ -257,6 +257,16 @@ run_ts_cloudflare_pages() {
   substitute_tokens "$SRC/cron-monitor.ts"          "$OBS_DIR/cron-monitor.ts"
   substitute_tokens "$SRC/cron-monitor.test.ts"     "$OBS_DIR/cron-monitor.test.ts"
 
+  # Phase 22 — healthz snippet (T07). Pages variant: PagesFunction export
+  # of `onRequest` instead of a bare handler. COPY-ONLY template per D9.
+  # Existence-gated to keep RED → GREEN staging clean.
+  if [[ -f "$SRC/healthz-snippet.test.ts" ]]; then
+    substitute_tokens "$SRC/healthz-snippet.test.ts" "$OBS_DIR/healthz-snippet.test.ts"
+  fi
+  if [[ -f "$SRC/healthz-snippet.ts" ]]; then
+    substitute_tokens "$SRC/healthz-snippet.ts" "$OBS_DIR/healthz-snippet.ts"
+  fi
+
   # destinations/ sub-dir (role-based registry + adapters, phase 21).
   if [[ -d "$SRC/destinations" ]]; then
     local DEST_DIR="$OBS_DIR/destinations"
