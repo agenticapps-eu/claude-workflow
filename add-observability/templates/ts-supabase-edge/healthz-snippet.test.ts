@@ -24,7 +24,7 @@
  */
 
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import healthzHandler from "./healthz-snippet.ts";
+import healthzHandler, { DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS } from "./healthz-snippet.ts";
 
 // ─── Stub builders ────────────────────────────────────────────────────────────
 
@@ -115,4 +115,72 @@ Deno.test("returns 503 status:degraded when supabase probe throws", async () => 
   assertEquals(res.status, 503);
   const body = await res.json();
   assertEquals(body, { status: "degraded", checks: { supabase: false } });
+});
+
+// ─── F2 per-probe timeout tests (Phase 23 / D-03 / R-rev-3 narrowed for Supabase) ─
+
+Deno.test("F2 Test 1: fast probe resolves within timeout → status ok", async () => {
+  const stub = makeSupabaseStub({ error: null });
+  const res = await healthzHandler(req(), { supabase: stub });
+  assertEquals(res.status, 200);
+  const body = await res.json();
+  assertEquals(body.status, "ok");
+});
+
+Deno.test({
+  name: "F2 Test 2: probe hanging > default timeout → degraded with 'timeout' sentinel",
+  async fn() {
+    // Hanging probe — never resolves
+    const hangingStub = {
+      from: (_t: string) => ({
+        select: (_s: string) => ({
+          limit: (_n: number) => new Promise<{ error: unknown }>(() => { /* never */ }),
+        }),
+      }),
+    };
+    const start = Date.now();
+    const res = await healthzHandler(req(), { supabase: hangingStub });
+    const elapsed = Date.now() - start;
+    assert(elapsed < DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS + 200, `elapsed ${elapsed}ms exceeded timeout + 200ms slack`);
+    assertEquals(res.status, 503);
+    const body = await res.json();
+    assertEquals(body.checks.supabase, "timeout");
+  },
+  sanitizeOps: false,
+  sanitizeResources: false,
+});
+
+Deno.test({
+  name: "F2 Test 3: Deno.env.get HEALTHZ_PROBE_TIMEOUT_MS overrides timeout",
+  async fn() {
+    // D-03 (narrowed for Supabase-Edge per codex MEDIUM-5): Deno runtime + restrictive
+    // test seam → env-var configuration matches Pages pattern. Worker keeps 3rd-arg path.
+    Deno.env.set("HEALTHZ_PROBE_TIMEOUT_MS", "500");
+    const hangingStub = {
+      from: (_t: string) => ({
+        select: (_s: string) => ({
+          limit: (_n: number) => new Promise<{ error: unknown }>(() => { /* hangs > 500ms */ }),
+        }),
+      }),
+    };
+    const start = Date.now();
+    const res = await healthzHandler(req(), { supabase: hangingStub });
+    const elapsed = Date.now() - start;
+    Deno.env.delete("HEALTHZ_PROBE_TIMEOUT_MS");
+    assert(elapsed < 700, `elapsed ${elapsed}ms should be < 700ms (500ms + 200ms slack)`);
+    assertEquals(res.status, 503);
+    const body = await res.json();
+    assertEquals(body.checks.supabase, "timeout");
+  },
+  sanitizeOps: false,
+  sanitizeResources: false,
+});
+
+Deno.test("F2 Test 5 (gemini MEDIUM-1): no unhandled rejection after fast probe", async () => {
+  const stub = makeSupabaseStub({ error: null });
+  // AbortController + clearTimeout ensures no dangling timers or unhandled rejections.
+  // Deno.test harness catches unhandled rejections automatically.
+  await healthzHandler(req(), { supabase: stub });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert(true, "no unhandled rejection");
 });
