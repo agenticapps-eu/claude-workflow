@@ -3,7 +3,7 @@
 **Branch:** `feat/sentry-crons-healthz-v1.18.0`
 **Commits ahead of main:** 30
 **Date:** 2026-05-29
-**Verdict:** ✅ PASS — all 8 must-have goals have 1:1 evidence; 2 deferred follow-ups documented.
+**Verdict:** ✅ PASS — all 8 must-have goals have 1:1 evidence; 4 deferred follow-ups documented.
 
 ## Evidence per goal
 

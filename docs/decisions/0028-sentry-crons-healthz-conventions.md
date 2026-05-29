@@ -117,7 +117,7 @@ and [`CONTEXT.md`](../../.planning/phases/22-sentry-crons-healthz/CONTEXT.md).
 - CONTEXT D1–D12 + N1–N7: [`22-sentry-crons-healthz/CONTEXT.md`](../../.planning/phases/22-sentry-crons-healthz/CONTEXT.md)
 - Cross-AI plan review (gemini LOW vs codex HIGH; 5 verified inconsistencies folded as R01–R12):
   [`22-sentry-crons-healthz/22-REVIEWS.md`](../../.planning/phases/22-sentry-crons-healthz/22-REVIEWS.md)
-- ADR-0014 (observability architecture): `~/Sourcecode/agenticapps/agenticapps-workflow-core/adrs/0014-observability-architecture.md`
+- ADR-0014 (observability architecture) — in `agenticapps-workflow-core` (sibling repo).
 - ADR-0026 (`add-observability` 0.5.1 wrapper fixes): [`0026-add-observability-0-5-1-wrapper-fixes.md`](./0026-add-observability-0-5-1-wrapper-fixes.md)
 - ADR-0027 (GSD post-phase observability hook): [`0027-postphase-observability-hook.md`](./0027-postphase-observability-hook.md)
 - Sentry Crons: <https://docs.sentry.io/product/crons/>

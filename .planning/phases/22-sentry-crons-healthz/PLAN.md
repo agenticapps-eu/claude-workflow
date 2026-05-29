@@ -295,6 +295,8 @@ substitute_tokens "$SRC/healthz_snippet_test.go" "$WORKDIR/internal/observabilit
 
 This lets the runner stay green between T01 and T02 (the files don't exist yet during the interim commit).
 
+> ⚠️ **Superseded by R12 (T18 guardrails).** The existence-gated `substitute_tokens` lines shown above were the original RED-state safety net. Binding revision R12 — and the T18 post-completion guardrails commit (`47659ec`) — removed them in favour of unconditional copies after the source files landed in T02. The annotation here preserves the historical "what was originally planned" record; do not re-introduce existence gates when re-executing this plan. See `22-REVIEWS.md` R12 for the binding rationale.
+
 - [ ] **Step 6: Run the suite to confirm green baseline preserved.**
 
 Run: `bash add-observability/templates/run-template-tests.sh all 2>&1 | tail -5`

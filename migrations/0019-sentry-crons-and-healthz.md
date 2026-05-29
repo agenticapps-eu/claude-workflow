@@ -245,11 +245,11 @@ grep -q '^version: 1.18.0$' .claude/skills/agentic-apps-workflow/SKILL.md
 - **Why an executable engine, not pure prose.** Same precedent as 0017: the
   hand-modified-refuse semantics and the 2-pass atomic gate are testable
   end-to-end only when the apply is a deterministic script the harness can
-  exercise against fixtures. The 6 fixtures (`01-fresh-apply`,
+  exercise against fixtures. The 7 fixtures (`01-fresh-apply`,
   `02-already-applied`, `03-hand-modified-refuse`,
   `04-no-scheduled-handlers-project`, `05-multi-module-root`,
-  `06-mixed-clean-dirty-refuses-all`, `07-react-vite-only`) assert the full
-  behaviour, including the atomic refusal property under R08/R09.
+  `06-multi-root-mixed-clean-dirty-refuses-all`, `07-react-vite-only`) assert
+  the full behaviour, including the atomic refusal property under R08/R09.
 - **No baseline-hash JSON file.** Unlike 0017 (which carries
   `migrations/test-fixtures/0017/known-wrapper-hashes.json`), 0019 bakes the
   known v1.17.0 hashes directly into the engine. v1.17.0 is a single point in

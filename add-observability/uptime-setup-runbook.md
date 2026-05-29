@@ -432,7 +432,7 @@ If `/healthz` is auth-gated (recommended for `/readyz`, optional for
 2. Store the token in your secrets manager (1Password, Vault, AWS SM).
 3. In the Sentry Uptime monitor's **Headers** field, add:
 
-   ```
+   ```text
    Authorization: Bearer <token>
    ```
 
