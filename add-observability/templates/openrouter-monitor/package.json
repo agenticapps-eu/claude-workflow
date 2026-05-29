@@ -6,7 +6,6 @@
   "description": "Cloudflare Worker that polls OpenRouter /api/v1/key every 15 min for proactive budget alerting. ADR-0030.",
   "scripts": {
     "test": "vitest run",
-    "typecheck": "tsc --noEmit",
     "deploy": "wrangler deploy"
   },
   "dependencies": {

@@ -53,21 +53,21 @@ const noController = {} as never;
 const noCtx = {} as never;
 
 function mockFetchOk(body: unknown): void {
-  global.fetch = vi.fn().mockResolvedValue(
+  globalThis.fetch = vi.fn().mockResolvedValue(
     new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } }),
   ) as never;
 }
 
 function mockFetchStatus(status: number): void {
-  global.fetch = vi.fn().mockResolvedValue(new Response("", { status })) as never;
+  globalThis.fetch = vi.fn().mockResolvedValue(new Response("", { status })) as never;
 }
 
 function mockFetchThrow(err: Error): void {
-  global.fetch = vi.fn().mockRejectedValue(err) as never;
+  globalThis.fetch = vi.fn().mockRejectedValue(err) as never;
 }
 
 function mockFetchBadJson(): void {
-  global.fetch = vi.fn().mockResolvedValue(new Response("not json at all")) as never;
+  globalThis.fetch = vi.fn().mockResolvedValue(new Response("not json at all")) as never;
 }
 
 beforeEach(() => {
