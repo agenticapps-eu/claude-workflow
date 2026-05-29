@@ -36,7 +36,30 @@
 
 **D-07 — Migration engine atomic-refuse default flips to zero-side-effect; recovery patches require opt-in `--allow-partial` flag (or `ALLOW_PARTIAL=true` env).** Migrates R09's contracted behaviour from "patches everywhere on refuse" (current default) to "no patches by default, patches everywhere when `--allow-partial` is set." Restores "truly atomic refusal" as default. Migration 0017 audit precedes the change to align both engines' refuse semantics. Fixture 06's `verify.sh` assertion shape flips: clean roots no longer expected to receive patches in default-refuse path; new fixture exercises `--allow-partial` to assert the recovery-patches behaviour still works when opted in. *(OQ-7 resolution: option (b).)*
 
-**D-08 — F5 refactor shape = A (compose `Sentry.withMonitor` underneath the existing outer wrapper).** Concrete change for each of the 3 TS files (`ts-cloudflare-worker`, `ts-cloudflare-pages`, `ts-supabase-edge`): keep `cron-monitor.ts:137-148` (fail-safe + slug-resolution + monitorConfig build) intact; replace `:148-181` (in_progress/ok/error lifecycle) with `await Sentry.withMonitor(monitorSlug, () => handler(controller, env, ctx), monitorConfig);`. Net per-file: −25 LOC + behavioural-parity test +30 LOC. Preserved contracts: D6 (3-source slug resolution), R02 (fail-safe no-DSN), D12 (monitorConfig 2nd-arg forwarding on in_progress only). **Documented regression:** R02/R04 SDK-error swallow drops — `Sentry.withMonitor` re-throws SDK errors during `captureCheckIn` instead of silently swallowing them. **Documented addition:** `withIsolationScope` wrapping added (each cron run gets its own Sentry scope — non-breaking, arguably correctness improvement). Go `WithCronMonitor` untouched (see D-09). *(OQ-8 resolution: Shape A. User confirmed via discuss-phase question on 2026-05-29.)*
+**D-08 — F5 refactor shape = Guarded Shape A (compose `Sentry.withMonitor` underneath the existing outer wrapper, with a pre-callback fall-back).** ★ **AMENDED 2026-05-29 post-multi-AI-review** — Codex review (`23-REVIEWS.md`) surfaced that the original Shape A formulation would skip cron execution when Sentry's `in_progress` check-in throws *before* the callback runs. The Guarded variant restores the "cron always runs" contract while preserving the SDK-composition strategy. Concrete change for each of the 3 TS files (`ts-cloudflare-worker`, `ts-cloudflare-pages`, `ts-supabase-edge`): keep `cron-monitor.ts:137-148` (fail-safe + slug-resolution + monitorConfig build) intact; replace `:148-181` (in_progress/ok/error lifecycle) with:
+
+```typescript
+let handlerStarted = false;
+try {
+  await Sentry.withMonitor(
+    monitorSlug,
+    () => {
+      handlerStarted = true;
+      return handler(controller, env, ctx);
+    },
+    monitorConfig,
+  );
+} catch (err) {
+  if (!handlerStarted) {
+    // Sentry transport failed before handler ran — fall back to unmonitored.
+    await handler(controller, env, ctx);
+    return;
+  }
+  throw err; // handler-thrown errors propagate as before
+}
+```
+
+Net per-file: ~−15 LOC (vs −25 for original Shape A) + behavioural-parity test +40 LOC (vs +30; adds one pre-callback-throw regression test per stack). **Preserved contracts:** D6 (3-source slug resolution), R02 (fail-safe no-DSN), D12 (monitorConfig 2nd-arg forwarding on in_progress only), **and now also the "cron always runs" guarantee** that original Shape A regressed. **Documented regression (narrowed):** R02/R04 SDK-error swallow drops *only for post-callback errors* — i.e., errors from the `ok`/`error` check-ins after the handler completed. Pre-callback errors no longer skip the cron; post-callback errors propagate to the outer wrapper. **Documented addition (newly characterized post-review):** `withIsolationScope` wrapping is NOT "purely non-breaking correctness improvement" — Codex correctly noted it can remove handler-set Sentry scope state (`Sentry.setTag`, breadcrumbs, etc. set inside the cron body) from the outer error-capture path after isolation unwinds. Downstream consumers relying on cron-body scope mutations becoming visible to outer error handlers will see different behaviour. This is documented in CHANGELOG 0.7.0 + ADR-0029 with the precise semantic. Go `WithCronMonitor` untouched (see D-09). *(OQ-8 resolution: Shape A; user confirmed 2026-05-29 via discuss-phase question. Post-review revision to Guarded Shape A confirmed 2026-05-29 via review-response question — see DISCUSSION-LOG.md §"Post-review revision — D-08 Guarded".)*
 
 **D-09 — Go SDK gap is documented, not upstream-fixed.** A ≤5-line note added to `add-observability/templates/go-fly-http/cron_monitor.go` package doc explaining that `sentry-go` ships no `WithMonitor` equivalent and this impl IS the cross-stack parity for that helper. No GH issue against `getsentry/sentry-go`. No PR upstream. If a future maintainer wants to contribute upstream, the note links to this impl as reference. *(OQ-9 resolution: option (a) — document.)*
 

@@ -179,5 +179,43 @@ Captured during Phase 23 scoping but explicitly out of scope (also recorded in `
 
 ---
 
+## Post-review revision — D-08 Guarded Shape A (2026-05-29 15:35 UTC)
+
+After the initial discuss-phase locked D-08 = original Shape A, the multi-AI plan review (`23-REVIEWS.md`) surfaced a HIGH-severity correctness regression that the planner, plan-checker, and discuss participants all missed: `Sentry.withMonitor` sends its `in_progress` check-in *before* invoking the callback, so a Sentry transport hiccup at that moment causes the **cron handler to be skipped entirely**, not just the heartbeat logging.
+
+Original Shape A documented "SDK errors propagate to the outer wrapper" — true, but incomplete. The cron body never runs, and on Cloudflare Pages there's no outer observability wrapper to even catch the propagation. This is materially worse than the discuss-phase characterization.
+
+### Revision choice — Guarded Shape A vs Shape F vs trust-the-planner
+
+| Option | Description | Selected |
+|---|---|---|
+| **Guarded Shape A** | Set a `handlerStarted` flag inside the callback; on `withMonitor` throw, check the flag. If false, fall back to running the handler unmonitored. Preserves SDK composition + restores cron-always-runs. | ✓ |
+| Revert to Shape F (no SDK refactor; port duration only) | Eliminates the regression class entirely. Loses upstream-alignment strategic value. Downgrades version from 0.7.0 minor to 0.6.1 patch. | |
+| Trust the planner with all 9 review targets, no specific F5 framing | Planner might re-recommend original Shape A with a band-aid instead of the principled fix. | |
+
+**Resolution: D-08 → Guarded Shape A.** User confirmed via AskUserQuestion on 2026-05-29 with explicit code preview (`handlerStarted` flag + pre-callback fallback). CONTEXT.md D-08 was amended in-place to reflect Guarded shape; the binding contract for executors is the Guarded version, not the original.
+
+### Other contract refinements forced by the review
+
+Both reviewers (gemini + codex) and the consensus summary in `23-REVIEWS.md` identified additional refinements that downstream planning will incorporate via `/gsd-plan-phase 23 --reviews`:
+
+- **Documented addition refined.** `withIsolationScope` is NOT "purely non-breaking correctness improvement" — it can remove handler-set Sentry scope state from the outer error-capture path. This is a real downstream behavior change. CHANGELOG 0.7.0 + ADR-0029 must call out the precise semantic.
+- **Documented regression narrowed.** R02/R04 SDK-error swallow drops *only for post-callback errors* — pre-callback errors no longer skip the cron (per Guarded Shape A).
+- **F2 stack symmetry assumption invalidated** — D-03 "caller-configurable across stacks" only holds for some stacks. Pages and Go need per-stack rework.
+- **D-07 "zero-side-effect" language inaccurate** — dirty-root patches still emitted under the new default. Either expand scope (also strip dirty-root patches) or reframe operator-facing language honestly.
+- **G6 test-count gate non-executable** — `migrations/run-tests.sh` dispatcher doesn't support the new test names; template harness has no test-total counter. Harness needs extension before tests can run.
+- **Supabase `@sentry/deno` verification** moves from execute-time deferral to pre-Wave-2 verification + Deno-friendly test seam introduction.
+- **F3 SIGTERM trap design broken** — needs split EXIT (silent) from INT/TERM (cleanup + signal-compat exit) + `${TMPDIR:-/tmp}` path validation.
+- **ADR-0029 moves from Wave 5 to Wave 1 / pre-Wave-1** — pre-implementation value of architectural rationale.
+- **GitNexus discipline** per-wave / per-commit, not just final-task.
+
+These nine refinements are the explicit input to `/gsd-plan-phase 23 --reviews`. CONTEXT.md D-01–D-09 remain the binding decisions; only D-08 changed shape (Guarded). The other revisions are PLAN-level (task structure, test design, language) and do not change the locked D-XX decisions.
+
+### Why this revision happened
+
+The original Shape A was chosen with confidence backed by Context7 lookups against `@sentry/cloudflare`'s re-export of `@sentry/core`. The Context7 query returned `withMonitor`'s signature + behavior summary but not the implementation detail that `in_progress` fires before `callback()`. The reviewer (Codex) caught it by reading the actual source. **The lesson: SDK-composition decisions need actual SDK source reads in research, not just signature lookups.** This is the kind of finding that justifies multi-AI review even on plans that pass internal checking.
+
+---
+
 *Phase: 23-observability-followups*
 *Discussion logged: 2026-05-29*
