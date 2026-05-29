@@ -6,6 +6,35 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.19.0] — 2026-05-29
+
+### Added — OpenRouter integration kit (`add-observability` 0.7.0 → 0.8.0, Phase 24, ADR-0030)
+
+Four SDK-first deliverables ship together. No migration — purely additive. Existing projects adopt via the runbook (`add-observability/openrouter-integration.md`) or via INIT for greenfield (consent gate 4).
+
+- **`recordLLMResponseMeta` helper** across 3 TS stacks (`ts-cloudflare-worker`, `ts-cloudflare-pages`, `ts-supabase-edge`). Post-processes the OpenAI SDK's raw response to capture `x-ratelimit-remaining` / `x-ratelimit-reset` headers + cache_ratio (`prompt_tokens_details.cached_tokens / prompt_tokens` with divide-by-zero guard). Signals Sentry AI Monitoring's `openAIIntegration` doesn't surface. Dependency-injected `LogEventFn` per §10.6 destination-independence — destination-agnostic. Per-stack import paths: worker/pages use bundler-style `./index`; supabase-edge uses Deno explicit-extension `./index.ts`. Skipped for `ts-react-vite` (browser must not hold OpenRouter keys) and `go-fly-http` (no Go LLM consumer in scope). +21 helper test fixtures across the template harness.
+- **`add-observability/openrouter-integration.md`** — 5-section runbook covering Sentry AI Monitoring `openAIIntegration` enablement (with loud PII gate), Anthropic SDK generic path (`anthropicIntegration`), helper wiring at SDK call sites (`.withResponse()` pattern), pointer to the credit-check Worker, and adoption checklist. Requires `@sentry/<host> ≥ 10.2.0` for AI Monitoring in the main app. PII gate carves out synthetic / non-user / approved-eval data with written `policy.md` approval (callbot / cparx defaults must stay `false`).
+- **`add-observability/templates/openrouter-monitor/`** — standalone Cloudflare Worker scaffold for proactive budget alerting. Polls `OpenRouter /api/v1/key` every 15 min. Emits `openrouter.credit_pulse` always, `openrouter.credit_low` warn at ≥85%, `OpenRouterBudgetCriticalError` at ≥95%, `OpenRouterHealthcheckFailedError` on non-2xx / network / parse failure. Inverted-threshold misconfig handling + invalid-env-var fallback + `limit:null` (OpenRouter unlimited-key shape) all covered. Wrapped with `withCronMonitor` (ADR-0029 Guarded Shape A) so the monitor has its own Sentry Crons heartbeat. Composition chain: `withSentry(env => ({...}))(withObservabilityScheduled(withCronMonitor(checkCredit, { monitorSlug })))` — all three layers are mandatory. Ships bundled `src/observability/` subtree (canonical wrapper subtree from `ts-cloudflare-worker` template) so the scaffold is standalone. README leads with the `keys:read`-scope warning + ships a "Security & Secret Lifecycle" subsection covering rotation cadence, accidental-commit prevention, leak-response runbook, operator offboarding. 12 fixture handler tests.
+- **`init/INIT.md` Phase 5.5 §"Optional: LLM observability"** — consent gate 4 (additive). Detection logic broadened beyond `package.json + src/`: matches workspace `package.json`s, `wrangler.toml` env vars, `.dev.vars`, `.env.example`. SDK-version prerequisite check (≥10.2.0) gates the integration-insertion action. Three actions (insert integration / copy helper / skip) — default on `--yes` is skip (runbook is canonical manual-adoption path).
+- **`docs/decisions/0030-openrouter-integration-sdk-first.md`** — ADR records the SDK-first architecture rationale, with explicit rejected alternatives (raw-fetch `wrapLLMCall`, bundled `pricing.json`, Anthropic-specific helper, CLI subcommand for the monitor, `OPENROUTER_BUDGET_OVERRIDE`).
+
+Pre-execute multi-AI plan review (`gemini` + `codex` via `/gsd-review`) caught 4 HIGH + 5 MEDIUM issues that landed as fixes in CONTEXT rev 2 / PLAN rev 2 before code shipped. Notable HIGH fixes:
+
+- Per-stack helper import path (worker/pages `./index`; supabase-edge `./index.ts`).
+- Monitor scaffold bundles the observability subtree (worker template wrapper, with placeholders substituted to `SERVICE_NAME = "openrouter-monitor"`).
+- Monitor composition uses the FULL `withSentry` → `withObservabilityScheduled` → `withCronMonitor` chain (skipping `withObservabilityScheduled` would no-op `logEvent` / `captureError` silently).
+- Severity literal `"warn"` (NOT `"warning"`) — matches the shipped `Severity` union.
+
+See `.planning/phases/24-openrouter-integration/24-REVIEWS.md` for the full review record.
+
+### Notes
+
+- SDK-first only. No raw-fetch helper ships in this PR — both target consumers (factiv/callbot, factiv/fx-signal-agent post-PROMPT-C0) use the OpenAI SDK. Raw-fetch instrumentation is an explicitly-deferred ADR slot.
+- `skill/SKILL.md` frontmatter `version: 1.18.0 → 1.19.0` (minor — purely additive).
+- `add-observability/SKILL.md` frontmatter `version: 0.7.0 → 0.8.0` (minor — purely additive).
+- `add-observability/templates/openrouter-monitor/package.json` pins `@sentry/cloudflare ^8.0.0` (matches the bundled wrapper subtree's baseline). The 10.2.0 minimum applies to the main app using AI Monitoring; the monitor itself makes no LLM calls.
+- Test surface delta: +21 helper fixtures (across worker/pages/supabase-edge template harness) + 12 monitor fixtures (separate `npm test` in the scaffold dir).
+
 ### Fixed (`add-observability` 0.5.0 → 0.5.1 — wrapper template correctness, issue #49)
 
 No scaffolder version bump and **no migration**: the wrapper public interface (spec §10.1) is byte-identical, so downstreams already on 1.16.0 pick up the patches by re-materialising the wrapper (re-run `add-observability`). CodeRabbit flagged these on `agenticapps-eu/callbot#40`; fixing them upstream keeps every downstream wrapper coherent with the migration hash baseline. See ADR-0026.

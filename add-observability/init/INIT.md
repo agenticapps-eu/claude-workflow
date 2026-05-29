@@ -1085,6 +1085,70 @@ with the observability block whose `policy:` points at
 
 **Scheduled handler — `WithCronMonitor` composition.** Per Phase 22 D5d, `WithCronMonitor` composes INNERMOST in the middleware chain. See `templates/go-fly-http/cron_monitor.go:225` for the exported wrapper signature. NOTE (D-09): `sentry-go` ships no `WithMonitor` equivalent — this impl IS the cross-stack parity for that helper.
 
+### Phase 5.5 — Optional: LLM observability (consent gate 4 — additive)
+
+> Phase 24 / ADR-0030. Runs AFTER Phase 5 (entry-file rewrite); BEFORE Phase 6 (CLAUDE.md metadata). Skipped silently when detection does not match.
+
+**Detection trigger** — applies if BOTH conditions hold:
+
+1. `package.json` (top-level OR any workspace `package.json` via pnpm/yarn/npm workspace globs) contains `"openai"` or `"@anthropic-ai/sdk"`.
+
+2. AT LEAST ONE of:
+   - any `*.ts` / `*.tsx` / `*.js` / `*.mts` file in the project contains the literal `openrouter.ai` (case-insensitive)
+   - `wrangler.toml` or `wrangler.jsonc` `[env.<env>.vars]` block contains `OPENROUTER_API_KEY`
+   - `.dev.vars` or `.env.example` sets `OPENROUTER_API_KEY`
+
+This broadens beyond `package.json + src/` to catch monorepo / Pages / Workers / Supabase / pre-call-site projects (codex MEDIUM-detection-grep fix from `.planning/phases/24-openrouter-integration/24-REVIEWS.md`).
+
+**SDK version prerequisite check** — before offering action (a) below, check the installed `@sentry/<host>` version. Sentry's `openAIIntegration` / `anthropicIntegration` requires SDK `≥ 10.2.0`. If the installed version is lower:
+
+```
+The installed @sentry/cloudflare is 9.x — Sentry AI Monitoring requires
+@sentry/cloudflare ≥ 10.2.0.
+
+  → Update package.json's "@sentry/cloudflare" pin to "^10.2.0"
+  → Run `npm install`
+  → Re-run /add-observability init
+
+Skipping action (a). Actions (b) and (c) still available.
+```
+
+**Consent gate 4 — actions** (additive; default on `--yes` is action c):
+
+(a) **Insert AI Monitoring integration into existing Sentry init.**
+
+Locate the `Sentry.init({ ... })` (or `withSentry(env => ({ ... }), { ... })`) call in the entry file or wrapper module. Add the integration to the `integrations` array:
+
+```typescript
+import { openAIIntegration } from "@sentry/cloudflare";
+// or: import { anthropicIntegration } from "@sentry/cloudflare";
+//     if the project uses @anthropic-ai/sdk
+
+integrations: [
+  // ... existing integrations
+  openAIIntegration({
+    recordInputs: false,    // ⚠️ PII gate — see runbook §2
+    recordOutputs: false,
+  }),
+],
+```
+
+Do NOT flip `recordInputs` / `recordOutputs` to `true` during this scaffolder pass — those flips require written `policy.md` approval per the runbook's PII gate.
+
+(b) **Copy `llm-response-meta.ts` into the wrapper directory.**
+
+Source: `add-observability/templates/<stack>/llm-response-meta.ts` (worker / pages / supabase-edge as appropriate). Destination: same relative path as the existing `lib-observability.ts` / `index.ts` in the project's wrapper.
+
+Per-stack import paths after the copy:
+- worker + pages → `import type { Envelope } from "./index"` (bundler-style; the harness substitution from `lib-observability.ts` → `index.ts` already happened at original scaffold time).
+- supabase-edge → `import type { Envelope } from "./index.ts"` (Deno explicit-extension).
+
+(c) **Skip** — already configured / will adopt later via runbook (`add-observability/openrouter-integration.md`).
+
+**Default on unattended `--yes`**: (c). The runbook is the canonical manual-adoption path; auto-modifying a Sentry init or copying a helper into a project without operator review can race against in-flight policy decisions.
+
+See [ADR-0030](../../docs/decisions/0030-openrouter-integration-sdk-first.md) for the SDK-first architecture rationale + rejected alternatives.
+
 ### Phase 6 — Write `observability:` metadata to CLAUDE.md (consent gate 3 of 3 — CLAUDE.md)
 
 **Prerequisite (per-stack)**: for each stack, gate 2 (Phase 5) MUST

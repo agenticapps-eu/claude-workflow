@@ -4,6 +4,39 @@ All notable changes to the `add-observability` skill. Format follows [Keep a Cha
 
 Versioning: this skill ships an independent SemVer track from `claude-workflow`. Minor bumps reflect observable downstream behaviour changes in scaffolded templates.
 
+## 0.8.0 — 2026-05-29
+
+OpenRouter integration kit. Four SDK-first deliverables (ADR-0030):
+
+1. `recordLLMResponseMeta` helper × 3 TS stacks (worker / pages / supabase-edge).
+2. `openrouter-integration.md` — 5-section runbook with loud PII gate.
+3. `templates/openrouter-monitor/` — standalone Worker scaffold (proactive budget alerting).
+4. `init/INIT.md` Phase 5.5 §"Optional: LLM observability" — consent gate 4.
+
+No migration (purely additive). Existing projects adopt via the runbook; greenfield via INIT.
+
+See `.planning/phases/24-openrouter-integration/CONTEXT.md` for decisions (D-01 — D-19), `.planning/phases/24-openrouter-integration/24-REVIEWS.md` for the multi-AI plan review record, and `docs/decisions/0030-openrouter-integration-sdk-first.md` for the architecture rationale.
+
+### Added
+
+- **`recordLLMResponseMeta`** in `ts-cloudflare-worker`, `ts-cloudflare-pages`, `ts-supabase-edge`. Captures the two signals Sentry AI Monitoring's `openAIIntegration` doesn't surface — rate-limit headroom (`x-ratelimit-remaining` / `x-ratelimit-reset` headers) + cache_ratio (`prompt_tokens_details.cached_tokens / prompt_tokens` with explicit divide-by-zero guard). Dependency-injected `LogEventFn` per §10.6 destination-independence. Per-stack import paths: worker/pages use bundler-style `./index`; supabase-edge uses Deno explicit-extension `./index.ts`. Skipped for `ts-react-vite` (browser must not hold OpenRouter keys) and `go-fly-http` (no Go LLM consumer in scope). +7 fixtures per stack = +21 helper fixtures total.
+- **`openrouter-integration.md` runbook** — 5 sections + adoption checklist + path table. Loud PII gate (`recordInputs:false / recordOutputs:false` is non-negotiable for callbot / cparx / any-real-user-data project). Carve-out: `recordInputs:true` allowed ONLY for synthetic / non-user / approved-eval data with `policy.md` approval (D-19).
+- **`templates/openrouter-monitor/` standalone scaffold** — Cloudflare Worker that polls OpenRouter `/api/v1/key` on a 15-min cron. Emits `openrouter.credit_pulse` (info) always, `openrouter.credit_low` (warn) at ≥85%, `OpenRouterBudgetCriticalError` (captured via captureError) at ≥95%, `OpenRouterHealthcheckFailedError` on non-2xx / network / parse failure. Inverted-threshold misconfig + invalid env vars + `limit:null` (unlimited-key) all handled. Wrapped with `withCronMonitor` (ADR-0029 Guarded Shape A) → monitor has its own heartbeat via `openrouter-credit-check` Sentry monitor slug. Composition: `withSentry(env => ({...}))(withObservabilityScheduled(withCronMonitor(checkCredit, { monitorSlug })))` — all three layers mandatory. Ships bundled `src/observability/` subtree (canonical wrapper from `ts-cloudflare-worker`, with placeholders substituted). README leads with `keys:read`-scope warning + ships "Security & Secret Lifecycle" subsection (rotation cadence, accidental-commit prevention, leak-response runbook, operator offboarding). 12 handler test fixtures (separate `npm test` in scaffold).
+- **`init/INIT.md` Phase 5.5 §"Optional: LLM observability"** — consent gate 4 (additive). Detection grep broadened beyond `package.json + src/` to catch monorepo / wrangler.toml / .dev.vars layouts. SDK-version prerequisite check (`@sentry/<host> ≥ 10.2.0`) gates the integration-insertion action.
+
+### Changed
+
+- Skill version 0.7.0 → 0.8.0 minor (additive — new helper across 3 stacks + new scaffold + new INIT surface + new runbook + new ADR; no removal, no migration).
+
+### Notes
+
+- Pre-execute multi-AI plan review (`gsd-review`) caught 4 HIGH + 5 MEDIUM issues from `codex` and `gemini` before code shipped. Notable HIGH fixes:
+  - Per-stack helper import path (worker/pages `./index`; supabase-edge `./index.ts`).
+  - Monitor scaffold bundles the observability subtree (skipping it would break the import chain).
+  - Monitor composition uses the FULL `withSentry → withObservabilityScheduled → withCronMonitor` chain (skipping the middle layer would no-op the destinations registry silently).
+  - Severity literal `"warn"` (NOT `"warning"`) — matches `Severity` union (`debug | info | warn | error | fatal`).
+- Monitor scaffold pins `@sentry/cloudflare ^8.0.0` (matches the bundled wrapper baseline). The 10.2.0 minimum applies to the main app's AI Monitoring; the monitor itself makes no LLM calls.
+
 ## 0.7.0 — 2026-05-29
 
 Phase 23 follow-ups from Phase 22's deferred review-gate residuals + user-directed `withCronMonitor` refactor. Multi-AI plan review (`23-REVIEWS.md`) refined the shape of F2 (per-stack heterogeneity), F5 (Guarded Shape A), F3 (split trap), and D-07 (honest reframe).
