@@ -37,7 +37,7 @@ must_haves:
     - "INIT.md Phase 5 subsections (worker, pages, supabase-edge, go) each cite withCronMonitor with a file:line link into cron-monitor.{ts,go}; react-vite subsection unchanged"
     - "All 4 /healthz snippets ship a per-probe timeout: TS uses AbortSignal.timeout(DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS) with default 2000; Go uses context.WithTimeout(ctx, defaultHealthzProbeTimeout) with default 2*time.Second"
     - "Aborted probes report as {status: degraded, checks: {<probeName>: 'timeout'}} (string sentinel distinguishes timeout from genuine false)"
-    - "migrations/apply.sh and migrations/run-tests.sh trap INT TERM EXIT and run cleanup before re-raising"
+    - "migrations/run-tests.sh and templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh trap INT TERM EXIT and run cleanup before re-raising (no top-level migrations/apply.sh exists in this repo — see Task 3.1 behaviour block)"
     - "Test test-sigterm-mid-apply-preserves-state uses the test-only --pause-between-passes <signal-file> engine flag; passes deterministically with no sleeps"
     - "Test test-skill-md-version-matches-latest-migration-to-version asserts skill/SKILL.md version equals the highest-numbered migration file's to_version using only grep + awk (no yq)"
     - "All 3 TS cron-monitor.ts files have lines 137-148 preserved verbatim (fail-safe + slug resolution + monitorConfig build) and lines 148-181 replaced by a single `await Sentry.withMonitor(monitorSlug, () => handler(controller, env, ctx), monitorConfig);` call inside the existing try/catch scaffold"
@@ -81,9 +81,9 @@ must_haves:
     - path: "migrations/run-tests.sh"
       provides: "F3 sigterm test + F4 skill-md drift test + INT/TERM/EXIT trap"
       contains: "test-sigterm-mid-apply-preserves-state"
-    - path: "migrations/apply.sh"
-      provides: "F3 SIGTERM trap in apply path"
-      contains: "trap"
+    - path: "templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh"
+      provides: "F3 SIGTERM trap in the 2-pass atomic migration engine (no top-level migrations/apply.sh exists — Task 3.1's resolution lands the trap here AND in migrations/run-tests.sh)"
+      contains: "trap 'cleanup' INT TERM EXIT"
     - path: "migrations/test-fixtures/0019/06-multi-root-mixed-clean-dirty-refuses-all/verify.sh"
       provides: "D-07 fixture 06 flipped assertion"
       contains: "no patch"
@@ -123,9 +123,9 @@ must_haves:
       to: "stdlib context"
       via: "context.WithTimeout(r.Context(), defaultHealthzProbeTimeout)"
       pattern: "context\\.WithTimeout\\("
-    - from: "migrations/apply.sh"
+    - from: "templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh"
       to: "cleanup function"
-      via: "trap 'cleanup' INT TERM EXIT"
+      via: "trap 'cleanup' INT TERM EXIT (also mirrored in migrations/run-tests.sh per Task 3.1)"
       pattern: "trap.*cleanup.*INT.*TERM.*EXIT"
     - from: "migrations/run-tests.sh"
       to: "skill/SKILL.md + migrations/<latest>.md"
@@ -243,8 +243,8 @@ From migration 0017's analogue (templates/.claude/scripts/migrate-0017-axiom-des
 | T-F2.{worker,pages,supabase} | healthzHandler | add-observability/templates/ts-{stack}/healthz-snippet.ts | wrap probe calls in AbortSignal.timeout |
 | T-F2.go | HealthzHandler | add-observability/templates/go-fly-http/healthz_snippet.go | wrap probe calls in context.WithTimeout |
 | T-F5.{worker,pages,supabase} | withCronMonitor | add-observability/templates/ts-{stack}/cron-monitor.ts | replace lines 148-181 with Sentry.withMonitor call |
-| T-F3 | (apply.sh top-level) | migrations/apply.sh | add `trap 'cleanup' INT TERM EXIT` |
-| T-F3 | run_test / run_all | migrations/run-tests.sh | add trap + add `--pause-between-passes` test-only flag handling in apply.sh |
+| T-F3 | engine top-level (no apply.sh exists in repo) | templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh | add `trap 'cleanup' INT TERM EXIT` to the 2-pass engine; Task 3.1 behaviour block enumerates the exact landing spots |
+| T-F3 | run_test / run_all | migrations/run-tests.sh | add trap + add `--pause-between-passes <signal-file>` test-only flag handling in the engine (NOT in a non-existent apply.sh) |
 | T-D07 | emit_refuse_artifacts | templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh:542-573 | gate clean-root emission on `[ "$ALLOW_PARTIAL" -eq 1 ]` |
 | T-D09 | WithCronMonitor (Go) | add-observability/templates/go-fly-http/cron_monitor.go | doc-only edit to package doc preceding the function (no body change — gitnexus_impact still required per CLAUDE.md "before editing any symbol") |
 
@@ -896,12 +896,12 @@ Severity gating: T-23-02 (D), T-23-04 (D), T-23-05 (T), T-23-07 (S) are MEDIUM. 
 </task>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- WAVE 3 — F3 SIGTERM trap (sequential — apply.sh creation precedes test) -->
+<!-- WAVE 3 — F3 SIGTERM trap (sequential — trap insertion in engine + harness changes) -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 
 <task type="auto" tdd="true">
   <name>Task 3.1 (Wave 3, F3): SIGTERM trap + --pause-between-passes flag + test (TDD)</name>
-  <files>migrations/run-tests.sh, migrations/apply.sh (created if absent)</files>
+  <files>migrations/run-tests.sh, templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh (no top-level migrations/apply.sh exists — see behaviour block)</files>
   <read_first>
     - migrations/run-tests.sh FULL FILE (existing run_all + test registration pattern)
     - migrations/0019-sentry-crons-and-healthz.md (canonical 2-pass migration shape; the test exercises this engine)
