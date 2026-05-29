@@ -31,6 +31,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // ─── Stub helpers ─────────────────────────────────────────────────────────────
@@ -197,5 +198,135 @@ func TestHealthzTreatsUpstreamErrorAsFailedProbe(t *testing.T) {
 	checks, _ := body["checks"].(map[string]any)
 	if checks["upstream"] != false {
 		t.Errorf("checks.upstream: want false, got %v", checks["upstream"])
+	}
+}
+
+// ─── F2 per-probe timeout tests (Phase 23 / D-03 / R-rev-3 narrowed for Go) ──
+//
+// Go narrowing (R-rev-3 / codex MEDIUM-5):
+//   - DB probe uses context.WithTimeout(r.Context(), probeTimeout); DeadlineExceeded → "timeout"
+//   - Upstream probe uses a goroutine + select with time.After (race-only, no signal path)
+//   - ProbeTimeout field on HealthzDeps; zero value → defaultHealthzProbeTimeout (2s)
+//
+// Per PLAN honest-docs requirement: Go handler-latency note present in GREEN impl.
+
+// stubHangingDB blocks until ctx is cancelled — simulates a slow DB.
+type stubHangingDB struct{}
+
+func (s *stubHangingDB) PingContext(ctx context.Context) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+// stubHangingUpstream blocks indefinitely — simulates a slow upstream.
+type stubHangingUpstream struct{}
+
+func (s *stubHangingUpstream) Get(_ string) (*http.Response, error) {
+	select {} // block forever
+}
+
+// TestF2GoTest1 — fast DB probe resolves within timeout → status ok.
+func TestF2GoTest1FastProbeResolvesWithinTimeout(t *testing.T) {
+	h := HealthzHandler(HealthzDeps{DB: &stubDB{err: nil}})
+	w := httptest.NewRecorder()
+	h(w, newRequest())
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d", w.Code)
+	}
+	body := decodeBody(t, w)
+	if body["status"] != "ok" {
+		t.Errorf("status: want ok, got %v", body["status"])
+	}
+}
+
+// TestF2GoTest2 — DB probe hanging > default timeout → degraded with "timeout" sentinel.
+func TestF2GoTest2DBProbeHangingExceedsDefaultTimeout(t *testing.T) {
+	deps := HealthzDeps{
+		DB:           &stubHangingDB{},
+		ProbeTimeout: 200 * time.Millisecond, // fast override so test doesn't take 2s
+	}
+	h := HealthzHandler(deps)
+	w := httptest.NewRecorder()
+	start := time.Now()
+	h(w, newRequest())
+	elapsed := time.Since(start)
+
+	if elapsed > 600*time.Millisecond {
+		t.Errorf("elapsed %v exceeded 600ms (200ms probe timeout + 400ms slack)", elapsed)
+	}
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status: want 503, got %d", w.Code)
+	}
+	body := decodeBody(t, w)
+	checks, _ := body["checks"].(map[string]any)
+	if checks["db"] != "timeout" {
+		t.Errorf("checks.db: want \"timeout\", got %v", checks["db"])
+	}
+}
+
+// TestF2GoTest3 — HealthzDeps.ProbeTimeout overrides the default 2s timeout.
+func TestF2GoTest3ProbeTimeoutFieldOverridesDefault(t *testing.T) {
+	deps := HealthzDeps{
+		DB:           &stubHangingDB{},
+		ProbeTimeout: 300 * time.Millisecond,
+	}
+	h := HealthzHandler(deps)
+	w := httptest.NewRecorder()
+	start := time.Now()
+	h(w, newRequest())
+	elapsed := time.Since(start)
+
+	if elapsed > 700*time.Millisecond {
+		t.Errorf("elapsed %v; want < 700ms (300ms timeout + 400ms slack)", elapsed)
+	}
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status: want 503, got %d", w.Code)
+	}
+	body := decodeBody(t, w)
+	checks, _ := body["checks"].(map[string]any)
+	if checks["db"] != "timeout" {
+		t.Errorf("checks.db: want \"timeout\", got %v", checks["db"])
+	}
+}
+
+// TestF2GoTest4 — upstream probe hanging > timeout → degraded with "timeout" sentinel.
+func TestF2GoTest4UpstreamProbeHangingExceedsTimeout(t *testing.T) {
+	deps := HealthzDeps{
+		Upstream:     &stubHangingUpstream{},
+		ProbeTimeout: 200 * time.Millisecond,
+	}
+	h := HealthzHandler(deps)
+	w := httptest.NewRecorder()
+	start := time.Now()
+	h(w, newRequest())
+	elapsed := time.Since(start)
+
+	if elapsed > 600*time.Millisecond {
+		t.Errorf("elapsed %v exceeded 600ms (200ms probe timeout + 400ms slack)", elapsed)
+	}
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status: want 503, got %d", w.Code)
+	}
+	body := decodeBody(t, w)
+	checks, _ := body["checks"].(map[string]any)
+	if checks["upstream"] != "timeout" {
+		t.Errorf("checks.upstream: want \"timeout\", got %v", checks["upstream"])
+	}
+}
+
+// TestF2GoTest5 — zero ProbeTimeout falls back to defaultHealthzProbeTimeout (2s constant exists).
+func TestF2GoTest5ZeroProbeTimeoutFallsBackToDefault(t *testing.T) {
+	// Verify the exported constant (or unexported default) exists by using a fast probe —
+	// the zero-value HealthzDeps.ProbeTimeout should resolve to defaultHealthzProbeTimeout.
+	// We just confirm the handler completes and returns ok (not a timeout) for a fast probe.
+	h := HealthzHandler(HealthzDeps{DB: &stubDB{err: nil}})
+	w := httptest.NewRecorder()
+	h(w, newRequest())
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d", w.Code)
+	}
+	// Also verify defaultHealthzProbeTimeout constant is 2 seconds.
+	if defaultHealthzProbeTimeout != 2*time.Second {
+		t.Errorf("defaultHealthzProbeTimeout: want 2s, got %v", defaultHealthzProbeTimeout)
 	}
 }
