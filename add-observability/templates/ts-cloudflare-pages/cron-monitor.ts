@@ -151,8 +151,8 @@ export function withCronMonitor<R>(
           ? (captureCheckIn(
               { monitorSlug, status: "in_progress" },
               monitorConfig,
-            ) as unknown as string)
-          : (captureCheckIn({ monitorSlug, status: "in_progress" }) as unknown as string);
+            ) as string)
+          : (captureCheckIn({ monitorSlug, status: "in_progress" }) as string);
     } catch (e) {
       debugLog(env, "[withCronMonitor] in_progress checkin failed:", e);
     }
