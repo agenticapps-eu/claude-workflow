@@ -263,6 +263,10 @@ run_ts_cloudflare_pages() {
   substitute_tokens "$SRC/healthz-snippet.test.ts" "$OBS_DIR/healthz-snippet.test.ts"
   substitute_tokens "$SRC/healthz-snippet.ts"      "$OBS_DIR/healthz-snippet.ts"
 
+  # Phase 24 — recordLLMResponseMeta helper (T24.1.2). Test wired in RED;
+  # impl in GREEN. Byte-identical to worker stack.
+  substitute_tokens "$SRC/llm-response-meta.test.ts" "$OBS_DIR/llm-response-meta.test.ts"
+
   # destinations/ sub-dir (role-based registry + adapters, phase 21).
   if [[ -d "$SRC/destinations" ]]; then
     local DEST_DIR="$OBS_DIR/destinations"
