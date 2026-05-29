@@ -20,6 +20,12 @@
 // sentry.EventID. The seam below mirrors that signature so the impl can
 // nil-check the returned pointer to skip completion checkins after a
 // swallowed in_progress checkin.
+//
+// SDK gap (D-09 / Phase 23): unlike `@sentry/javascript`'s `Sentry.withMonitor`,
+// `sentry-go` ships no `WithMonitor` equivalent — only the lower-level
+// `CaptureCheckIn`. This `WithCronMonitor` IS the cross-stack parity for the
+// missing helper. If a future `sentry-go` release adds `WithMonitor`, this
+// impl can be slimmed to a composition; see `docs/decisions/0029-cron-monitor-sdk-composition.md`.
 package {{PACKAGE_NAME}}
 
 import (
