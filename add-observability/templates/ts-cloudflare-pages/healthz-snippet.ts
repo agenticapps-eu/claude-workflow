@@ -53,6 +53,9 @@ export type PagesFunction<Env> = (ctx: MinimalEventContext<Env>) => Promise<Resp
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
+/** D-03 default per-probe timeout in ms. Override via context.env.HEALTHZ_PROBE_TIMEOUT_MS. */
+export const DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS = 2000;
+
 /**
  * Bindings the healthz handler can probe. Both are optional — the operator
  * adds the bindings they actually use in their Pages project settings.
@@ -62,6 +65,10 @@ export type PagesFunction<Env> = (ctx: MinimalEventContext<Env>) => Promise<Resp
  * branch in `onRequest` for each.
  */
 export interface HealthzEnv {
+  /** D-03 (narrowed for Pages per codex MEDIUM-5): configure timeout via env var.
+   * onRequest signature is runtime-fixed — operators configure timeout via env var,
+   * not function args. Worker keeps the 3rd-arg path. */
+  HEALTHZ_PROBE_TIMEOUT_MS?: string;
   /** KV namespace; probe = `get("healthz-probe")`. Treat any throw as fail. */
   OBSERVABILITY_KV?: { get: (key: string) => Promise<string | null> };
   /** D1 database; probe = `prepare("SELECT 1").first()`. */
@@ -83,30 +90,82 @@ export interface HealthzEnv {
  *   503 + {status:"degraded", checks:{...}}           one+ probes failed
  *   503 + {status:"degraded", reason, checks:{}}      no probes configured (R06)
  *
- * Per-probe exceptions are swallowed and recorded as `false`; a single
- * probe blowing up never short-circuits the others.
+ * Per-probe exceptions are swallowed and recorded as `false` or `"timeout"`;
+ * a single probe blowing up never short-circuits the others.
+ *
+ * D-03 (narrowed for Pages per codex MEDIUM-5): onRequest signature is
+ * runtime-fixed — operators configure timeout via env var, not function args.
+ * Worker keeps the 3rd-arg path.
  */
 export const onRequest: PagesFunction<HealthzEnv> = async (context) => {
   const { env } = context;
-  const checks: Record<string, boolean> = {};
+  const checks: Record<string, boolean | "timeout"> = {};
+
+  // D-03 (narrowed for Pages per codex MEDIUM-5): onRequest signature is runtime-fixed —
+  // operators configure timeout via env var, not function args. Worker keeps the 3rd-arg path.
+  const probeTimeoutMs =
+    Number(env.HEALTHZ_PROBE_TIMEOUT_MS) || DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS;
 
   if (env.OBSERVABILITY_KV) {
+    // Per gemini MEDIUM-1: AbortController + setTimeout + try/finally + clearTimeout.
+    // NOT Promise.race + abort-rejection — prevents unhandled promise rejections.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(
+      () => controller.abort(new DOMException("probe timeout", "TimeoutError")),
+      probeTimeoutMs,
+    );
     try {
-      await env.OBSERVABILITY_KV.get("healthz-probe");
+      await new Promise<void>((resolve, reject) => {
+        controller.signal.addEventListener("abort", () =>
+          reject(new DOMException("aborted", "TimeoutError")),
+        );
+        env.OBSERVABILITY_KV!.get("healthz-probe")
+          .then(() => resolve())
+          .catch(reject);
+      });
       checks.kv = true;
-    } catch {
-      checks.kv = false;
+    } catch (e) {
+      checks.kv =
+        e instanceof DOMException &&
+        (e.name === "TimeoutError" || e.name === "AbortError")
+          ? "timeout"
+          : false;
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
   if (env.DB) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(
+      () => controller.abort(new DOMException("probe timeout", "TimeoutError")),
+      probeTimeoutMs,
+    );
     try {
       // `prepare` itself can throw synchronously on some bindings; the
       // outer try covers both that and the first() rejection.
-      await env.DB.prepare("SELECT 1").first();
+      await new Promise<void>((resolve, reject) => {
+        controller.signal.addEventListener("abort", () =>
+          reject(new DOMException("aborted", "TimeoutError")),
+        );
+        try {
+          env.DB!.prepare("SELECT 1")
+            .first()
+            .then(() => resolve())
+            .catch(reject);
+        } catch (syncErr) {
+          reject(syncErr);
+        }
+      });
       checks.db = true;
-    } catch {
-      checks.db = false;
+    } catch (e) {
+      checks.db =
+        e instanceof DOMException &&
+        (e.name === "TimeoutError" || e.name === "AbortError")
+          ? "timeout"
+          : false;
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
@@ -124,7 +183,7 @@ export const onRequest: PagesFunction<HealthzEnv> = async (context) => {
     );
   }
 
-  const allOk = probeNames.every((k) => checks[k]);
+  const allOk = probeNames.every((k) => checks[k] === true);
   return new Response(
     JSON.stringify({ status: allOk ? "ok" : "degraded", checks }),
     {
