@@ -133,10 +133,21 @@ run_ts_cloudflare_worker() {
   # cron-monitor.ts holds the implementation; cron-monitor.test.ts holds the
   # contract suite. No existence gates per PLAN R02 — the runner materializes
   # both unconditionally because they're now part of the worker template's
-  # canonical file set. healthz-snippet.{ts,test.ts} will be added in their
-  # own RED commits (T06) when those source files land.
+  # canonical file set.
   substitute_tokens "$SRC/cron-monitor.ts"          "$OBS_DIR/cron-monitor.ts"
   substitute_tokens "$SRC/cron-monitor.test.ts"     "$OBS_DIR/cron-monitor.test.ts"
+
+  # Phase 22 — healthz snippet (T06). COPY-ONLY template (D9): operator copies
+  # into routes layer + adapts probes. Materialized with cron-monitor pair so
+  # the in-repo contract suite catches regressions at template-edit time.
+  # Gated by file existence to keep RED commit (test only) → GREEN commit
+  # (test + impl) staging clean in CI.
+  if [[ -f "$SRC/healthz-snippet.test.ts" ]]; then
+    substitute_tokens "$SRC/healthz-snippet.test.ts" "$OBS_DIR/healthz-snippet.test.ts"
+  fi
+  if [[ -f "$SRC/healthz-snippet.ts" ]]; then
+    substitute_tokens "$SRC/healthz-snippet.ts" "$OBS_DIR/healthz-snippet.ts"
+  fi
 
   # destinations/ sub-dir (role-based registry + adapters, phase 21).
   # Copy every .ts file (registry, adapters, and their tests) into the
