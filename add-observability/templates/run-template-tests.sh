@@ -147,6 +147,7 @@ run_ts_cloudflare_worker() {
   # Phase 24 — recordLLMResponseMeta helper (T24.1.1). Test file wired in RED;
   # impl file wired in GREEN (TDD discipline per workflow skill).
   substitute_tokens "$SRC/llm-response-meta.test.ts" "$OBS_DIR/llm-response-meta.test.ts"
+  substitute_tokens "$SRC/llm-response-meta.ts"      "$OBS_DIR/llm-response-meta.ts"
 
   # destinations/ sub-dir (role-based registry + adapters, phase 21).
   # Copy every .ts file (registry, adapters, and their tests) into the
