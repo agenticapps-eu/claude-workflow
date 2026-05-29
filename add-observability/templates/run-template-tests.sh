@@ -129,6 +129,15 @@ run_ts_cloudflare_worker() {
   substitute_tokens "$SRC/middleware.ts"              "$OBS_DIR/middleware.ts"
   substitute_tokens "$SRC/lib-observability.test.ts" "$OBS_DIR/index.test.ts"
 
+  # Phase 22 — Sentry Crons test discovery (no existence gates per PLAN R02).
+  # This RED commit ships the test file only; the cron-monitor.ts
+  # implementation lands in the following GREEN commit, where the harness
+  # will resolve the import and turn this suite green. The remaining sibling
+  # copies (cron-monitor.ts, healthz-snippet.{ts,test.ts}) are added in their
+  # own RED commits when the source files land — keeping every commit's
+  # materialize step strict-source under `set -euo pipefail`.
+  substitute_tokens "$SRC/cron-monitor.test.ts"     "$OBS_DIR/cron-monitor.test.ts"
+
   # destinations/ sub-dir (role-based registry + adapters, phase 21).
   # Copy every .ts file (registry, adapters, and their tests) into the
   # materialized destinations/ dir so the registry tests run.
