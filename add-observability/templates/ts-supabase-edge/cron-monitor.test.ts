@@ -15,11 +15,14 @@
  *         arg) on the in_progress checkin only
  *   R04 (PLAN revisions) — SENTRY_DEBUG=1 opt-in console.error in catch blocks
  *
- * The wrapper exposes a test seam `_setCaptureCheckInForTest` (mirroring the
- * existing `_resetForTest` convention in this stack's index.ts) so the Sentry
- * SDK boundary call can be substituted without monkey-patching `npm:` modules.
- * Env access is stubbed by replacing `globalThis.Deno.env` for the test, then
- * restored.
+ * Two test seams are used:
+ *   - `_setCaptureCheckInForTest`: substitutes the Sentry SDK boundary call.
+ *     Mirrors the existing `_resetForTest` convention in this stack's
+ *     `index.ts` — avoids monkey-patching the `npm:@sentry/deno` module
+ *     under `deno test`, which has no `vi.mock` equivalent.
+ *   - `Deno.env.set/delete`: per-test env mutation. Deno's global `Deno`
+ *     namespace is read-only and cannot be reassigned, but its env API
+ *     exposes `set`/`delete` — the idiomatic stub.
  *
  * Run with: deno test -A --no-check cron-monitor.test.ts
  */
@@ -57,26 +60,33 @@ function resetRecorder(): void {
   _setCaptureCheckInForTest(null);
 }
 
-// ─── Deno.env stubbing ────────────────────────────────────────────────────────
+// ─── Env management ───────────────────────────────────────────────────────────
+// Deno.env.set / delete is the only mutation surface — the `Deno` object
+// itself is read-only. Tests track the keys they wrote so teardown can scrub
+// them cleanly (no other test relies on these vars persisting).
 
-let stubEnv: Record<string, string> = {};
-let originalDeno: unknown;
+const TEST_ENV_KEYS = [
+  "SENTRY_DSN",
+  "SENTRY_DEBUG",
+  "SERVICE_NAME",
+  "SENTRY_CRON_MONITOR_SLUG_SCHEDULED",
+  "SENTRY_CRON_MONITOR_SLUG_INGEST_15MIN",
+];
 
-function installEnvStub(env: Record<string, string>): void {
-  stubEnv = env;
-  // deno-lint-ignore no-explicit-any
-  originalDeno = (globalThis as any).Deno;
-  // deno-lint-ignore no-explicit-any
-  (globalThis as any).Deno = {
-    env: {
-      get: (k: string): string | undefined => stubEnv[k],
-    },
-  };
+function installEnv(env: Record<string, string>): void {
+  // Reset all known keys first, then apply.
+  for (const k of TEST_ENV_KEYS) {
+    try { Deno.env.delete(k); } catch { /* ignore */ }
+  }
+  for (const [k, v] of Object.entries(env)) {
+    Deno.env.set(k, v);
+  }
 }
 
 function restoreEnv(): void {
-  // deno-lint-ignore no-explicit-any
-  (globalThis as any).Deno = originalDeno;
+  for (const k of TEST_ENV_KEYS) {
+    try { Deno.env.delete(k); } catch { /* ignore */ }
+  }
 }
 
 // ─── §22.D1/D5b cron checkin behavior ─────────────────────────────────────────
@@ -85,7 +95,7 @@ Deno.test("withCronMonitor: emits in_progress + ok on happy path", async () => {
   const rec = makeRecorder();
   rec.returns.push("checkin-abc");
   bindRecorder(rec);
-  installEnvStub({ SENTRY_DSN: "https://stub@sentry.io/1" });
+  installEnv({ SENTRY_DSN: "https://stub@sentry.io/1" });
   try {
     let called = 0;
     const handler = async (_req: Request): Promise<Response> => {
@@ -110,7 +120,7 @@ Deno.test("withCronMonitor: emits in_progress + error and re-throws on handler e
   const rec = makeRecorder();
   rec.returns.push("checkin-abc");
   bindRecorder(rec);
-  installEnvStub({ SENTRY_DSN: "https://stub@sentry.io/1" });
+  installEnv({ SENTRY_DSN: "https://stub@sentry.io/1" });
   try {
     const boom = new Error("handler exploded");
     const handler = async (_req: Request): Promise<Response> => { throw boom; };
@@ -135,7 +145,7 @@ Deno.test("withCronMonitor: emits in_progress + error and re-throws on handler e
 Deno.test("withCronMonitor: no-ops cleanly when SENTRY_DSN is unset", async () => {
   const rec = makeRecorder();
   bindRecorder(rec);
-  installEnvStub({}); // no SENTRY_DSN
+  installEnv({}); // no SENTRY_DSN
   try {
     let called = 0;
     const handler = async (_req: Request): Promise<Response> => {
@@ -160,7 +170,7 @@ Deno.test("withCronMonitor: uses explicit config.monitorSlug above all sources",
   const rec = makeRecorder();
   rec.returns.push("checkin-abc");
   bindRecorder(rec);
-  installEnvStub({
+  installEnv({
     SENTRY_DSN: "https://stub@sentry.io/1",
     SENTRY_CRON_MONITOR_SLUG_SCHEDULED: "env-loses",
     SERVICE_NAME: "auto-loses",
@@ -184,7 +194,7 @@ Deno.test("withCronMonitor: falls back to SENTRY_CRON_MONITOR_SLUG_<handler> env
   bindRecorder(rec);
   // handlerName "ingest-15min" → env key SENTRY_CRON_MONITOR_SLUG_INGEST_15MIN
   // (hyphens become underscores per D6).
-  installEnvStub({
+  installEnv({
     SENTRY_DSN: "https://stub@sentry.io/1",
     SENTRY_CRON_MONITOR_SLUG_INGEST_15MIN: "env-wins",
     SERVICE_NAME: "auto-loses",
@@ -206,7 +216,7 @@ Deno.test("withCronMonitor: falls back to auto-derived ${SERVICE_NAME}:${handler
   const rec = makeRecorder();
   rec.returns.push("checkin-abc");
   bindRecorder(rec);
-  installEnvStub({
+  installEnv({
     SENTRY_DSN: "https://stub@sentry.io/1",
     SERVICE_NAME: "callbot-edge",
   });
@@ -229,7 +239,7 @@ Deno.test("withCronMonitor: forwards monitorConfig on in_progress, omits on comp
   const rec = makeRecorder();
   rec.returns.push("checkin-abc");
   bindRecorder(rec);
-  installEnvStub({ SENTRY_DSN: "https://stub@sentry.io/1" });
+  installEnv({ SENTRY_DSN: "https://stub@sentry.io/1" });
   try {
     const handler = async (_req: Request): Promise<Response> => new Response("ok");
     const wrapped = withCronMonitor(handler, {
@@ -257,7 +267,7 @@ Deno.test("withCronMonitor: omits monitorConfig entirely when neither schedule n
   const rec = makeRecorder();
   rec.returns.push("checkin-abc");
   bindRecorder(rec);
-  installEnvStub({ SENTRY_DSN: "https://stub@sentry.io/1" });
+  installEnv({ SENTRY_DSN: "https://stub@sentry.io/1" });
   try {
     const handler = async (_req: Request): Promise<Response> => new Response("ok");
     const wrapped = withCronMonitor(handler, { monitorSlug: "x" });
@@ -287,15 +297,14 @@ Deno.test("withCronMonitor: logs swallowed errors when SENTRY_DEBUG=1, silent ot
     const handler = async (_req: Request): Promise<Response> => new Response("ok");
 
     // SENTRY_DEBUG absent → silent
-    installEnvStub({ SENTRY_DSN: "https://stub@sentry.io/1" });
+    installEnv({ SENTRY_DSN: "https://stub@sentry.io/1" });
     const wrappedSilent = withCronMonitor(handler, { monitorSlug: "x" });
     await wrappedSilent(new Request("https://stub/cron"));
     assertEquals(errorCalls.length, 0);
-    restoreEnv();
 
     // SENTRY_DEBUG=1 → console.error called
     errorCalls = [];
-    installEnvStub({ SENTRY_DSN: "https://stub@sentry.io/1", SENTRY_DEBUG: "1" });
+    installEnv({ SENTRY_DSN: "https://stub@sentry.io/1", SENTRY_DEBUG: "1" });
     const wrappedDebug = withCronMonitor(handler, { monitorSlug: "x" });
     await wrappedDebug(new Request("https://stub/cron"));
     assert(errorCalls.length > 0, "expected console.error to be called when SENTRY_DEBUG=1");

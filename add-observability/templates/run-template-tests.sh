@@ -446,7 +446,12 @@ run_ts_supabase_edge() {
   mkdir -p "$OBS_DIR"
   substitute_tokens "$SRC/index.ts"      "$OBS_DIR/index.ts"
   substitute_tokens "$SRC/middleware.ts"  "$OBS_DIR/middleware.ts"
-  # Copy every *.test.ts (index contract suite + phase-21 axiom suite).
+  # Phase 22 — Sentry Crons wrapper (T04 GREEN). cron-monitor.ts holds the
+  # implementation that cron-monitor.test.ts (covered by the *.test.ts glob
+  # below) imports. No existence gate per PLAN R02.
+  substitute_tokens "$SRC/cron-monitor.ts" "$OBS_DIR/cron-monitor.ts"
+  # Copy every *.test.ts (index contract suite + phase-21 axiom suite +
+  # phase-22 cron-monitor suite).
   for f in "$SRC"/*.test.ts; do
     [[ -f "$f" ]] || continue
     substitute_tokens "$f" "$OBS_DIR/$(basename "$f")"
