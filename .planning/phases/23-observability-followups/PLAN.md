@@ -35,123 +35,137 @@ requirements: []
 must_haves:
   truths:
     - "INIT.md Phase 5 subsections (worker, pages, supabase-edge, go) each cite withCronMonitor with a file:line link into cron-monitor.{ts,go}; react-vite subsection unchanged"
-    - "All 4 /healthz snippets ship a per-probe timeout: TS uses AbortSignal.timeout(DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS) with default 2000; Go uses context.WithTimeout(ctx, defaultHealthzProbeTimeout) with default 2*time.Second"
+    - "All 4 /healthz snippets ship a per-probe timeout — per D-03 (revised post-review for per-stack heterogeneity): Worker uses caller-overridable opts arg; Pages reads PROBE_TIMEOUT_MS from context.env (fallback 2000); Supabase-Edge uses module-constant configuration; Go documents timeout-caps-handler-only honestly (cannot cancel inner Get(url))"
+    - "TS healthz snippets use AbortController + setTimeout/clearTimeout pattern in a try/finally (no Promise.race + abort-rejection; no unhandled rejections per gemini MEDIUM-1)"
     - "Aborted probes report as {status: degraded, checks: {<probeName>: 'timeout'}} (string sentinel distinguishes timeout from genuine false)"
-    - "migrations/run-tests.sh and templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh trap INT TERM EXIT and run cleanup before re-raising (no top-level migrations/apply.sh exists in this repo — see Task 3.1 behaviour block)"
-    - "Test test-sigterm-mid-apply-preserves-state uses the test-only --pause-between-passes <signal-file> engine flag; passes deterministically with no sleeps"
+    - "migrations/run-tests.sh dispatcher EXTENDED in Wave 0 to support new test names (test-skill-md-version-matches-latest-migration-to-version, test-sigterm-mid-apply-preserves-state) — precondition for Tasks 1.3 + 3.1"
+    - "migrations/run-tests.sh and templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh have SPLIT trap design: EXIT trap is silent + idempotent (no warning output); INT trap runs cleanup then exits 130; TERM trap runs cleanup then exits 143"
+    - "Test test-sigterm-mid-apply-preserves-state uses the test-only --pause-between-passes <signal-file> engine flag; passes deterministically with no sleeps; trap fires only on signal (cleanup output absent when test exits 0 normally)"
     - "Test test-skill-md-version-matches-latest-migration-to-version asserts skill/SKILL.md version equals the highest-numbered migration file's to_version using only grep + awk (no yq)"
-    - "All 3 TS cron-monitor.ts files have lines 137-148 preserved verbatim (fail-safe + slug resolution + monitorConfig build) and lines 148-181 replaced by a single `await Sentry.withMonitor(monitorSlug, () => handler(controller, env, ctx), monitorConfig);` call inside the existing try/catch scaffold"
-    - "Each of the 3 TS cron-monitor.test.ts files contains behavioural-parity tests asserting Sentry.withMonitor is called with (slug, callback, monitorConfig) and captureCheckIn is NOT called directly from the wrapper"
+    - "All 3 TS cron-monitor.ts files preserve lines 137-148 verbatim (fail-safe + slug resolution + monitorConfig build) and replace lines 148-181 with the GUARDED Shape A block per CONTEXT.md D-08 (handlerStarted flag + pre-callback fallback to unmonitored handler)"
+    - "Each of the 3 TS cron-monitor.test.ts files contains: (a) F5.1-F5.5 behavioural-parity tests asserting Sentry.withMonitor is called with (slug, callback, monitorConfig) and captureCheckIn is NOT called directly from wrapper; (b) ONE new regression test 'Sentry check-in setup throws before callback → handler still runs unmonitored, no crash' (per codex Suggestion 2)"
+    - "Supabase Task 2.3 verifies @sentry/deno exports withMonitor BEFORE editing implementation; introduces _setWithMonitorForTest seam as Deno-friendly indirection"
     - "Go templates/go-fly-http/cron_monitor.go gains a ≤5-line package-doc note explaining sentry-go ships no WithMonitor equivalent; symbol body unchanged"
-    - "Migration 0019's emit_refuse_artifacts function no longer emits .observability-0019.patch to CLEAN_DIRS in the default refuse path; --allow-partial (or ALLOW_PARTIAL=true env) restores the emit-to-all-roots behaviour"
+    - "Migration 0019's emit_refuse_artifacts function no longer emits .observability-0019.patch to CLEAN_DIRS in the default refuse path; --allow-partial (or ALLOW_PARTIAL=true env) restores the emit-to-all-roots behaviour. Operator-facing language honestly states 'default refuse no longer touches clean roots; dirty roots still get recovery artifacts' (per codex MEDIUM-6 — narrow path / honest reframe)"
     - "Fixture 06 verify.sh asserts the new default: clean roots receive NO patches; only the dirty root receives a patch on default refuse"
     - "New fixture 07 exercises --allow-partial and asserts clean roots are migrated, dirty root is skipped + patched"
     - "add-observability/SKILL.md version field is 0.7.0"
-    - "add-observability/CHANGELOG.md has a 0.7.0 entry calling out F2 healthz timeout, F5 withCronMonitor refactor with R02/R04 SDK-error-swallow regression + withIsolationScope addition, and D-07 migration engine default-flip with --allow-partial opt-in path"
-    - "docs/decisions/0029-cron-monitor-sdk-composition.md exists with Context, Decision (Shape A), Alternatives Rejected (Shapes B/C/D/F with specific contract each regresses), and Consequences"
+    - "add-observability/CHANGELOG.md has a 0.7.0 entry with: (a) F2 per-stack heterogeneous timeout (D-03 narrowed); (b) F5 GUARDED Shape A — pre-callback errors fall back to unmonitored, post-callback errors propagate (R02/R04 regression narrowed to post-callback); (c) withIsolationScope semantic honest note (handler-set scope state may not leak to outer capture after isolation unwinds, per codex MEDIUM); (d) D-07 honest reframe (default refuse no longer touches clean roots; dirty roots still receive recovery artifacts)"
+    - "docs/decisions/0029-cron-monitor-sdk-composition.md exists in Wave 0 (NOT Wave 5 — moved earlier per codex Suggestion 7) with Context, Decision (Guarded Shape A), Alternatives Rejected including original-Shape-A + B + C + D + F (5 rejected), Codex's pre-callback-throw empirical evidence, and Consequences"
+    - "gitnexus_detect_changes() runs as the last acceptance criterion of EACH wave-closing task (Wave 1: Task 1.7; Wave 2: Task 2.3; Wave 3: Task 3.1; Wave 4: Task 4.2; Wave 5: Task 5.4) per codex Suggestion 8"
+    - "G6 gate (REPLACED): named-test-presence check (grep for new test names in run-tests.sh + run-template-tests.sh output) + overall harness exit code 0. NO numeric counter (per codex MEDIUM-7 — harness has no test-total summary)"
     - "Full migration test harness (migrations/run-tests.sh) passes after all changes; full template test harness (add-observability/templates/run-template-tests.sh all) passes after all changes"
   artifacts:
+    - path: "docs/decisions/0029-cron-monitor-sdk-composition.md"
+      provides: "ADR-0029 capturing D-08 Guarded Shape A rationale + 5 rejected shapes incl. original Shape A — AUTHORED IN WAVE 0 (before code) per codex Suggestion 7"
+      contains: "Guarded Shape A"
+    - path: "migrations/run-tests.sh"
+      provides: "Wave 0 dispatcher extension (new test names) + F3 sigterm test + F4 skill-md drift test + split trap (EXIT silent / INT exit 130 / TERM exit 143)"
+      contains: "test-sigterm-mid-apply-preserves-state"
     - path: "add-observability/init/INIT.md"
       provides: "F1 per-stack Phase 5 composition notes"
       contains: "withCronMonitor"
     - path: "add-observability/templates/ts-cloudflare-worker/healthz-snippet.ts"
-      provides: "F2 TS worker per-probe timeout via AbortSignal.timeout"
-      contains: "DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS"
+      provides: "F2 TS worker per-probe timeout — AbortController + setTimeout/clearTimeout (Worker keeps 3rd-arg override)"
+      contains: "AbortController"
     - path: "add-observability/templates/ts-cloudflare-pages/healthz-snippet.ts"
-      provides: "F2 TS pages per-probe timeout"
-      contains: "DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS"
+      provides: "F2 TS pages per-probe timeout — context.env.HEALTHZ_PROBE_TIMEOUT_MS (Pages onRequest signature has no 3rd-arg override path)"
+      contains: "HEALTHZ_PROBE_TIMEOUT_MS"
     - path: "add-observability/templates/ts-supabase-edge/healthz-snippet.ts"
-      provides: "F2 TS supabase-edge per-probe timeout"
-      contains: "DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS"
+      provides: "F2 TS supabase-edge per-probe timeout — module-constant or env-var (planner picks at execute time matching Deno test-seam constraints)"
+      contains: "PROBE_TIMEOUT_MS"
     - path: "add-observability/templates/go-fly-http/healthz_snippet.go"
-      provides: "F2 Go per-probe timeout via context.WithTimeout"
+      provides: "F2 Go per-probe timeout — honestly documented as 'caps handler latency, NOT inner Get(url)' per codex MEDIUM-5"
       contains: "defaultHealthzProbeTimeout"
     - path: "add-observability/templates/ts-cloudflare-worker/cron-monitor.ts"
-      provides: "F5 Shape A composition: Sentry.withMonitor underneath outer wrapper"
-      contains: "Sentry.withMonitor"
+      provides: "F5 Guarded Shape A composition (per CONTEXT.md D-08 amended block)"
+      contains: "handlerStarted"
     - path: "add-observability/templates/ts-cloudflare-pages/cron-monitor.ts"
-      provides: "F5 Shape A composition (pages)"
-      contains: "Sentry.withMonitor"
+      provides: "F5 Guarded Shape A composition (pages)"
+      contains: "handlerStarted"
     - path: "add-observability/templates/ts-supabase-edge/cron-monitor.ts"
-      provides: "F5 Shape A composition (supabase-edge)"
-      contains: "Sentry.withMonitor"
+      provides: "F5 Guarded Shape A composition (supabase-edge) with _setWithMonitorForTest seam"
+      contains: "handlerStarted"
     - path: "add-observability/templates/go-fly-http/cron_monitor.go"
       provides: "D-09 sentry-go SDK gap doc note"
       contains: "sentry-go"
-    - path: "migrations/run-tests.sh"
-      provides: "F3 sigterm test + F4 skill-md drift test + INT/TERM/EXIT trap"
-      contains: "test-sigterm-mid-apply-preserves-state"
     - path: "templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh"
-      provides: "F3 SIGTERM trap in the 2-pass atomic migration engine (no top-level migrations/apply.sh exists — Task 3.1's resolution lands the trap here AND in migrations/run-tests.sh)"
-      contains: "trap 'cleanup' INT TERM EXIT"
+      provides: "F3 split trap (EXIT silent / INT exit 130 / TERM exit 143); D-07 default-flip in emit_refuse_artifacts"
+      contains: "ALLOW_PARTIAL"
     - path: "migrations/test-fixtures/0019/06-multi-root-mixed-clean-dirty-refuses-all/verify.sh"
       provides: "D-07 fixture 06 flipped assertion"
       contains: "no patch"
     - path: "migrations/test-fixtures/0019/07-allow-partial-emits-patches/verify.sh"
       provides: "D-07 fixture 07 --allow-partial path"
       contains: "allow-partial"
-    - path: "templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh"
-      provides: "D-07 default-flip in emit_refuse_artifacts"
-      contains: "ALLOW_PARTIAL"
     - path: "add-observability/SKILL.md"
       provides: "D-01 version bump 0.6.0 → 0.7.0"
       contains: "version: 0.7.0"
     - path: "add-observability/CHANGELOG.md"
-      provides: "D-01 0.7.0 release notes"
+      provides: "D-01 0.7.0 release notes with honest reframing per codex MEDIUM-4/5/6"
       contains: "0.7.0"
-    - path: "docs/decisions/0029-cron-monitor-sdk-composition.md"
-      provides: "ADR-0029 capturing D-08 Shape A rationale + rejected shapes"
-      contains: "Shape A"
   key_links:
     - from: "add-observability/templates/ts-cloudflare-worker/cron-monitor.ts"
       to: "@sentry/cloudflare"
-      via: "Sentry.withMonitor(monitorSlug, () => handler(...), monitorConfig)"
-      pattern: "Sentry\\.withMonitor\\("
+      via: "Guarded Sentry.withMonitor(monitorSlug, () => { handlerStarted = true; return handler(...); }, monitorConfig) with try/catch fallback"
+      pattern: "handlerStarted"
     - from: "add-observability/templates/ts-cloudflare-pages/cron-monitor.ts"
       to: "@sentry/cloudflare"
-      via: "Sentry.withMonitor(monitorSlug, () => handler(...), monitorConfig)"
-      pattern: "Sentry\\.withMonitor\\("
+      via: "Guarded Sentry.withMonitor with handlerStarted flag"
+      pattern: "handlerStarted"
     - from: "add-observability/templates/ts-supabase-edge/cron-monitor.ts"
-      to: "@sentry/cloudflare"
-      via: "Sentry.withMonitor(monitorSlug, () => handler(...), monitorConfig)"
-      pattern: "Sentry\\.withMonitor\\("
+      to: "@sentry/deno"
+      via: "Guarded Sentry.withMonitor via _setWithMonitorForTest seam"
+      pattern: "handlerStarted"
     - from: "add-observability/templates/ts-cloudflare-worker/healthz-snippet.ts"
-      to: "global AbortSignal"
-      via: "AbortSignal.timeout(DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS) passed to probe call"
-      pattern: "AbortSignal\\.timeout\\("
+      to: "global AbortController"
+      via: "AbortController + setTimeout/clearTimeout pattern (no Promise.race rejection)"
+      pattern: "AbortController"
     - from: "add-observability/templates/go-fly-http/healthz_snippet.go"
       to: "stdlib context"
-      via: "context.WithTimeout(r.Context(), defaultHealthzProbeTimeout)"
+      via: "context.WithTimeout(r.Context(), defaultHealthzProbeTimeout) — caps handler only (NOT inner Get(url))"
       pattern: "context\\.WithTimeout\\("
     - from: "templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh"
-      to: "cleanup function"
-      via: "trap 'cleanup' INT TERM EXIT (also mirrored in migrations/run-tests.sh per Task 3.1)"
-      pattern: "trap.*cleanup.*INT.*TERM.*EXIT"
+      to: "split trap handlers"
+      via: "trap on_exit EXIT (silent); trap 'cleanup; exit 130' INT; trap 'cleanup; exit 143' TERM"
+      pattern: "trap.*INT|trap.*TERM"
     - from: "migrations/run-tests.sh"
       to: "skill/SKILL.md + migrations/<latest>.md"
-      via: "test-skill-md-version-matches-latest-migration-to-version function"
+      via: "test-skill-md-version-matches-latest-migration-to-version function (dispatcher extended in Wave 0)"
       pattern: "test-skill-md-version-matches-latest-migration-to-version"
     - from: "templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh"
       to: "operator opt-in flag"
-      via: "ALLOW_PARTIAL gating around clean-root patch emission"
+      via: "ALLOW_PARTIAL gating around clean-root patch emission (D-07 honest reframe)"
       pattern: "ALLOW_PARTIAL.*-eq 1"
 ---
 
 <objective>
-Ship `add-observability 0.7.0` minor — five batched follow-ups from Phase 22 plus a side-work atomic-refuse default-flip on migration 0019.
+Ship `add-observability 0.7.0` minor — five batched follow-ups from Phase 22 plus a side-work atomic-refuse default-flip on migration 0019. **REVISED per multi-AI review (`23-REVIEWS.md`, codex HIGH verdict + gemini MEDIUM-1) on 2026-05-29.**
 
 Purpose:
 - Close Phase 22's three review-gate residuals (F1 INIT.md doc gap, F2 healthz timeout, F3 SIGTERM trap)
 - Close Phase 22's one non-goal (F4 SKILL.md drift test)
-- Land the user-requested `withCronMonitor` SDK-composition refactor (F5 Shape A per D-08)
-- Fix migration 0019's "patches everywhere on refuse" behaviour to match migration 0017's atomic-refuse default (D-07)
-- Author ADR-0029 capturing the F5 architectural decision with rejected alternatives for `/gsd-review` audit
+- Land the user-requested `withCronMonitor` SDK-composition refactor (F5 **Guarded** Shape A per amended CONTEXT.md D-08)
+- Fix migration 0019's "patches everywhere on refuse" behaviour to match migration 0017's atomic-refuse default (D-07, honestly reframed per codex MEDIUM-6)
+- Author ADR-0029 IN WAVE 0 (before code) capturing the F5 architectural decision with 5 rejected alternatives (incl. original Shape A) for `/gsd-review` audit
 
 Output:
+- 17 tasks across 6 waves (was 17 across 5; Wave 0 added per codex Suggestion 7)
 - 14+ modified files across 4 stacks, 1 migration engine, 1 test harness, 1 ADR, SKILL.md + CHANGELOG.md
-- 4 new TDD tests (F2 timeout × 1 stack × 4 stacks, F3 sigterm, F4 drift, F5 parity × 3 stacks)
+- 4 new TDD tests (F2 timeout × 4 stacks, F3 sigterm, F4 drift, F5 parity + pre-callback regression × 3 stacks)
 - 1 new migration fixture (07-allow-partial-emits-patches)
-- 1 new ADR (0029-cron-monitor-sdk-composition.md)
+- 1 new ADR (0029-cron-monitor-sdk-composition.md) authored IN WAVE 0
+
+Revision provenance (codex/gemini review IDs):
+- R-rev-1: D-08 Guarded Shape A — codex HIGH-1 → Tasks 2.1/2.2/2.3
+- R-rev-2: Split trap design — codex HIGH-2 → Task 3.1
+- R-rev-3: F2 per-stack rework — codex MEDIUM-5 + gemini MEDIUM-1 → Tasks 1.4/1.5/1.6/1.7
+- R-rev-4: G6 gate replacement — codex MEDIUM-7 → Task 0.1 (harness extension) + Task 5.4 (named-test check)
+- R-rev-5: D-07 honest reframe — codex MEDIUM-6 → Tasks 4.1/4.2 + CHANGELOG
+- R-rev-6: Supabase Deno seam — codex MEDIUM-4 → Task 2.3
+- R-rev-7: ADR-0029 to Wave 0 — codex Suggestion 7 → Task 0.2 (was 5.1)
+- R-rev-8: GitNexus per-wave — codex Suggestion 8 → wave-closer tasks
+- R-rev-9: Gemini F2 unhandled-rejection (subsumed by R-rev-3) — explicit AbortController + clearTimeout call-out in TS tasks
 </objective>
 
 <execution_context>
@@ -162,6 +176,7 @@ Output:
 <context>
 @.planning/phases/23-observability-followups/CONTEXT.md
 @.planning/phases/23-observability-followups/DISCUSSION-LOG.md
+@.planning/phases/23-observability-followups/23-REVIEWS.md
 @.planning/phases/22-sentry-crons-healthz/CONTEXT.md
 @.planning/phases/22-sentry-crons-healthz/PLAN.md
 @.planning/phases/22-sentry-crons-healthz/SECURITY.md
@@ -170,18 +185,24 @@ Output:
 @add-observability/templates/ts-cloudflare-worker/cron-monitor.ts
 @add-observability/templates/ts-cloudflare-worker/cron-monitor.test.ts
 @add-observability/templates/ts-cloudflare-worker/healthz-snippet.ts
+@add-observability/templates/ts-cloudflare-worker/middleware.ts
+@add-observability/templates/ts-cloudflare-pages/healthz-snippet.ts
+@add-observability/templates/ts-cloudflare-pages/cron-monitor.ts
+@add-observability/templates/ts-supabase-edge/cron-monitor.ts
+@add-observability/templates/ts-supabase-edge/cron-monitor.test.ts
 @add-observability/templates/go-fly-http/cron_monitor.go
 @add-observability/templates/go-fly-http/healthz_snippet.go
 @add-observability/init/INIT.md
 @add-observability/SKILL.md
 @migrations/run-tests.sh
 @templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh
+@templates/.claude/scripts/migrate-0017-axiom-destination.sh
 @migrations/test-fixtures/0019/06-multi-root-mixed-clean-dirty-refuses-all/verify.sh
 
 <interfaces>
 <!-- Key contracts the executor needs. Extract once here to avoid scavenger hunts. -->
 
-From add-observability/templates/ts-cloudflare-worker/cron-monitor.ts (current public surface — PRESERVED under D-08 Shape A):
+From add-observability/templates/ts-cloudflare-worker/cron-monitor.ts (current public surface — PRESERVED under Guarded Shape A):
 ```typescript
 export interface CronMonitorSchedule { type: "crontab" | "interval"; value: string; }
 export interface CronMonitorConfig {
@@ -196,10 +217,11 @@ export function withCronMonitor<E extends Record<string, unknown>>(
 ): ScheduledFn<E>;
 ```
 
-Sentry SDK signature (Context7-verified from getsentry/sentry-javascript, packages/core/src/exports.ts; re-exported by @sentry/cloudflare):
+Sentry SDK signature (Context7-verified from getsentry/sentry-javascript, packages/core/src/exports.ts; re-exported by @sentry/cloudflare and @sentry/deno):
 ```typescript
 // withMonitor wraps callback in withIsolationScope and emits in_progress + ok/error checkins with duration tracking.
-// SDK errors during captureCheckIn are RE-THROWN (this is the documented R02/R04 regression).
+// IMPORTANT (codex HIGH-1): in_progress check-in fires BEFORE the callback runs. If transport throws there,
+// the callback NEVER executes. Guarded Shape A's handlerStarted flag detects this and falls back to unmonitored.
 export function withMonitor<T>(
   slug: string,
   callback: () => T,
@@ -207,15 +229,41 @@ export function withMonitor<T>(
 ): T;
 ```
 
+Guarded Shape A target shape (canonical block in CONTEXT.md D-08; executors read from there):
+```typescript
+let handlerStarted = false;
+try {
+  await Sentry.withMonitor(
+    monitorSlug,
+    () => {
+      handlerStarted = true;
+      return handler(controller, env, ctx);
+    },
+    monitorConfig,
+  );
+} catch (err) {
+  if (!handlerStarted) {
+    // Sentry transport failed before handler ran — fall back to unmonitored.
+    await handler(controller, env, ctx);
+    return;
+  }
+  throw err; // handler-thrown OR post-callback errors propagate as before
+}
+```
+
 From add-observability/templates/go-fly-http/cron_monitor.go (UNCHANGED under D-09 — doc note only):
 ```go
 func WithCronMonitor(ctx context.Context, fn func() error, opts ...CronMonitorOption) error
 ```
 
-From migrations/run-tests.sh (existing test naming convention — F3 + F4 follow same shape):
+From migrations/run-tests.sh dispatcher (lines 2137-2204 — Wave 0 EXTENDS this):
 ```bash
-test_migration_NNNN() { ... }   # named per-migration tests
-run_all() { test_migration_0001; test_migration_0005; ... }
+# CURRENT: numeric filters only (0001, 0005, ..., 0019) + 2 hardcoded names (preflight, destinations).
+# Codex MEDIUM-7: new test names will NOT run unless dispatcher is extended.
+if [ -z "$FILTER" ] || [ "$FILTER" = "0001" ]; then test_migration_0001; fi
+# ...
+if [ -z "$FILTER" ] || [ "$FILTER" = "preflight" ]; then test_preflight_verify_paths; fi
+if [ -z "$FILTER" ] || [ "$FILTER" = "destinations" ]; then test_meta_destinations_consistency; fi
 ```
 
 From templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh:42-57 (existing flag parsing):
@@ -229,26 +277,40 @@ done
 # ALLOW_PARTIAL=1 means "apply clean roots, skip dirty" — D-07 EXTENDS this to also gate clean-root patch emission.
 ```
 
-From migration 0017's analogue (templates/.claude/scripts/migrate-0017-axiom-destination.sh) — D-07's reference implementation:
-- Line 26-27: `* DEFAULT refuse path is atomic: not a single file is created/modified when any root is dirty (review #7 all-clean gate).`
-- Migration 0017 ALREADY implements zero-side-effect-default + opt-in-patches. D-07 brings 0019 into alignment.
+From migration 0017's analogue (templates/.claude/scripts/migrate-0017-axiom-destination.sh):
+- Migration 0017 ALREADY implements dirty-root-patches-on-refuse (codex MEDIUM-6 verified at line 368). The "0017 = zero-side-effect" framing is WRONG.
+- D-07 honest reframe: "default refuse no longer writes to CLEAN roots; DIRTY roots still receive .observability-0019.patch + .gitignore entries for splice recovery."
+- Audit Task 4.1 exit condition: 0017 already matches the honest-reframed target. Do NOT escalate to "0017 needs same fix".
 </interfaces>
 </context>
 
 <gitnexus_required_symbols>
-<!-- Per ./CLAUDE.md: every symbol edit MUST run gitnexus_impact({target, direction: "upstream"}) BEFORE the edit and record the risk level. -->
+<!-- Per ./CLAUDE.md + codex Suggestion 8: every symbol edit MUST run gitnexus_impact({target, direction: "upstream"}) BEFORE the edit, AND gitnexus_detect_changes() at each WAVE-CLOSER task (not just final Task 5.4). -->
 
 | Task | Symbol | File | Edit shape |
 |------|--------|------|------------|
-| T-F2.{worker,pages,supabase} | healthzHandler | add-observability/templates/ts-{stack}/healthz-snippet.ts | wrap probe calls in AbortSignal.timeout |
-| T-F2.go | HealthzHandler | add-observability/templates/go-fly-http/healthz_snippet.go | wrap probe calls in context.WithTimeout |
-| T-F5.{worker,pages,supabase} | withCronMonitor | add-observability/templates/ts-{stack}/cron-monitor.ts | replace lines 148-181 with Sentry.withMonitor call |
-| T-F3 | engine top-level (no apply.sh exists in repo) | templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh | add `trap 'cleanup' INT TERM EXIT` to the 2-pass engine; Task 3.1 behaviour block enumerates the exact landing spots |
-| T-F3 | run_test / run_all | migrations/run-tests.sh | add trap + add `--pause-between-passes <signal-file>` test-only flag handling in the engine (NOT in a non-existent apply.sh) |
+| T-0.1 | run_all / dispatcher block | migrations/run-tests.sh | extend dispatcher to support `test-skill-md-version-matches-latest-migration-to-version` + `test-sigterm-mid-apply-preserves-state` named filters |
+| T-0.2 | (ADR file — no symbol) | docs/decisions/0029-cron-monitor-sdk-composition.md | new file; no gitnexus_impact required (file create) |
+| T-F2.worker | healthzHandler | add-observability/templates/ts-cloudflare-worker/healthz-snippet.ts | AbortController + setTimeout + 3rd-arg override (Worker supports) |
+| T-F2.pages | onRequest | add-observability/templates/ts-cloudflare-pages/healthz-snippet.ts | AbortController + setTimeout + context.env.HEALTHZ_PROBE_TIMEOUT_MS (no 3rd-arg path) |
+| T-F2.supabase | healthzHandler | add-observability/templates/ts-supabase-edge/healthz-snippet.ts | AbortController + setTimeout + module-const OR env-var (planner picks; Deno seam constraints apply) |
+| T-F2.go | HealthzHandler | add-observability/templates/go-fly-http/healthz_snippet.go | context.WithTimeout (caps handler latency only — explicit code+CHANGELOG note that Get(url) cannot be cancelled) |
+| T-F5.worker | withCronMonitor | add-observability/templates/ts-cloudflare-worker/cron-monitor.ts | Guarded Shape A per CONTEXT.md D-08 canonical block |
+| T-F5.pages | withCronMonitor | add-observability/templates/ts-cloudflare-pages/cron-monitor.ts | Guarded Shape A |
+| T-F5.supabase | withCronMonitor + _setWithMonitorForTest seam | add-observability/templates/ts-supabase-edge/cron-monitor.ts | Guarded Shape A via _setWithMonitorForTest seam (Deno-friendly indirection) |
+| T-F3 | engine top-level | templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh | split trap: EXIT (silent idempotent) / INT (cleanup + exit 130) / TERM (cleanup + exit 143); + path-validated `--pause-between-passes` |
+| T-F3 | dispatcher | migrations/run-tests.sh | split trap (same shape) at harness level |
 | T-D07 | emit_refuse_artifacts | templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh:542-573 | gate clean-root emission on `[ "$ALLOW_PARTIAL" -eq 1 ]` |
-| T-D09 | WithCronMonitor (Go) | add-observability/templates/go-fly-http/cron_monitor.go | doc-only edit to package doc preceding the function (no body change — gitnexus_impact still required per CLAUDE.md "before editing any symbol") |
+| T-D09 | WithCronMonitor (Go) | add-observability/templates/go-fly-http/cron_monitor.go | doc-only edit |
 
-Acceptance check on each task: `gitnexus_impact` was run and reported risk level. If HIGH or CRITICAL: action requires explicit "proceed-anyway" rationale in commit body. If GitNexus index is stale, run `npx gitnexus analyze` before the impact call.
+Wave-closer gitnexus_detect_changes (per codex Suggestion 8):
+- Wave 1 closer: Task 1.7 → run `gitnexus_detect_changes()` after Go healthz
+- Wave 2 closer: Task 2.3 → run `gitnexus_detect_changes()` after Supabase F5
+- Wave 3 closer: Task 3.1 → run `gitnexus_detect_changes()` after F3 trap
+- Wave 4 closer: Task 4.2 → run `gitnexus_detect_changes()` after D-07 0019 fix
+- Wave 5 closer: Task 5.4 → existing gitnexus_detect_changes() global gate
+
+Acceptance check on each task: `gitnexus_impact` was run and reported risk level. If HIGH or CRITICAL: action requires explicit "proceed-anyway" rationale in commit body.
 </gitnexus_required_symbols>
 
 <threat_model>
@@ -256,36 +318,223 @@ Acceptance check on each task: `gitnexus_impact` was run and reported risk level
 
 | Boundary | Description |
 |----------|-------------|
-| Cron handler body → Sentry SDK | F5 changes how cron breadcrumbs/scope/user-context flow between invocations via withIsolationScope |
-| Outer wrapper (withObservabilityScheduled) → withCronMonitor | F5 drops SDK-error swallow; transport errors during captureCheckIn now bubble up |
-| Healthz handler → probe targets (DB, KV, upstream HTTP) | F2 introduces controlled abort; aborted probes must not leak partial state (open connections, mid-query state) |
-| Migration engine → operator filesystem | F3 SIGTERM trap runs cleanup before re-raise. D-07 changes the default refuse path from "writes patches to all roots" to "writes nothing" |
-| Operator interactive shell ↔ engine via SIGINT | F3's trap converts "Ctrl-C corrupts state" into "Ctrl-C cleanly aborts" |
+| Cron handler body → Sentry SDK | F5 changes how cron breadcrumbs/scope/user-context flow between invocations via withIsolationScope; **handler-set scope state may not leak to outer capture after isolation unwinds (codex MEDIUM-narrowed semantic)** |
+| Outer wrapper (withObservabilityScheduled) → withCronMonitor | F5 Guarded Shape A: POST-callback errors propagate; PRE-callback errors fall back to unmonitored (cron always runs) |
+| Healthz handler → probe targets (DB, KV, upstream HTTP) | F2 introduces controlled abort via AbortController + setTimeout/clearTimeout in try/finally (no Promise.race; no unhandled rejections per gemini MEDIUM-1) |
+| Migration engine → operator filesystem | F3 split-trap design (EXIT silent / INT exit 130 / TERM exit 143); D-07 honestly reframed: default refuse no longer touches CLEAN roots; DIRTY roots still get .patch + .gitignore for splice recovery |
+| Operator interactive shell ↔ engine via SIGINT | F3's INT trap converts "Ctrl-C corrupts state" into "Ctrl-C → cleanup → exit 130" (signal-compatible exit code) |
 
 ## STRIDE Threat Register
 
 | Threat ID | Category | Component | Disposition | Mitigation Plan |
 |-----------|----------|-----------|-------------|-----------------|
-| T-23-01 | I (Information disclosure) | F5 withCronMonitor + Sentry.withMonitor | mitigate | `withIsolationScope` wrapping ISOLATES scope per cron run, preventing leak of one cron's user/tags/breadcrumbs into the next. Net improvement over the current shared-isolate behaviour. ADR-0029 documents this addition. T-F5 tasks assert the addition in the parity tests by mocking `withMonitor` and confirming the callback runs once per invocation. |
-| T-23-02 | D (Denial of service via unhandled exception) | F5 outer wrapper chain | mitigate | F5 drops R02/R04 SDK-error swallow — `Sentry.withMonitor` re-throws SDK transport errors during `captureCheckIn`. RISK: if `withObservabilityScheduled` (outer wrapper) does not catch, the cron handler fails when Sentry's transport is down. ACTION: T-F5.worker MUST grep the outer wrapper chain (`add-observability/templates/ts-cloudflare-worker/middleware.ts` `withObservabilityScheduled` impl) and verify it catches; if it does NOT, the executor MUST add an explicit try/catch around the `Sentry.withMonitor` call inside cron-monitor.ts that swallows SDK errors but NOT handler errors. Documented in CHANGELOG.md 0.7.0 as the R02/R04 regression with operator mitigation guidance ("set `SENTRY_DEBUG=1` to surface swallowed transport errors"). |
-| T-23-03 | I (Information disclosure via timing oracle) | F2 healthz handler | mitigate | Per-probe `AbortSignal.timeout(DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS)` (TS) and `context.WithTimeout(ctx, defaultHealthzProbeTimeout)` (Go) caps each probe at 2s. Aborted probes report `"timeout"` (not `false` and not `true`), so an attacker cannot use response latency to fingerprint slow upstreams. Acceptance test in T-F2.{worker,pages,supabase,go} asserts: probe deliberately hangs > 2s → response returns within 2s + 200ms slack with `{status: "degraded", checks: {<probe>: "timeout"}}`. |
-| T-23-04 | D (Denial of service via leaked resources) | F2 aborted probes | mitigate | TS: `AbortSignal.timeout` abort propagates to the probe's underlying fetch/KV/DB call IFF the probe accepts AbortSignal. T-F2 acceptance criterion: each probe call passes the signal — `env.OBSERVABILITY_KV.get("healthz-probe", { signal })` (KV does not accept signal — wrap in Promise.race), `env.SERVICE_BINDING.fetch(req, { signal })`. Probes that genuinely cannot accept signal MUST be wrapped in `Promise.race([probe(), abortable()])` so the handler unblocks even if the probe call doesn't honour the abort. Go: `db.PingContext(ctx)` and a new `req.WithContext(ctx)` on the upstream Get already honour ctx cancellation; no leaked goroutines. Test: probe hangs 5s; verify response returns within 2.2s; verify no open handle accumulation across 100 sequential degraded responses (mock-instrumented). |
-| T-23-05 | T (Tampering with engine state via signal) | F3 SIGTERM trap | mitigate | `cleanup` MUST be idempotent (callable from EXIT trap AND from explicit early-exit). Cleanup MUST NOT print env vars, secrets, or partial canonical-file contents to stderr. Test t-sigterm asserts: SIGTERM mid-pass-2 → trap fires → no half-written canonical file → re-run succeeds → cleanup stderr contains no `SENTRY_DSN=` or `ALLOW_PARTIAL=` echoes. T-F3 acceptance: `grep -E '(SENTRY_DSN|API_KEY|TOKEN)=' <captured_stderr>` returns empty. |
-| T-23-06 | E (Elevation of privilege via flag misuse) | D-07 --allow-partial default flip | accept | Operators who relied on R09 "patches everywhere on refuse" must explicitly opt in via `--allow-partial` or `ALLOW_PARTIAL=true`. RISK: a downstream automation that previously assumed clean-root patches on refuse now sees none. MITIGATION: CHANGELOG.md 0.7.0 explicitly documents the default-flip + the opt-in flag. Migration runbook footnote (in `add-observability/uptime-setup-runbook.md` OR a new note in the migration 0019 markdown) tells operators with existing automation to add `--allow-partial`. Disposition: ACCEPT — the previous behaviour was the bug; D-07 restores the documented "truly atomic refusal" invariant. |
-| T-23-07 | S (Spoofing via test-only flag in production) | F3 --pause-between-passes flag | mitigate | The `--pause-between-passes <signal-file>` flag is test-only. Production code path must reject it OR document it as test-internal. ACTION: when present, the flag MUST log a warning to stderr ("--pause-between-passes is a test-only flag; do not use in production") AND require the signal-file argument to be inside `$REPO_ROOT/migrations/test-fixtures/` OR `$TMPDIR` (reject otherwise with exit 2). Tests in `migrations/run-tests.sh` use a signal file in `$TMPDIR`. Acceptance: passing `--pause-between-passes /etc/passwd` exits 2 with "test-only flag with non-fixture path"; passing `--pause-between-passes "$TMPDIR/sig"` proceeds. |
+| T-23-01 | I (Information disclosure) | F5 withCronMonitor + Sentry.withMonitor isolation scope | mitigate | `withIsolationScope` wrapping isolates scope per cron run, preventing leak of one cron's user/tags/breadcrumbs into the next. **REVISED post-review (codex MEDIUM):** the isolation also means handler-set scope state (e.g., `Sentry.setTag` inside the cron body) may NOT be visible to outer error-capture handlers after isolation unwinds. This is documented in CHANGELOG 0.7.0 + ADR-0029 with the precise semantic. ADR-0029 documents this addition. T-F5 tasks assert the addition in the parity tests. |
+| T-23-02 | D (Denial of service via unhandled exception → SKIPPED CRON) | F5 outer wrapper chain | mitigate | **REVISED post-review (codex HIGH-1) — NARROWED REGRESSION:** Guarded Shape A restores the "cron always runs" contract that original Shape A regressed. PRE-callback errors (Sentry transport failing on `in_progress`) fall back to unmonitored handler execution via the `handlerStarted` flag. POST-callback errors (Sentry transport failing on `ok`/`error` after handler completed) DO propagate to the outer wrapper. The cron body therefore always executes; only the heartbeat-completion path can fail. T-F5.worker MUST grep middleware.ts `withObservabilityScheduled` to verify it catches post-callback SDK errors so the cron doesn't fail downstream when transport is down post-handler. Acceptance: pre-callback regression test per stack (codex Suggestion 2) MUST pass — "Sentry check-in setup throws before callback start → handler still runs unmonitored, no crash". |
+| T-23-03 | I (Information disclosure via timing oracle) | F2 healthz handler | mitigate | **REVISED post-review (codex MEDIUM-5):** per-stack heterogeneous implementation matching each runtime's actual surface — Worker keeps 3rd-arg override (supported); Pages uses `context.env.HEALTHZ_PROBE_TIMEOUT_MS` fallback 2000 (no 3rd-arg path); Supabase uses module-constant OR env-var; Go documents "caps handler latency only, NOT inner Get(url)" honestly. All TS stacks use `AbortController + setTimeout/clearTimeout` in try/finally (per gemini MEDIUM-1 — no Promise.race, no unhandled rejections). Aborted probes report `"timeout"` string sentinel (not boolean false), so attacker cannot fingerprint slow upstreams via latency. Acceptance test per stack: probe hangs > timeout → response within timeout+200ms slack with `{status: "degraded", checks: {<probe>: "timeout"}}`. |
+| T-23-04 | D (Denial of service via leaked resources) | F2 aborted probes | mitigate | TS (REVISED per gemini MEDIUM-1): `AbortController + setTimeout` pattern with `try { ... } finally { clearTimeout(timeoutId); }` — timeout always cleaned up regardless of probe outcome; no dangling timer rejections. Go: `db.PingContext(ctx)` honours ctx; for the upstream `Get(url)` probe codex MEDIUM-5 confirmed cannot be cancelled — the `context.WithTimeout` caps handler latency but the underlying outbound call may continue (explicit code comment + CHANGELOG entry per honest-documentation alternative). Test: probe hangs 5s; verify response returns within 2.2s; verify no unhandled rejection logs. |
+| T-23-05 | T (Tampering with engine state via signal) | F3 split-trap | mitigate | **REVISED post-review (codex HIGH-2):** split trap design — `EXIT` handler runs cleanup SILENTLY (no warning, no signal re-raise, idempotent — runs on success too without pollution). `INT` handler runs cleanup then `exit 130` (signal-compatible). `TERM` handler runs cleanup then `exit 143` (signal-compatible). Cleanup MUST NOT print env vars, secrets, or partial canonical-file contents to stderr. Test t-sigterm asserts: SIGTERM mid-pass-2 → trap fires → exit code 143 → no half-written canonical file → re-run succeeds → cleanup stderr contains no `SENTRY_DSN=` echoes → trap output ABSENT when test exits 0 normally (silent-on-success acceptance). T-F3 acceptance: `grep -E '(SENTRY_DSN\|API_KEY\|TOKEN)=' <captured_stderr>` returns empty; `grep -q "cleanup" <captured_stderr>` returns empty for normal exits. |
+| T-23-06 | E (Elevation of privilege via flag misuse) | D-07 --allow-partial default flip | accept | Operators who relied on R09 "patches everywhere on refuse" must explicitly opt in via `--allow-partial` or `ALLOW_PARTIAL=true`. **REVISED honest framing (codex MEDIUM-6):** CHANGELOG language explicitly states "default refuse no longer writes to CLEAN roots; DIRTY roots still receive .observability-0019.patch + .gitignore entries for splice recovery." NOT "zero-side-effect refuse" — that framing was inaccurate. Migration runbook footnote tells operators with existing automation to add `--allow-partial`. Disposition: ACCEPT — restores the documented "atomic refusal on clean roots" invariant while preserving the dirty-root recovery story. |
+| T-23-07 | S (Spoofing via test-only flag in production) | F3 --pause-between-passes flag | mitigate | **REVISED post-review (codex HIGH-2):** path validation REWORKED. Reject any path that doesn't match `${TMPDIR:-/tmp}/sigterm-test-*` (handle unset TMPDIR via `${TMPDIR:-/tmp}` default) OR `migrations/test-fixtures/0019/*/sigterm-*` (explicit fixture allow-list prefix). When present, flag MUST log warning to stderr ("--pause-between-passes is a test-only flag; do not use in production") AND signal file path MUST match one of the two allow-listed prefixes (exit 2 otherwise). The previous formulation `"$TMPDIR"/*` was bypassable when TMPDIR was unset (degenerates to `/*` matching `/etc/passwd`). Acceptance: passing `--pause-between-passes /etc/passwd` exits 2 with "test-only flag with non-allow-listed path"; passing `--pause-between-passes "${TMPDIR:-/tmp}/sigterm-test-xyz"` proceeds; passing with TMPDIR explicitly unset still rejects `/etc/passwd`. |
 
-Severity gating: T-23-02 (D), T-23-04 (D), T-23-05 (T), T-23-07 (S) are MEDIUM. T-23-01 (I) is LOW. T-23-03 (I) is LOW (post-mitigation). T-23-06 (E) is ACCEPTED — documented operator-facing change. No HIGH or CRITICAL threats remain post-mitigation. Phase proceeds.
+Severity gating: T-23-02 (D), T-23-04 (D), T-23-05 (T), T-23-07 (S) are MEDIUM (T-23-02 narrowed from HIGH-original-Shape-A to MEDIUM-Guarded-Shape-A). T-23-01 (I) is LOW with the narrowed isolation-scope semantic note. T-23-03 (I) is LOW (post-mitigation). T-23-06 (E) is ACCEPTED. No HIGH or CRITICAL threats remain post-mitigation. Phase proceeds.
+
+### Threat-model deltas vs pre-revision PLAN
+
+- **T-23-02 narrowed:** original Shape A = HIGH (skipped cron); Guarded Shape A = MEDIUM (only heartbeat completion can fail; cron always runs).
+- **T-23-07 fixed:** `"$TMPDIR"/*` glob bypassable when TMPDIR unset; replaced with `${TMPDIR:-/tmp}/sigterm-test-*` + fixture-prefix allow-list.
+- **T-23-01 narrowed semantic:** `withIsolationScope` is not "purely non-breaking" — documented honest semantic re handler-set scope state.
+- **T-23-05 sharpened:** silent-on-success acceptance check added (`grep -q "cleanup" <stderr>` must be empty for exit-0 runs).
 </threat_model>
 
 <tasks>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- WAVE 0 — REVISION ADDITION (codex Suggestions 7 + MEDIUM-7)             -->
+<!-- Pre-implementation harness extension + ADR-0029 authoring               -->
+<!-- Both tasks are parallel-safe (different files, no shared state)        -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+
+<task type="auto">
+  <name>Task 0.1 (Wave 0, R-rev-4): migrations/run-tests.sh dispatcher extension for new named filters</name>
+  <files>migrations/run-tests.sh</files>
+  <read_first>
+    - migrations/run-tests.sh lines 2133-2204 (the existing dispatcher — numeric filters + `preflight` + `destinations` hardcoded names)
+    - .planning/phases/23-observability-followups/23-REVIEWS.md §Codex MEDIUM-7 (the harness-extension blocker)
+    - .planning/phases/23-observability-followups/CONTEXT.md D-05 (signal-file flag spec) + D-06 (test name + location)
+  </read_first>
+  <action>
+    Per codex MEDIUM-7: extend the dispatcher in `migrations/run-tests.sh` to support the two new named filters BEFORE Tasks 1.3 + 3.1 add the test functions. Without this extension, `migrations/run-tests.sh test-skill-md-version-matches-latest-migration-to-version` and `migrations/run-tests.sh test-sigterm-mid-apply-preserves-state` will be silently no-ops.
+
+    [BLOCKING] Run `gitnexus_impact({target: "run_all", direction: "upstream"})` BEFORE editing; record risk in commit body.
+
+    **Edit lines 2197-2204** (end of dispatcher, after `destinations` hardcoded name), add TWO new dispatcher entries (kebab-case CLI names matching D-06's convention):
+
+    ```bash
+    if [ -z "$FILTER" ] || [ "$FILTER" = "test-skill-md-version-matches-latest-migration-to-version" ]; then
+      # Function exists after Task 1.3 lands. Guard with declare -F so this commit doesn't
+      # try to run it before Task 1.3 defines it.
+      if declare -F test_skill_md_version_matches_latest_migration_to_version >/dev/null 2>&1; then
+        test_skill_md_version_matches_latest_migration_to_version
+      fi
+    fi
+
+    if [ -z "$FILTER" ] || [ "$FILTER" = "test-sigterm-mid-apply-preserves-state" ]; then
+      if declare -F test_sigterm_mid_apply_preserves_state >/dev/null 2>&1; then
+        test_sigterm_mid_apply_preserves_state
+      fi
+    fi
+    ```
+
+    The `declare -F` guard makes this commit safely standalone: dispatching to a not-yet-defined function silently skips, so the harness stays green between Wave 0 and Wave 1/Wave 3.
+
+    Commit: `feat(23): Wave 0 — extend migrations/run-tests.sh dispatcher for new named filters (R-rev-4)`. Commit body MUST cite codex MEDIUM-7 + the two CLI names being added.
+  </action>
+  <verify>
+    <automated>
+      grep -q 'FILTER" = "test-skill-md-version-matches-latest-migration-to-version"' migrations/run-tests.sh &&
+      grep -q 'FILTER" = "test-sigterm-mid-apply-preserves-state"' migrations/run-tests.sh &&
+      grep -q 'declare -F test_skill_md_version_matches_latest_migration_to_version' migrations/run-tests.sh &&
+      bash migrations/run-tests.sh test-skill-md-version-matches-latest-migration-to-version  # exits 0 (no-op until Task 1.3)
+    </automated>
+  </verify>
+  <done>Dispatcher extended; both new CLI names route to declare -F guarded function calls. Harness still passes (guarded functions skip silently).</done>
+  <acceptance_criteria>
+    - Two new dispatcher entries present with declare -F guards
+    - `bash migrations/run-tests.sh test-skill-md-version-matches-latest-migration-to-version` exits 0 (no-op skip)
+    - `bash migrations/run-tests.sh test-sigterm-mid-apply-preserves-state` exits 0 (no-op skip)
+    - Full harness `bash migrations/run-tests.sh` still passes — no regressions
+    - gitnexus_impact run on `run_all`; risk recorded
+    - Commit: `feat(23): Wave 0 — extend migrations/run-tests.sh dispatcher for new named filters (R-rev-4)`
+  </acceptance_criteria>
+</task>
+
+<task type="auto">
+  <name>Task 0.2 (Wave 0, R-rev-7): Author ADR-0029 (cron-monitor SDK composition — Guarded Shape A) BEFORE code</name>
+  <files>docs/decisions/0029-cron-monitor-sdk-composition.md</files>
+  <read_first>
+    - .planning/phases/23-observability-followups/CONTEXT.md §D-08 (AMENDED — Guarded Shape A canonical block)
+    - .planning/phases/23-observability-followups/23-REVIEWS.md §Codex HIGH-1 (the empirical evidence for why Guarded beats original)
+    - .planning/phases/23-observability-followups/DISCUSSION-LOG.md §"Post-review revision — D-08 Guarded Shape A" (lines 182-212)
+    - .planning/phases/23-observability-followups/CONTEXT.md §"Discussion log" OQ-8 (original 5 shapes A/B/C/D/F with rationales)
+    - docs/decisions/0028-sentry-crons-healthz-conventions.md (template for ADR shape + tone)
+    - docs/decisions/0027-postphase-observability-hook.md (short ADR template)
+  </read_first>
+  <action>
+    **Per codex Suggestion 7: ADR-0029 lands in WAVE 0 (was Wave 5), so reviewers + future maintainers see the architectural rationale BEFORE the F5 code lands.** This task is parallel-safe with Task 0.1 (different files) and is a `depends_on` for Tasks 2.1/2.2/2.3 (the ADR locks the Guarded Shape A contract those tasks implement).
+
+    Author `docs/decisions/0029-cron-monitor-sdk-composition.md` with these required sections:
+
+    **# 0029 — cron-monitor SDK composition (Guarded Shape A)**
+    Status: Accepted
+    Date: 2026-05-29
+    Phase: 23-observability-followups
+    Supersedes: none (extends 0028's cron-monitor conventions)
+    Revision: amended post-multi-AI-review on 2026-05-29 from original Shape A to Guarded Shape A per `23-REVIEWS.md` codex HIGH-1.
+
+    **## Context**
+    Phase 22 reinvented Sentry's in_progress→ok/error lifecycle (duration tracking, thenable handling) around a 3-source slug-resolution wrapper. `Sentry.withMonitor<T>(slug, callback, monitorConfig?): T` ships in `@sentry/core` and is re-exported by `@sentry/cloudflare` + `@sentry/deno`. Post-PR-#53 the user requested a refactor to compose with the SDK helper rather than reinvent the lifecycle. Six honest shapes considered (5 rejected).
+
+    **## Decision**
+    **Guarded Shape A** — compose `Sentry.withMonitor` underneath our existing outer wrapper, with a `handlerStarted` flag inside the callback. If `Sentry.withMonitor` throws BEFORE the callback runs (e.g., transport failure on `in_progress` check-in), fall back to running the handler unmonitored. If it throws AFTER the callback completed (post-handler transport failure), let the error propagate.
+
+    Canonical code block (binding for executors — also in CONTEXT.md D-08):
+
+    ```typescript
+    let handlerStarted = false;
+    try {
+      await Sentry.withMonitor(
+        monitorSlug,
+        () => {
+          handlerStarted = true;
+          return handler(controller, env, ctx);
+        },
+        monitorConfig,
+      );
+    } catch (err) {
+      if (!handlerStarted) {
+        // Sentry transport failed before handler ran — fall back to unmonitored.
+        await handler(controller, env, ctx);
+        return;
+      }
+      throw err; // handler-thrown OR post-callback errors propagate as before
+    }
+    ```
+
+    **## Alternatives Rejected**
+
+    | Shape | Description | Why rejected |
+    |-------|-------------|--------------|
+    | **Original Shape A (unguarded)** | `await Sentry.withMonitor(slug, () => handler(...), monitorConfig);` with no handlerStarted flag | **Codex HIGH-1 empirical finding (`23-REVIEWS.md`):** `withMonitor` sends `in_progress` check-in BEFORE invoking the callback (verified at `@sentry/core/src/exports.ts`). Transport failure at that moment causes the **cron handler to be SKIPPED ENTIRELY**, not just the heartbeat logging. On Cloudflare Pages there is no outer observability wrapper at all, so this failure goes straight to the external caller. On Worker/Supabase the outer wrapper catches the throw but the job body is still skipped. This regression is materially worse than the original PLAN's "SDK errors now bubble up" framing. Guarded variant restores the "cron always runs" contract. |
+    | B (Drop-in replacement) | `withCronMonitor(handler, config?) = (c, e, ctx) => Sentry.withMonitor(resolveSlug(...), () => handler(c, e, ctx), buildMonitorConfig(config))` | Drops R02 fail-safe (Sentry logs warning on no-DSN). Drops R04 swallow. Loses D6's silent-on-no-DSN behaviour. Also subject to original-Shape-A skipped-cron regression. |
+    | C (Deprecate + parallel `withCronMonitorV2`) | Keep v0.6.0 wrapper with `@deprecated`; add `withCronMonitorV2` as Shape A | +50 LOC per file. Zero downstream risk but compounds future maintenance — two wrappers to keep in sync. |
+    | D (Compose with SDK-throw firewall via stack inspection) | Shape A + try/catch wrapper that catches errors whose stack frame includes `captureCheckIn` | Restores R02/R04 at significant complexity cost. Brittle stack-frame inspection. High test surface. Subsumed by Guarded Shape A which achieves the cron-always-runs goal more reliably. |
+    | F (No refactor — port only `duration` tracking pattern) | +8 LOC per file. All Phase 22 contracts preserved. | Loses strategic value of using upstream's primitive. User's "baked in" directive interpreted as a genuine refactor. |
+
+    **## Consequences**
+
+    **Preserved contracts (Phase 22):** D6 (3-source slug resolution), R02 fail-safe no-DSN (preserved at the if-isConfigured guard at line 138), D11 (multi-cron explicit-slug), D12 (monitorConfig 2nd-arg forwarding shape), **AND the "cron always runs" guarantee** that original Shape A regressed.
+
+    **Documented regression (NARROWED vs original Shape A):** R02/R04 SDK-error swallow drops only for POST-callback errors — i.e., errors from the `ok`/`error` check-ins after the handler completed. PRE-callback errors no longer skip the cron (Guarded fallback runs handler unmonitored). POST-callback errors propagate to the outer `withObservabilityScheduled` capture path. Operators see SDK transport failures in their normal error-capture path instead of silent swallow ONLY when the handler already completed successfully. `SENTRY_DEBUG=1` is no longer the surfacing mechanism for SDK errors.
+
+    **Documented addition (HONEST SEMANTIC per codex MEDIUM):** `withIsolationScope` wrapping. Each cron run gets its own Sentry scope. This is NOT "purely non-breaking correctness improvement" as original PLAN claimed — handler-set scope state (e.g., `Sentry.setTag`, `Sentry.setUser`, breadcrumbs set inside the cron body) may NOT be visible to outer error-capture handlers after isolation unwinds. Downstream consumers relying on cron-body scope mutations becoming visible to outer error handlers will see different behaviour. Tags/breadcrumbs/user-context still no longer leak BETWEEN consecutive cron invocations (the original benefit).
+
+    **Downstream impact:** fxsa and callbot pull `add-observability 0.7.0` → see the narrowed regression + honest isolation-scope addition. CHANGELOG.md 0.7.0 calls both out explicitly. No code change required downstream unless they relied on the documented behaviours.
+
+    **Go stack unchanged.** `sentry-go` ships no `WithMonitor` equivalent (Context7-verified). The Go `WithCronMonitor` impl IS the cross-stack parity. See D-09 / `cron_monitor.go` package-doc note.
+
+    **## Empirical evidence supporting Guarded variant**
+
+    From `23-REVIEWS.md` §Codex HIGH-1: read-only codebase exploration verified `@sentry/core` `withMonitor` at `packages/core/src/exports.ts` sends `in_progress` check-in via `captureCheckIn` BEFORE invoking the callback. The Cloudflare Pages template (`add-observability/templates/ts-cloudflare-pages/cron-monitor.ts:115`) has NO outer observability wrapper — a `captureCheckIn` failure would propagate directly to the external caller, with the cron body never executing. This empirical finding (not visible to prompt-only Gemini review) drove the Guarded amendment.
+
+    **## Links**
+    - CONTEXT (amended): `.planning/phases/23-observability-followups/CONTEXT.md` §D-08 (Guarded canonical block)
+    - Reviews: `.planning/phases/23-observability-followups/23-REVIEWS.md` §Codex HIGH-1
+    - Discussion log: `.planning/phases/23-observability-followups/DISCUSSION-LOG.md` §"Post-review revision — D-08 Guarded Shape A"
+    - Implementation: this phase's Task 2.1 / 2.2 / 2.3 GREEN commits
+    - Phase 22 contracts: `.planning/phases/22-sentry-crons-healthz/PLAN.md` §R02 §R04, `…/CONTEXT.md` §D6 §D11 §D12
+    - SDK reference: `@sentry/cloudflare` re-export of `@sentry/core` `withMonitor<T>` in `packages/core/src/exports.ts`
+
+    Commit: `docs(23): Wave 0 — ADR-0029 cron-monitor SDK composition (Guarded Shape A) — R-rev-7`.
+  </action>
+  <verify>
+    <automated>
+      test -f docs/decisions/0029-cron-monitor-sdk-composition.md &&
+      grep -q "^# 0029" docs/decisions/0029-cron-monitor-sdk-composition.md &&
+      grep -q "Guarded Shape A" docs/decisions/0029-cron-monitor-sdk-composition.md &&
+      grep -q "Alternatives Rejected" docs/decisions/0029-cron-monitor-sdk-composition.md &&
+      grep -q "Original Shape A (unguarded)" docs/decisions/0029-cron-monitor-sdk-composition.md &&
+      grep -q "withIsolationScope" docs/decisions/0029-cron-monitor-sdk-composition.md &&
+      grep -q "POST-callback" docs/decisions/0029-cron-monitor-sdk-composition.md &&
+      grep -q "PRE-callback" docs/decisions/0029-cron-monitor-sdk-composition.md &&
+      grep -q "handlerStarted" docs/decisions/0029-cron-monitor-sdk-composition.md &&
+      grep -E "Shape B|\\| B" docs/decisions/0029-cron-monitor-sdk-composition.md &&
+      grep -E "Shape C|\\| C" docs/decisions/0029-cron-monitor-sdk-composition.md &&
+      grep -E "Shape D|\\| D" docs/decisions/0029-cron-monitor-sdk-composition.md &&
+      grep -E "Shape F|\\| F" docs/decisions/0029-cron-monitor-sdk-composition.md
+    </automated>
+  </verify>
+  <done>ADR-0029 authored in Wave 0 with all 5 rejected shapes (incl. original Shape A) + Codex's pre-callback-throw empirical evidence + narrowed regression semantics + honest isolation-scope addition. Ready for executors in Wave 2 to consume.</done>
+  <acceptance_criteria>
+    - File exists at docs/decisions/0029-cron-monitor-sdk-composition.md
+    - Headers: Context / Decision / Alternatives Rejected / Consequences / Empirical evidence / Links present
+    - All 5 rejected shapes (Original-Shape-A unguarded, B, C, D, F) appear with their rejection rationale
+    - The canonical handlerStarted code block is reproduced (binding for executors)
+    - The narrowed R02/R04 regression (post-callback only) and honest withIsolationScope semantic (scope state may not leak to outer capture) are spelled out
+    - Codex HIGH-1 empirical evidence section present
+    - Commit: `docs(23): Wave 0 — ADR-0029 cron-monitor SDK composition (Guarded Shape A) — R-rev-7`
+  </acceptance_criteria>
+</task>
+
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
 <!-- WAVE 1 — parallel-safe; independent files, no shared state              -->
+<!-- depends_on: Task 0.1 (Task 1.3 needs dispatcher extension)              -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 
 <task type="auto">
   <name>Task 1.1 (Wave 1, F1): INIT.md per-stack Phase 5 composition notes</name>
   <files>add-observability/init/INIT.md</files>
+  <depends_on>none</depends_on>
   <read_first>
     - add-observability/init/INIT.md lines 282-389 (existing Phase 5 per-stack subsections; F1 lands inside each)
     - .planning/phases/23-observability-followups/CONTEXT.md §"Resolved decisions" D-02 (batch) and §"Goals" G1
@@ -299,7 +548,7 @@ Severity gating: T-23-02 (D), T-23-04 (D), T-23-05 (T), T-23-07 (S) are MEDIUM. 
     For each of the 4 stacks, the paragraph MUST:
     1. Cite `withCronMonitor` (the wrapper that ships in cron-monitor.{ts,go})
     2. Cite the Phase 22 composition-order decision: D5a (worker), D5a (pages — same shape), D5b (supabase-edge), D5d (go)
-    3. Link to the wrapper source file with a relative file:line link of the form `templates/{stack}/cron-monitor.{ts,go}:<line-of-`withCronMonitor`-export>`
+    3. Link to the wrapper source file with a relative file:line link of the form `templates/{stack}/cron-monitor.{ts,go}:<line-of-withCronMonitor-export>`
 
     Concrete substrings to insert per stack (paraphrase allowed for prose flow, but the literal references MUST appear verbatim):
 
@@ -325,13 +574,10 @@ Severity gating: T-23-02 (D), T-23-04 (D), T-23-05 (T), T-23-07 (S) are MEDIUM. 
       grep -q "templates/ts-cloudflare-worker/cron-monitor.ts:" add-observability/init/INIT.md &&
       grep -q "templates/ts-cloudflare-pages/cron-monitor.ts:" add-observability/init/INIT.md &&
       grep -q "templates/ts-supabase-edge/cron-monitor.ts:" add-observability/init/INIT.md &&
-      grep -q "templates/go-fly-http/cron_monitor.go:" add-observability/init/INIT.md &&
-      ! grep -q "withCronMonitor" add-observability/init/INIT.md.bak 2>/dev/null  # ensure new content (only if bak made)
+      grep -q "templates/go-fly-http/cron_monitor.go:" add-observability/init/INIT.md
     </automated>
   </verify>
-  <done>
-    INIT.md Phase 5 has 4 stack subsections each citing withCronMonitor with a templates/{stack}/cron-monitor.{ts,go}:<line> link; react-vite subsection unchanged.
-  </done>
+  <done>INIT.md Phase 5 has 4 stack subsections each citing withCronMonitor with a templates/{stack}/cron-monitor.{ts,go}:<line> link; react-vite subsection unchanged.</done>
   <acceptance_criteria>
     - grep returns ≥ 4 occurrences of `withCronMonitor`/`WithCronMonitor` in INIT.md (one per stack minimum)
     - Each of the 4 worker/pages/supabase-edge/go subsections contains a file:line link to its cron-monitor wrapper file
@@ -344,6 +590,7 @@ Severity gating: T-23-02 (D), T-23-04 (D), T-23-05 (T), T-23-07 (S) are MEDIUM. 
 <task type="auto">
   <name>Task 1.2 (Wave 1, D-09): Go cron_monitor.go SDK-gap doc note</name>
   <files>add-observability/templates/go-fly-http/cron_monitor.go</files>
+  <depends_on>none</depends_on>
   <read_first>
     - add-observability/templates/go-fly-http/cron_monitor.go lines 1-32 (existing package doc — D-09 note appends to this)
     - .planning/phases/23-observability-followups/CONTEXT.md D-09 (Go SDK gap is documented, not upstream-fixed)
@@ -369,17 +616,14 @@ Severity gating: T-23-02 (D), T-23-04 (D), T-23-05 (T), T-23-07 (S) are MEDIUM. 
   <verify>
     <automated>
       grep -q "SDK gap (D-09" add-observability/templates/go-fly-http/cron_monitor.go &&
-      grep -q "sentry-go.*no.*WithMonitor" add-observability/templates/go-fly-http/cron_monitor.go &&
-      diff <(sed -n '225,270p' add-observability/templates/go-fly-http/cron_monitor.go) <(git show HEAD:add-observability/templates/go-fly-http/cron_monitor.go | sed -n '225,270p')  # symbol body unchanged
+      grep -q "sentry-go.*no.*WithMonitor" add-observability/templates/go-fly-http/cron_monitor.go
     </automated>
   </verify>
-  <done>
-    Package doc block contains the ≤5-line D-09 note immediately before the package declaration; function body unchanged.
-  </done>
+  <done>Package doc block contains the ≤5-line D-09 note immediately before the package declaration; function body unchanged.</done>
   <acceptance_criteria>
     - The literal phrase "SDK gap (D-09" appears in the file
-    - The phrase "sentry-go" appears with "no" and "WithMonitor" near it (regex above)
-    - `WithCronMonitor` function body (lines 225-270 in pre-edit file) byte-identical to HEAD
+    - The phrase "sentry-go" appears with "no" and "WithMonitor" near it
+    - `WithCronMonitor` function body byte-identical to HEAD (verified via git diff of that line range)
     - gitnexus_impact was run; report risk level (likely LOW for doc-only edit)
     - Commit: `docs(23): D-09 document sentry-go WithMonitor SDK gap in cron_monitor.go`
   </acceptance_criteria>
@@ -388,22 +632,31 @@ Severity gating: T-23-02 (D), T-23-04 (D), T-23-05 (T), T-23-07 (S) are MEDIUM. 
 <task type="auto" tdd="true">
   <name>Task 1.3 (Wave 1, F4): SKILL.md drift test (TDD red-green)</name>
   <files>migrations/run-tests.sh, skill/SKILL.md (temporarily for RED)</files>
+  <depends_on>Task 0.1 (dispatcher extension — without this, the new named filter is a no-op)</depends_on>
   <read_first>
-    - migrations/run-tests.sh (full file — locate run_all() and add the new test there)
+    - migrations/run-tests.sh (full file — Wave 0 already extended the dispatcher; this task adds the function body)
     - skill/SKILL.md lines 1-15 (frontmatter format that D-04's parser targets)
-    - migrations/0019-sentry-crons-and-healthz.md lines 1-10 (frontmatter format showing `to_version:` field — this is what the test compares against)
+    - migrations/0019-sentry-crons-and-healthz.md lines 1-10 (frontmatter format showing `to_version:` field)
     - .planning/phases/23-observability-followups/CONTEXT.md D-04 (minimal bash parser, no yq) and D-06 (test lives in run-tests.sh) and G4
   </read_first>
   <behavior>
-    Per D-06, add a new test function in `migrations/run-tests.sh` named exactly: `test-skill-md-version-matches-latest-migration-to-version` (kebab-case in the printed name; bash function name `test_skill_md_version_matches_latest_migration_to_version` to match repo convention).
+    Per D-06, add a new test function in `migrations/run-tests.sh` named exactly: `test-skill-md-version-matches-latest-migration-to-version` (kebab-case CLI; bash function `test_skill_md_version_matches_latest_migration_to_version`).
 
     The test:
-    1. Extracts `skill/SKILL.md` version using D-04's minimal parser: `grep ^version: skill/SKILL.md | awk '{print $2}'` (one line each)
+    1. Extracts `skill/SKILL.md` version using D-04's minimal parser: `grep ^version: skill/SKILL.md | awk '{print $2}'`
     2. Finds the highest-numbered file in `migrations/` matching `[0-9][0-9][0-9][0-9]-*.md` (use `ls migrations/[0-9][0-9][0-9][0-9]-*.md | sort | tail -1`)
     3. Extracts that file's `to_version:` field using the SAME parser: `grep ^to_version: <file> | awk '{print $2}'`
     4. Asserts equality; on mismatch, prints `FAIL: SKILL.md at vX.Y.Z but migration NNNN declares to_version: vA.B.C` and increments FAIL
 
-    RED phase: temporarily desync skill/SKILL.md to version `1.99.0`; run `migrations/run-tests.sh test-skill-md-version-matches-latest-migration-to-version`; assert exit code ≠ 0 and stderr contains the FAIL message above.
+    Add an inline comment in the function body acknowledging the parser's deliberate minimalism (per gemini LOW concern + D-04):
+    ```bash
+    # NOTE (D-04): intentionally minimal grep + awk parser. Fragile against
+    # YAML variations (quoted values, indented keys, trailing comments).
+    # SKILL.md frontmatter is fixed-shape (`version: X.Y.Z` on its own line);
+    # if that ever changes, this test must be updated.
+    ```
+
+    RED phase: temporarily desync skill/SKILL.md to version `1.99.0`; run `migrations/run-tests.sh test-skill-md-version-matches-latest-migration-to-version`; assert exit code ≠ 0 and stderr contains the FAIL message.
 
     GREEN phase: restore skill/SKILL.md version; run the same command; assert exit code 0 and stdout contains `PASS: test-skill-md-version-matches-latest-migration-to-version`.
   </behavior>
@@ -413,83 +666,89 @@ Severity gating: T-23-02 (D), T-23-04 (D), T-23-05 (T), T-23-07 (S) are MEDIUM. 
     **RED commit** (commit message `test(23): F4 SKILL.md drift test — RED`):
     1. Add the bash function `test_skill_md_version_matches_latest_migration_to_version` to migrations/run-tests.sh. The function MUST:
        - Use only `grep`, `awk`, `ls`, `sort`, `tail` (no `yq`, no `python`, no `jq`)
+       - Include the D-04 minimalism comment block (above)
        - Print exactly `FAIL: SKILL.md at v<skill_version> but migration <NNNN> declares to_version: v<migration_version>` on mismatch
        - Increment global `FAIL` counter and use the same PASS/FAIL/SKIP color scheme as sibling tests
-       - Be registered in `run_all()` alongside the other `test_migration_NNNN` calls — append the call after the highest existing `test_migration_NNNN` reference
-       - Support being run standalone via `migrations/run-tests.sh test-skill-md-version-matches-latest-migration-to-version` (per FILTER parsing logic at line 60-69 of run-tests.sh)
+       - The dispatcher entry for this function already exists (added by Task 0.1) — Task 1.3 just adds the function body, which the `declare -F` guard then sees and invokes.
     2. Temporarily edit skill/SKILL.md line 3 from `version: 1.18.0` to `version: 1.99.0` (RED state — DO NOT commit this skill/SKILL.md edit)
     3. Run `migrations/run-tests.sh test-skill-md-version-matches-latest-migration-to-version 2>&1 | tee /tmp/red-output.txt`
     4. Assert: exit code is non-zero AND `grep -q "FAIL: SKILL.md at v1.99.0 but migration .* declares to_version: v1.18.0" /tmp/red-output.txt`
     5. Revert skill/SKILL.md to `version: 1.18.0`
-    6. Commit migrations/run-tests.sh changes ONLY (skill/SKILL.md is back to original — not in the commit)
+    6. Commit migrations/run-tests.sh changes ONLY
 
     **GREEN commit** (commit message `feat(23): F4 SKILL.md drift test passes against current versions — GREEN`):
     1. Run `migrations/run-tests.sh test-skill-md-version-matches-latest-migration-to-version 2>&1 | tee /tmp/green-output.txt`
     2. Assert: exit code 0 AND `grep -q "PASS.*test-skill-md-version-matches-latest-migration-to-version" /tmp/green-output.txt`
-    3. Commit message body MUST document: "RED→GREEN pair for D-06 / G4. Parser per D-04: grep + awk only, no yq dep."
-    4. The GREEN commit may be empty if RED already left the test in passing state — use `git commit --allow-empty` with the documented message. (This is the documentation of the test going from failing to passing without code change because the production state already matches.)
+    3. Commit message body MUST document: "RED→GREEN pair for D-06 / G4. Parser per D-04: grep + awk only, no yq dep. Depends on Task 0.1 dispatcher extension (R-rev-4)."
+    4. May be `--allow-empty` if RED commit already left tests passing.
   </action>
   <verify>
     <automated>
       bash migrations/run-tests.sh test-skill-md-version-matches-latest-migration-to-version &&
       grep -q "test_skill_md_version_matches_latest_migration_to_version" migrations/run-tests.sh &&
-      ! grep -q "yq " migrations/run-tests.sh  # no yq dep introduced
+      grep -q "NOTE (D-04): intentionally minimal" migrations/run-tests.sh &&
+      ! grep -q "yq " migrations/run-tests.sh
     </automated>
   </verify>
-  <done>
-    RED commit pushed test, ran the test against desynced SKILL.md, captured FAIL message. GREEN commit ran the test against current SKILL.md and passes. Test uses only grep + awk; no yq.
-  </done>
+  <done>RED commit pushed test, ran against desynced SKILL.md, captured FAIL message. GREEN commit ran against current SKILL.md and passes. Test uses only grep + awk; no yq. D-04 minimalism comment present.</done>
   <acceptance_criteria>
     - Test function name in bash: `test_skill_md_version_matches_latest_migration_to_version` (greppable)
-    - Filter name (CLI arg): `test-skill-md-version-matches-latest-migration-to-version` (kebab-case, exactly as D-06 specifies)
+    - Filter name (CLI arg): `test-skill-md-version-matches-latest-migration-to-version` (kebab-case)
     - `grep -E "yq |yq\\$" migrations/run-tests.sh` returns no new occurrences (D-04 compliance)
+    - D-04 minimalism comment block present in function body (gemini LOW concern addressed)
     - RED commit log shows the test failed with the documented FAIL message when SKILL.md was desynced
     - GREEN commit log shows the test passing
-    - Test registered in `run_all()` — appears in the function call list near the bottom of run-tests.sh
+    - Dispatcher entry from Task 0.1 now invokes the function (declare -F guard sees it)
     - gitnexus_impact run on `run_all`; risk level recorded
   </acceptance_criteria>
 </task>
 
 <task type="auto" tdd="true">
-  <name>Task 1.4 (Wave 1, F2.worker): healthz per-probe timeout — TS Cloudflare Worker (TDD)</name>
+  <name>Task 1.4 (Wave 1, F2.worker): healthz per-probe timeout — TS Cloudflare Worker (TDD) — R-rev-3 + R-rev-9</name>
   <files>add-observability/templates/ts-cloudflare-worker/healthz-snippet.ts, add-observability/templates/ts-cloudflare-worker/healthz-snippet.test.ts</files>
+  <depends_on>none</depends_on>
   <read_first>
     - add-observability/templates/ts-cloudflare-worker/healthz-snippet.ts (full file — F2 wraps each probe; preserve R06 fail-closed)
-    - add-observability/templates/ts-cloudflare-worker/cron-monitor.test.ts (existing test conventions — vitest, vi.mock, fakeController pattern; healthz tests follow same style)
-    - .planning/phases/23-observability-followups/CONTEXT.md D-03 (DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS=2000, caller-configurable, degraded JSON with `"timeout"` sentinel)
-    - .planning/phases/22-sentry-crons-healthz/SECURITY.md §S4 (the original timeout-oracle finding)
+    - add-observability/templates/ts-cloudflare-worker/cron-monitor.test.ts (existing test conventions — vitest, vi.mock, fakeController pattern)
+    - .planning/phases/23-observability-followups/CONTEXT.md D-03 (REVISED post-review: per-stack heterogeneity — Worker keeps 3rd-arg override; Pages uses env var; Supabase uses module-const or env-var; Go documents timeout-caps-handler-only)
+    - .planning/phases/23-observability-followups/23-REVIEWS.md §Codex MEDIUM-5 + §Gemini MEDIUM-1 (per-stack rework + AbortController + clearTimeout pattern)
+    - .planning/phases/22-sentry-crons-healthz/SECURITY.md §S4
   </read_first>
   <behavior>
+    **Per codex MEDIUM-5 — Worker keeps current shape (it ACTUALLY supports the 3rd-arg override).** No D-03 narrowing applies to Worker.
+
     Test cases for healthz-snippet.test.ts (new file):
 
     - **Test 1 (RED first)**: probe that resolves quickly (10ms) → returns `{status: "ok", checks: {kv: true}}` within timeout. Asserts the happy path is unchanged.
-    - **Test 2 (RED first)**: probe that hangs > 2000ms → response returns within 2200ms (2000ms timeout + 200ms slack) with `{status: "degraded", checks: {kv: "timeout"}}` — NOTE: `"timeout"` is a STRING (not boolean false), distinguishing timeout from genuine probe failure per D-03.
+    - **Test 2 (RED first)**: probe that hangs > 2000ms → response returns within 2200ms (2000ms timeout + 200ms slack) with `{status: "degraded", checks: {kv: "timeout"}}` — `"timeout"` is a STRING (not boolean false).
     - **Test 3 (RED first)**: caller passes a custom timeout via `healthzHandler(req, env, { probeTimeoutMs: 500 })` — probe hanging 1000ms aborts at 500ms.
-    - **Test 4**: pre-existing behaviour — handler keeps R06 (zero-probes-configured → 503 + reason). Re-assert.
+    - **Test 4**: pre-existing behaviour — handler keeps R06 (zero-probes-configured → 503 + reason).
+    - **Test 5 (RED first — gemini MEDIUM-1)**: after a fast probe (10ms) completes, no unhandled-rejection warning is emitted (verify via `process.on('unhandledRejection')` listener installed by the test setup). Asserts AbortController + clearTimeout pattern correctly tears down the timer.
 
-    Test handler probe shape must use `vi.fn` mocks that accept `AbortSignal` and respect abort (mock-side: race the configured probe latency against the signal's `abort` event).
+    Test handler probe shape must use `vi.fn` mocks that accept `AbortSignal` and respect abort.
   </behavior>
   <action>
     [BLOCKING] Run `gitnexus_impact({target: "healthzHandler", direction: "upstream"})` on the worker healthz-snippet; record risk.
 
     **RED commit** (`test(23): F2 worker healthz per-probe timeout — RED`):
     1. Create `add-observability/templates/ts-cloudflare-worker/healthz-snippet.test.ts` following the vitest pattern from cron-monitor.test.ts:
-       - `import { describe, it, expect, vi, beforeEach } from "vitest";`
+       - `import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";`
        - `import { healthzHandler } from "./healthz-snippet";`
-       - 4 tests per `<behavior>` block above
-       - Use `AbortSignal` in mocks; test 2's hanging probe uses `new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError"))))` shape
+       - 5 tests per `<behavior>` block above
+       - Use `AbortSignal` in mocks; test 2's hanging probe uses `new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError"))))`
+       - Test 5 installs `process.on('unhandledRejection', listener)` in beforeEach, removes in afterEach; asserts listener was never called.
     2. Run `cd add-observability/templates/ts-cloudflare-worker && npx vitest run healthz-snippet.test.ts 2>&1 | tee /tmp/red-f2-worker.txt`
-    3. Assert: tests 2 and 3 FAIL (production code doesn't yet honour timeouts). Tests 1 and 4 may pass.
+    3. Assert: tests 2, 3, 5 FAIL.
     4. Commit test file ONLY.
 
-    **GREEN commit** (`feat(23): F2 worker healthz per-probe timeout — GREEN`):
+    **GREEN commit** (`feat(23): F2 worker healthz per-probe timeout — AbortController + clearTimeout (R-rev-9) — GREEN`):
     1. Modify `add-observability/templates/ts-cloudflare-worker/healthz-snippet.ts`:
-       a. Add an exported constant at top of file (after the WARNING block, before `// ─── Public types`):
+       a. Add an exported constant at top of file:
           ```typescript
           /** D-03 default per-probe timeout in ms; override via healthzHandler 3rd arg. */
           export const DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS = 2000;
           ```
-       b. Add optional 3rd parameter to `healthzHandler`:
+       b. Add optional 3rd parameter to `healthzHandler` (Worker keeps this shape per codex MEDIUM-5):
           ```typescript
           export async function healthzHandler(
             _req: Request,
@@ -498,192 +757,236 @@ Severity gating: T-23-02 (D), T-23-04 (D), T-23-05 (T), T-23-07 (S) are MEDIUM. 
           ): Promise<Response>
           ```
        c. Inside the function, replace `const checks: Record<string, boolean> = {};` with `const checks: Record<string, boolean | "timeout"> = {};`
-       d. Compute `const probeTimeoutMs = opts?.probeTimeoutMs ?? DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS;` at top of function body
-       e. Wrap EACH probe body in a Promise.race or AbortSignal-based timeout. Shape per probe:
+       d. Compute `const probeTimeoutMs = opts?.probeTimeoutMs ?? DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS;`
+       e. **Per gemini MEDIUM-1: AbortController + setTimeout + try/finally pattern** (NOT Promise.race + abort-rejection):
           ```typescript
           if (env.OBSERVABILITY_KV) {
-            const signal = AbortSignal.timeout(probeTimeoutMs);
+            const controller = new AbortController();
+            const timeoutId = setTimeout(
+              () => controller.abort(new DOMException("probe timeout", "TimeoutError")),
+              probeTimeoutMs,
+            );
             try {
-              await Promise.race([
-                env.OBSERVABILITY_KV.get("healthz-probe"),
-                new Promise<never>((_r, reject) => {
-                  signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
-                }),
-              ]);
+              // KV doesn't accept AbortSignal — wrap in a controller-watching race.
+              await new Promise<void>((resolve, reject) => {
+                controller.signal.addEventListener("abort", () =>
+                  reject(new DOMException("aborted", "TimeoutError")),
+                );
+                env.OBSERVABILITY_KV!.get("healthz-probe")
+                  .then(() => resolve())
+                  .catch(reject);
+              });
               checks.kv = true;
             } catch (e) {
-              checks.kv = (e instanceof DOMException && e.name === "AbortError") ? "timeout" : false;
+              checks.kv = (e instanceof DOMException && e.name === "TimeoutError") ? "timeout" : false;
+            } finally {
+              clearTimeout(timeoutId);
             }
           }
           ```
-          Apply the same shape to the `SERVICE_BINDING` probe; pass `signal` to fetch via `new Request("https://internal/healthz", { signal })`.
-       f. Update the final JSON-encoding `allOk` calculation to treat `"timeout"` as falsy: `const allOk = probeNames.every((k) => checks[k] === true);`
+          For SERVICE_BINDING probe, fetch accepts `signal` directly — pass `controller.signal` to `new Request("https://internal/healthz", { signal: controller.signal })`. Same try/finally + clearTimeout shape.
+       f. Update `allOk = probeNames.every((k) => checks[k] === true);`
     2. Run `npx vitest run healthz-snippet.test.ts 2>&1 | tee /tmp/green-f2-worker.txt`
-    3. Assert: ALL 4 tests pass; exit code 0.
+    3. Assert: ALL 5 tests pass.
     4. Commit production file.
   </action>
   <verify>
     <automated>
       cd add-observability/templates/ts-cloudflare-worker && npx vitest run healthz-snippet.test.ts &&
       grep -q "DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS = 2000" add-observability/templates/ts-cloudflare-worker/healthz-snippet.ts &&
-      grep -q "AbortSignal.timeout\\|abort" add-observability/templates/ts-cloudflare-worker/healthz-snippet.ts &&
-      grep -q '"timeout"' add-observability/templates/ts-cloudflare-worker/healthz-snippet.ts
+      grep -q "new AbortController" add-observability/templates/ts-cloudflare-worker/healthz-snippet.ts &&
+      grep -q "clearTimeout" add-observability/templates/ts-cloudflare-worker/healthz-snippet.ts &&
+      grep -q '"timeout"' add-observability/templates/ts-cloudflare-worker/healthz-snippet.ts &&
+      ! grep -q "Promise.race" add-observability/templates/ts-cloudflare-worker/healthz-snippet.ts  # gemini MEDIUM-1: NO Promise.race + reject
     </automated>
   </verify>
-  <done>
-    RED→GREEN pair; timeout-degraded test passes; `DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS = 2000` constant exported; per-probe AbortSignal.timeout wired; `"timeout"` string sentinel in checks output.
-  </done>
+  <done>RED→GREEN pair; AbortController + setTimeout + try/finally + clearTimeout pattern; no unhandled rejections; 3rd-arg override preserved (Worker has the runtime support per codex MEDIUM-5).</done>
   <acceptance_criteria>
-    - vitest reports 4/4 tests passing on healthz-snippet.test.ts
-    - File contains literal `DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS = 2000`
-    - File contains literal `AbortSignal.timeout(`
-    - File contains literal `"timeout"` (the string sentinel for the degraded check value)
-    - R06 fail-closed path (zero probes) test still passes
-    - RED commit log + GREEN commit log preserved
-    - gitnexus_impact on `healthzHandler` recorded
+    - vitest reports 5/5 tests passing
+    - File contains `AbortController`, `clearTimeout`, `"timeout"` sentinel
+    - File does NOT contain `Promise.race` with abort-rejection (gemini MEDIUM-1 compliance)
+    - 3rd-arg override `opts?: { probeTimeoutMs?: number }` present
+    - R06 fail-closed path still passes
+    - gitnexus_impact recorded
   </acceptance_criteria>
 </task>
 
+
 <task type="auto" tdd="true">
-  <name>Task 1.5 (Wave 1, F2.pages): healthz per-probe timeout — TS Cloudflare Pages (TDD)</name>
+  <name>Task 1.5 (Wave 1, F2.pages): healthz per-probe timeout — TS Cloudflare Pages (TDD) — R-rev-3 NARROWED</name>
   <files>add-observability/templates/ts-cloudflare-pages/healthz-snippet.ts, add-observability/templates/ts-cloudflare-pages/healthz-snippet.test.ts</files>
+  <depends_on>none</depends_on>
   <read_first>
-    - add-observability/templates/ts-cloudflare-pages/healthz-snippet.ts (the file being modified)
-    - add-observability/templates/ts-cloudflare-worker/healthz-snippet.ts (just-edited reference — pages mirrors worker shape)
-    - add-observability/templates/ts-cloudflare-worker/healthz-snippet.test.ts (the test file from Task 1.4 — pages mirrors)
-    - .planning/phases/23-observability-followups/CONTEXT.md D-03
+    - add-observability/templates/ts-cloudflare-pages/healthz-snippet.ts (the file being modified — line 24 is the onRequest signature)
+    - add-observability/templates/ts-cloudflare-worker/healthz-snippet.ts (just-edited reference — pages cannot mirror the 3rd-arg pattern)
+    - .planning/phases/23-observability-followups/23-REVIEWS.md §Codex MEDIUM-5 (Pages has NO 3rd-arg path — onRequest signature is runtime-fixed)
+    - .planning/phases/23-observability-followups/CONTEXT.md D-03 (REVISED post-review: per-stack heterogeneity)
   </read_first>
   <behavior>
-    Identical 4-test shape as Task 1.4 (TS worker), adapted to the pages stack's probe interface. If pages's healthz-snippet.ts probe-name set differs from worker's, adapt the mock targets accordingly.
+    **Per codex MEDIUM-5: Pages exports a runtime-fixed `onRequest(context)` — the third-arg override IS NOT a real operator-facing path.** D-03 is narrowed for Pages: configurable via `context.env.HEALTHZ_PROBE_TIMEOUT_MS` env var (fallback to module-level `DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS = 2000`). Operators set the env var on the Pages project.
+
+    Test cases (mirror Task 1.4 with Pages-specific adjustments):
+
+    - **Test 1**: fast probe → ok within timeout
+    - **Test 2**: hanging probe → `{status: "degraded", checks: {<probe>: "timeout"}}` within 2.2s
+    - **Test 3 (REVISED — env var instead of 3rd arg)**: caller sets `context.env.HEALTHZ_PROBE_TIMEOUT_MS = "500"` — probe hanging 1000ms aborts at 500ms
+    - **Test 4**: R06 fail-closed preserved
+    - **Test 5 (gemini MEDIUM-1)**: no unhandled rejection after fast probe
   </behavior>
   <action>
-    [BLOCKING] Run `gitnexus_impact({target: "healthzHandler", direction: "upstream"})` on the pages healthz-snippet; record risk.
+    [BLOCKING] Run `gitnexus_impact({target: "onRequest", direction: "upstream"})` on the Pages healthz-snippet; record risk.
 
-    Mirror Task 1.4 for the pages stack. Concrete substrings to add to the production file (verbatim):
-    - `export const DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS = 2000;`
-    - `AbortSignal.timeout(probeTimeoutMs)`
-    - `"timeout"` string sentinel in checks
-    - `opts?: { probeTimeoutMs?: number }` 3rd handler parameter
-    Apply per-probe Promise.race or signal-listener pattern from Task 1.4.
+    **RED commit** (`test(23): F2 pages healthz per-probe timeout — RED`):
+    Mirror Task 1.4 test structure but for Test 3: build the test context with `env.HEALTHZ_PROBE_TIMEOUT_MS = "500"` instead of passing a 3rd arg.
 
-    RED commit `test(23): F2 pages healthz per-probe timeout — RED`; GREEN commit `feat(23): F2 pages healthz per-probe timeout — GREEN`.
+    **GREEN commit** (`feat(23): F2 pages healthz per-probe timeout — context.env-driven (R-rev-3 narrowed) — GREEN`):
+    1. Modify `add-observability/templates/ts-cloudflare-pages/healthz-snippet.ts`:
+       a. Add module-level constant:
+          ```typescript
+          /** D-03 default per-probe timeout in ms. Override via context.env.HEALTHZ_PROBE_TIMEOUT_MS. */
+          export const DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS = 2000;
+          ```
+       b. **Per codex MEDIUM-5: DO NOT add a third onRequest arg** — onRequest signature is runtime-fixed by Pages. Instead, inside the handler body:
+          ```typescript
+          const probeTimeoutMs = Number(context.env.HEALTHZ_PROBE_TIMEOUT_MS) || DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS;
+          ```
+          Add an inline comment acknowledging the narrowing:
+          ```typescript
+          // D-03 (narrowed for Pages per codex MEDIUM-5): onRequest signature is runtime-fixed —
+          // operators configure timeout via env var, not function args. Worker keeps the 3rd-arg path.
+          ```
+       c. Apply the same AbortController + setTimeout + try/finally + clearTimeout pattern from Task 1.4 to each probe.
+       d. `checks: Record<string, boolean | "timeout">` shape; `"timeout"` sentinel.
+    2. Run `npx vitest run healthz-snippet.test.ts`. Assert 5/5 pass.
+    3. Commit.
   </action>
   <verify>
     <automated>
       cd add-observability/templates/ts-cloudflare-pages && npx vitest run healthz-snippet.test.ts &&
-      grep -q "DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS = 2000" add-observability/templates/ts-cloudflare-pages/healthz-snippet.ts
+      grep -q "DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS = 2000" add-observability/templates/ts-cloudflare-pages/healthz-snippet.ts &&
+      grep -q "context.env.HEALTHZ_PROBE_TIMEOUT_MS" add-observability/templates/ts-cloudflare-pages/healthz-snippet.ts &&
+      grep -q "narrowed for Pages per codex MEDIUM-5" add-observability/templates/ts-cloudflare-pages/healthz-snippet.ts &&
+      grep -q "new AbortController" add-observability/templates/ts-cloudflare-pages/healthz-snippet.ts &&
+      grep -q "clearTimeout" add-observability/templates/ts-cloudflare-pages/healthz-snippet.ts &&
+      ! grep -q "Promise.race" add-observability/templates/ts-cloudflare-pages/healthz-snippet.ts
     </automated>
   </verify>
-  <done>RED→GREEN pair for pages stack; behaviour mirrors worker.</done>
+  <done>RED→GREEN pair; Pages uses env-var configuration path (NOT 3rd-arg) per codex MEDIUM-5; AbortController + clearTimeout pattern.</done>
   <acceptance_criteria>
-    - 4/4 vitest tests pass on pages healthz-snippet.test.ts
-    - All literal-string acceptance criteria from Task 1.4 also hold for pages file
+    - 5/5 vitest tests pass on Pages healthz-snippet.test.ts
+    - File contains `context.env.HEALTHZ_PROBE_TIMEOUT_MS` and the "narrowed for Pages per codex MEDIUM-5" comment
+    - File does NOT add a third arg to onRequest
+    - File contains `AbortController`, `clearTimeout`, no `Promise.race + reject`
     - gitnexus_impact recorded
   </acceptance_criteria>
 </task>
 
 <task type="auto" tdd="true">
-  <name>Task 1.6 (Wave 1, F2.supabase): healthz per-probe timeout — TS Supabase Edge (TDD)</name>
+  <name>Task 1.6 (Wave 1, F2.supabase): healthz per-probe timeout — TS Supabase Edge (TDD) — R-rev-3 NARROWED</name>
   <files>add-observability/templates/ts-supabase-edge/healthz-snippet.ts, add-observability/templates/ts-supabase-edge/healthz-snippet.test.ts</files>
+  <depends_on>none</depends_on>
   <read_first>
     - add-observability/templates/ts-supabase-edge/healthz-snippet.ts (the file being modified)
+    - add-observability/templates/ts-supabase-edge/cron-monitor.test.ts:17 (existing Deno-friendly test seam — must not break per codex MEDIUM-4)
+    - add-observability/templates/run-template-tests.sh:499 (pins @sentry/* to ^8.0.0)
     - add-observability/templates/ts-cloudflare-worker/healthz-snippet.ts (reference)
-    - .planning/phases/23-observability-followups/CONTEXT.md D-03
+    - .planning/phases/23-observability-followups/23-REVIEWS.md §Codex MEDIUM-5
+    - .planning/phases/23-observability-followups/CONTEXT.md D-03 (REVISED — per-stack heterogeneity)
   </read_first>
   <behavior>
-    Identical 4-test shape, adapted to supabase-edge probe interface (probes use Deno fetch; if the existing probe shape uses `Deno.serve`-style or a Supabase client, mirror that mock).
+    **Per codex MEDIUM-5: Planner-pick decision at execute time** between two paths (BOTH acceptable):
+    - **(a) Module-level const:** `const PROBE_TIMEOUT_MS = 2000;` — operator edits template before deploying.
+    - **(b) Env-var match Pages pattern:** `Number(Deno.env.get("HEALTHZ_PROBE_TIMEOUT_MS")) || DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS`.
+
+    **Recommendation: pick (b)** for parity with Pages — keeps caller-configurability via env var. Use `Deno.env.get` (Supabase is Deno runtime).
+
+    Test cases (mirror Task 1.4):
+    - **Test 1**: fast probe ok
+    - **Test 2**: hang → timeout sentinel
+    - **Test 3**: env-var override (`Deno.env.set("HEALTHZ_PROBE_TIMEOUT_MS", "500")` in test setup)
+    - **Test 4**: R06 fail-closed
+    - **Test 5 (gemini MEDIUM-1)**: no unhandled rejection
   </behavior>
   <action>
-    [BLOCKING] gitnexus_impact on healthzHandler (supabase variant).
+    [BLOCKING] gitnexus_impact on supabase-edge healthzHandler.
 
-    Mirror Task 1.4. Add `DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS = 2000` constant, optional `probeTimeoutMs` parameter, per-probe AbortSignal.timeout, `"timeout"` sentinel.
+    Mirror Task 1.4 structure. Add `DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS = 2000`, env-var override (`Deno.env.get("HEALTHZ_PROBE_TIMEOUT_MS")`), per-probe AbortController + setTimeout + try/finally + clearTimeout, `"timeout"` sentinel.
 
-    RED `test(23): F2 supabase-edge healthz per-probe timeout — RED`; GREEN `feat(23): F2 supabase-edge healthz per-probe timeout — GREEN`.
+    Add inline comment:
+    ```typescript
+    // D-03 (narrowed for Supabase-Edge per codex MEDIUM-5): Deno runtime + restrictive
+    // test seam → env-var configuration matches Pages pattern. Worker keeps 3rd-arg path.
+    ```
+
+    RED `test(23): F2 supabase-edge healthz per-probe timeout — RED`; GREEN `feat(23): F2 supabase-edge healthz per-probe timeout — Deno.env-driven (R-rev-3 narrowed) — GREEN`.
   </action>
   <verify>
     <automated>
-      cd add-observability/templates/ts-supabase-edge && npx vitest run healthz-snippet.test.ts &&
-      grep -q "DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS = 2000" add-observability/templates/ts-supabase-edge/healthz-snippet.ts
+      cd add-observability/templates/ts-supabase-edge && (npx vitest run healthz-snippet.test.ts 2>/dev/null || deno test --allow-env healthz-snippet.test.ts) &&
+      grep -q "DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS = 2000" add-observability/templates/ts-supabase-edge/healthz-snippet.ts &&
+      grep -q "HEALTHZ_PROBE_TIMEOUT_MS" add-observability/templates/ts-supabase-edge/healthz-snippet.ts &&
+      grep -q "narrowed for Supabase-Edge per codex MEDIUM-5" add-observability/templates/ts-supabase-edge/healthz-snippet.ts &&
+      grep -q "new AbortController" add-observability/templates/ts-supabase-edge/healthz-snippet.ts &&
+      grep -q "clearTimeout" add-observability/templates/ts-supabase-edge/healthz-snippet.ts &&
+      ! grep -q "Promise.race" add-observability/templates/ts-supabase-edge/healthz-snippet.ts
     </automated>
   </verify>
-  <done>RED→GREEN pair for supabase-edge stack.</done>
+  <done>RED→GREEN pair for supabase-edge; env-var configuration; AbortController + clearTimeout; no Promise.race.</done>
   <acceptance_criteria>
-    - 4/4 vitest tests pass on supabase-edge healthz-snippet.test.ts
-    - All literal-string acceptance criteria from Task 1.4 also hold
+    - 5/5 tests pass
+    - Env-var override path present
+    - "narrowed for Supabase-Edge per codex MEDIUM-5" comment present
+    - AbortController + clearTimeout, no Promise.race
     - gitnexus_impact recorded
   </acceptance_criteria>
 </task>
 
 <task type="auto" tdd="true">
-  <name>Task 1.7 (Wave 1, F2.go): healthz per-probe timeout — Go fly-http (TDD)</name>
+  <name>Task 1.7 (Wave 1 CLOSER, F2.go): healthz per-probe timeout — Go fly-http (TDD) — R-rev-3 NARROWED + R-rev-8 wave-closer gitnexus_detect_changes</name>
   <files>add-observability/templates/go-fly-http/healthz_snippet.go, add-observability/templates/go-fly-http/healthz_snippet_test.go</files>
+  <depends_on>none (closes Wave 1)</depends_on>
   <read_first>
-    - add-observability/templates/go-fly-http/healthz_snippet.go (full file — HealthzHandler currently has no per-probe timeout)
-    - .planning/phases/23-observability-followups/CONTEXT.md D-03 (Go uses `context.WithTimeout(ctx, defaultHealthzProbeTimeout)` where `defaultHealthzProbeTimeout = 2 * time.Second`)
+    - add-observability/templates/go-fly-http/healthz_snippet.go (full file — HealthzHandler; line 62 is the upstream-probe Get(url) interface that codex MEDIUM-5 flagged)
+    - .planning/phases/23-observability-followups/23-REVIEWS.md §Codex MEDIUM-5 (Go's `Get(url)` can only race, not cancel — pick honest documentation alternative)
+    - .planning/phases/23-observability-followups/CONTEXT.md D-03 (REVISED — per-stack heterogeneity)
   </read_first>
   <behavior>
-    Equivalent test shape to Task 1.4 in Go:
-    - Test 1: fast probe → 200 + `{"status":"ok","checks":{"db":true}}`
-    - Test 2: hanging probe → 503 + `{"status":"degraded","checks":{"db":"timeout"}}` within 2.2s (default 2s + 200ms slack)
-    - Test 3: caller passes custom timeout via a new exported `HealthzDeps.ProbeTimeout time.Duration` field; probe hanging 1s aborts at 500ms.
-    - Test 4: R06 zero-probes path still returns degraded JSON unchanged.
+    **Per codex MEDIUM-5: Pick honest-documentation alternative (NOT scope expansion).** Go's `Get(url)` interface can only race, not cancel. The `context.WithTimeout` will cap handler latency (the handler returns within timeout) but the underlying outbound HTTP call may continue in the background until it completes naturally. This is documented explicitly in code comment + CHANGELOG.
 
-    Use `testing.T`, `httptest.NewRecorder()`, `httptest.NewRequest`. Mock `dbProbe` with a struct that sleeps then returns nil, but honours ctx.Done().
+    Test cases:
+    - **Test 1**: fast probe → 200 + `{"status":"ok","checks":{"db":true}}`
+    - **Test 2**: hanging DB probe → 503 + `{"status":"degraded","checks":{"db":"timeout"}}` within 2.2s
+    - **Test 3**: custom timeout via `HealthzDeps.ProbeTimeout` field
+    - **Test 4**: R06 zero-probes path preserved
+    - **Test 5 (NEW per codex MEDIUM-5 honest-doc alt)**: upstream `Get(url)` probe that hangs → handler returns within timeout with `"timeout"` sentinel, BUT we explicitly do NOT assert the underlying request was cancelled (it cannot be). Test verifies the handler latency contract only.
   </behavior>
   <action>
-    [BLOCKING] Run `gitnexus_impact({target: "HealthzHandler", direction: "upstream"})` on Go healthz_snippet.go; record risk.
+    [BLOCKING] gitnexus_impact on Go HealthzHandler.
 
     **RED commit** (`test(23): F2 go healthz per-probe timeout — RED`):
-    1. Create `add-observability/templates/go-fly-http/healthz_snippet_test.go`:
-       ```go
-       package {{PACKAGE_NAME}}  // replaced with `observability` for the in-template test
+    Implement 5 tests per behaviour block. Test 5 uses a fake upstream prober that records "called but not cancelled" — the assertion is on handler latency, not probe cancellation.
 
-       // NOTE: in shipped templates, the package name is substituted at init time.
-       // For unit testing, replace with `package observability` inside the
-       // template's local test harness; the run-template-tests.sh harness handles this.
-
-       import (
-         "context"
-         "encoding/json"
-         "net/http"
-         "net/http/httptest"
-         "testing"
-         "time"
-       )
-
-       type slowDB struct{ delay time.Duration }
-       func (s *slowDB) PingContext(ctx context.Context) error {
-         select { case <-time.After(s.delay): return nil; case <-ctx.Done(): return ctx.Err() }
-       }
-
-       // Tests 1-4 per <behavior>.
-       ```
-       Implement all 4 tests.
-    2. Run `cd add-observability/templates/go-fly-http && go test -run "TestHealthz" -count=1 ./... 2>&1 | tee /tmp/red-f2-go.txt`
-    3. Assert: tests 2 and 3 FAIL.
-    4. Commit test file ONLY.
-
-    **GREEN commit** (`feat(23): F2 go healthz per-probe timeout — GREEN`):
+    **GREEN commit** (`feat(23): F2 go healthz per-probe timeout — handler-latency cap only (R-rev-3 honest-doc per codex MEDIUM-5) — GREEN`):
     1. Modify healthz_snippet.go:
-       a. Add to imports: `"time"`
-       b. Add exported constant after imports, before `// ─── Probe interfaces`:
+       a. Add `"time"` import
+       b. Add constant + honest documentation:
           ```go
           // DefaultHealthzProbeTimeout is the D-03 default per-probe timeout. Override
           // per HealthzDeps.ProbeTimeout (zero value = default).
+          //
+          // IMPORTANT (D-03 narrowed for Go per codex MEDIUM-5): for probes whose
+          // interface accepts context.Context (e.g., db.PingContext), the timeout
+          // cancels the underlying call. For probes that take only a URL (e.g., the
+          // upstream `Get(url)` interface), the timeout caps HANDLER LATENCY ONLY —
+          // the underlying outbound HTTP call may continue in the background until it
+          // completes naturally. Widening the upstream interface to accept
+          // context.Context is a scope-expansion alternative deferred to a future phase.
           const defaultHealthzProbeTimeout = 2 * time.Second
           ```
-       c. Add to `HealthzDeps`:
-          ```go
-          // ProbeTimeout overrides the per-probe timeout (D-03). Zero = defaultHealthzProbeTimeout.
-          ProbeTimeout time.Duration
-          ```
-       d. Change `checks` type from `map[string]bool{}` to `map[string]any{}` so a probe can store either `true`, `false`, or the string `"timeout"`.
-       e. Inside the handler body:
-          ```go
-          probeTimeout := deps.ProbeTimeout
-          if probeTimeout == 0 { probeTimeout = defaultHealthzProbeTimeout }
-          ```
-       f. For the DB probe, wrap in `context.WithTimeout(r.Context(), probeTimeout)`:
+       c. Add `ProbeTimeout time.Duration` to `HealthzDeps`.
+       d. `checks` map type → `map[string]any{}` to allow `true`, `false`, `"timeout"`.
+       e. `probeTimeout := deps.ProbeTimeout; if probeTimeout == 0 { probeTimeout = defaultHealthzProbeTimeout }`
+       f. **DB probe (interface accepts ctx — fully cancellable):**
           ```go
           if deps.DB != nil {
             ctx, cancel := context.WithTimeout(r.Context(), probeTimeout)
@@ -692,379 +995,596 @@ Severity gating: T-23-02 (D), T-23-04 (D), T-23-05 (T), T-23-07 (S) are MEDIUM. 
             switch {
             case err == nil:
               checks["db"] = true
-            case err == context.DeadlineExceeded:
+            case errors.Is(err, context.DeadlineExceeded):
               checks["db"] = "timeout"
             default:
               checks["db"] = false
             }
           }
           ```
-       g. Apply the same shape to the Upstream probe. Note: `upstreamProbe.Get` does not accept ctx — wrap in a goroutine + channel + select-on-ctx.Done. The upstreamProbe interface stays compatible (no signature change), but the handler implementation does the timing.
-       h. Adjust the `allOK` loop to treat any non-`true` value as failure:
+       g. **Upstream Get(url) probe (cannot cancel — race only):**
           ```go
-          allOK := true
-          for _, v := range checks {
-            if v != true { allOK = false; break }
+          if deps.Upstream != nil {
+            // codex MEDIUM-5: upstream prober interface accepts only URL, not ctx.
+            // We race the call against a timer; on timeout, the request continues in
+            // the background but the handler returns immediately.
+            done := make(chan error, 1)
+            go func() { done <- deps.Upstream.Get(deps.UpstreamURL) }()
+            select {
+            case err := <-done:
+              if err == nil { checks["upstream"] = true } else { checks["upstream"] = false }
+            case <-time.After(probeTimeout):
+              checks["upstream"] = "timeout"  // background goroutine may still complete
+            }
           }
           ```
-    2. Run `go test -run "TestHealthz" -count=1 ./... 2>&1 | tee /tmp/green-f2-go.txt`
-    3. Assert: all 4 tests pass.
-    4. Commit production file.
+       h. `allOK` loop: `for _, v := range checks { if v != true { allOK = false; break } }`
+    2. Run `go test -run "TestHealthz" -count=1 ./...`. Assert 5/5 pass.
+    3. Commit.
+
+    **WAVE 1 CLOSER (R-rev-8): Run `gitnexus_detect_changes()` after the GREEN commit.** Verify only the symbols listed in `<gitnexus_required_symbols>` for Wave 1 (1.1-1.7) appear in the change report. If unexpected symbols flagged: STOP and surface as CHECKPOINT before proceeding to Wave 2.
   </action>
   <verify>
     <automated>
       cd add-observability/templates/go-fly-http && go test -run "TestHealthz" -count=1 ./... &&
       grep -q "defaultHealthzProbeTimeout = 2 \\* time.Second" add-observability/templates/go-fly-http/healthz_snippet.go &&
       grep -q "context.WithTimeout" add-observability/templates/go-fly-http/healthz_snippet.go &&
+      grep -q "narrowed for Go per codex MEDIUM-5" add-observability/templates/go-fly-http/healthz_snippet.go &&
+      grep -q "HANDLER LATENCY ONLY" add-observability/templates/go-fly-http/healthz_snippet.go &&
       grep -q '"timeout"' add-observability/templates/go-fly-http/healthz_snippet.go
     </automated>
   </verify>
-  <done>RED→GREEN pair; Go healthz handler honours per-probe context-based timeout; `defaultHealthzProbeTimeout = 2 * time.Second` constant declared.</done>
+  <done>RED→GREEN pair; DB probe uses context-cancellation; Upstream probe uses race-only with honest "caps handler latency, not underlying call" documentation. gitnexus_detect_changes run as Wave 1 closer.</done>
   <acceptance_criteria>
-    - All 4 Go tests pass
+    - All 5 Go tests pass
     - `defaultHealthzProbeTimeout = 2 * time.Second` literal present
-    - `context.WithTimeout` literal present (per-probe usage)
-    - `"timeout"` string sentinel in checks output
-    - R06 fail-closed path still returns 503 + reason on zero probes
-    - gitnexus_impact on `HealthzHandler` recorded
+    - Honest-documentation comment block present (HANDLER LATENCY ONLY)
+    - DB probe uses `context.WithTimeout` + cancel; Upstream probe uses `select { case ... <-time.After }` race
+    - R06 fail-closed preserved
+    - gitnexus_impact recorded for HealthzHandler
+    - **WAVE 1 CLOSER (R-rev-8): `gitnexus_detect_changes()` run; output verified against `<gitnexus_required_symbols>` Wave 1 rows; no unexpected symbols flagged**
+    - Commit: `feat(23): F2 go healthz + Wave 1 closer gitnexus_detect_changes — GREEN`
   </acceptance_criteria>
 </task>
 
+
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- WAVE 2 — F5 Shape A refactor, one task per TS stack (parallel-safe)     -->
+<!-- WAVE 2 — F5 GUARDED Shape A refactor, one task per TS stack             -->
+<!-- depends_on: Task 0.2 (ADR-0029 locks the Guarded contract)              -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 
 <task type="auto" tdd="true">
-  <name>Task 2.1 (Wave 2, F5.worker): withCronMonitor Shape A — TS Cloudflare Worker (TDD)</name>
+  <name>Task 2.1 (Wave 2, F5.worker): withCronMonitor GUARDED Shape A — TS Cloudflare Worker (TDD) — R-rev-1</name>
   <files>add-observability/templates/ts-cloudflare-worker/cron-monitor.ts, add-observability/templates/ts-cloudflare-worker/cron-monitor.test.ts</files>
+  <depends_on>Task 0.2 (ADR-0029 locks the Guarded Shape A contract)</depends_on>
   <read_first>
-    - add-observability/templates/ts-cloudflare-worker/cron-monitor.ts FULL FILE (lines 137-148 PRESERVED; 148-181 REPLACED — read carefully)
-    - add-observability/templates/ts-cloudflare-worker/cron-monitor.test.ts FULL FILE (existing test conventions; F5 tests extend the same describe-blocks)
-    - .planning/phases/23-observability-followups/CONTEXT.md D-08 (Shape A spec: exact line-range substitution)
-    - .planning/phases/23-observability-followups/CONTEXT.md §"Resolved decisions" — DOCUMENTED REGRESSION (R02/R04 SDK-error swallow drops) and DOCUMENTED ADDITION (withIsolationScope wrapping)
-    - .planning/phases/22-sentry-crons-healthz/PLAN.md §R02, §R04 (the contracts being regressed)
-    - .planning/phases/22-sentry-crons-healthz/CONTEXT.md D6, D11, D12 (the contracts being PRESERVED)
-    - add-observability/templates/ts-cloudflare-worker/middleware.ts (outer wrapper — verify it catches SDK errors so the documented R02/R04 regression doesn't fail the cron when Sentry transport is down; see T-23-02 in threat model)
+    - add-observability/templates/ts-cloudflare-worker/cron-monitor.ts FULL FILE (lines 137-148 PRESERVED; 148-181 REPLACED with Guarded block)
+    - add-observability/templates/ts-cloudflare-worker/cron-monitor.test.ts FULL FILE
+    - **.planning/phases/23-observability-followups/CONTEXT.md §D-08 (AMENDED — Guarded Shape A canonical code block)** — this is the binding source
+    - docs/decisions/0029-cron-monitor-sdk-composition.md (just authored in Task 0.2 — architectural rationale)
+    - .planning/phases/23-observability-followups/23-REVIEWS.md §Codex HIGH-1 (the empirical evidence for Guarded)
+    - .planning/phases/22-sentry-crons-healthz/PLAN.md §R02, §R04 (the NARROWED-regression contracts)
+    - .planning/phases/22-sentry-crons-healthz/CONTEXT.md D6, D11, D12 (PRESERVED contracts)
+    - add-observability/templates/ts-cloudflare-worker/middleware.ts (outer wrapper — verify it catches POST-callback SDK errors per T-23-02 narrowed)
   </read_first>
   <behavior>
-    Behavioural-parity test cases for cron-monitor.test.ts (EXTEND, do not replace existing tests):
+    Behavioural-parity test cases for cron-monitor.test.ts (EXTEND existing tests):
 
-    - **Test F5.1 (RED first)**: happy path with explicit slug — assert `Sentry.withMonitor` is called ONCE with arguments matching `("fxsa-ingest-15min", <callback function>, undefined)` (no monitorConfig configured). Assert `captureCheckIn` is NOT called directly from the wrapper (it's called from inside `withMonitor` which is mocked).
-    - **Test F5.2 (RED first)**: with `schedule` + `maxRuntimeSeconds` config — assert `Sentry.withMonitor` is called with `(slug, callback, {schedule: {...}, maxRuntime: 240})` (D12 monitorConfig forwarding preserved through Shape A).
-    - **Test F5.3 (RED first)**: handler throws — assert `Sentry.withMonitor`'s thrown rejection propagates and the outer wrapper's caller sees the exception (D-08 documented behaviour: errors propagate; no SDK-error swallow on the wrapper's own scope).
-    - **Test F5.4 (RED first)**: SENTRY_DSN unset — assert handler runs unchanged AND `Sentry.withMonitor` is NOT called (fail-safe per R02 PRESERVED via the if-isConfigured guard at line 138).
-    - **Test F5.5 (RED first — D6 slug resolution)**: extend existing "slug resolution" describe-block to assert the slug computed by `resolveSlug` is the slug passed to `Sentry.withMonitor` (preserves D6).
-    - **Modify** existing tests "emits in_progress + ok on happy path" and "emits in_progress + error and re-throws on handler exception": these assert `captureCheckIn` directly. Under Shape A, the wrapper no longer calls `captureCheckIn` — `Sentry.withMonitor` does internally, but our mock at the module boundary will only see `withMonitor`. Update these tests to either: (a) DELETE them and replace with the F5.1-F5.5 cases above, OR (b) re-mock `withMonitor` to forward to `captureCheckIn` internally to keep the existing assertions valid. Recommend option (a) — the v0.6.0 tests asserted implementation details that Shape A obsoletes. Update the test file's docblock at lines 1-17 to reference D-08 instead of the v0.6.0 contract.
+    - **Test F5.1 (RED first)**: happy path with explicit slug — assert `Sentry.withMonitor` called ONCE with `("fxsa-ingest-15min", <callback function>, undefined)`. Assert `captureCheckIn` NOT called directly from the wrapper.
+    - **Test F5.2 (RED first)**: with `schedule` + `maxRuntimeSeconds` config — assert `Sentry.withMonitor` called with `(slug, callback, {schedule: {...}, maxRuntime: 240})` (D12 preserved).
+    - **Test F5.3 (RED first)**: handler throws DURING execution — assert thrown error propagates (handler-thrown errors propagate per Guarded contract).
+    - **Test F5.4 (RED first)**: SENTRY_DSN unset — assert handler runs unchanged AND `Sentry.withMonitor` NOT called (fail-safe R02 preserved at line 138 guard).
+    - **Test F5.5 (RED first — D6 slug resolution)**: assert slug computed by `resolveSlug` is the slug passed to `Sentry.withMonitor`.
+    - **Test F5.6 (NEW — codex Suggestion 2 — pre-callback regression)**: mock `Sentry.withMonitor` to throw BEFORE invoking the callback (simulate transport failure on `in_progress` check-in). Assert: (a) `handler` IS called exactly once (Guarded fallback), (b) no error propagates from `withCronMonitor`, (c) no crash. Test name: `"Sentry check-in setup throws before callback start → handler still runs unmonitored, no crash"`. RED state: original Shape A fails this test because handler is never invoked. GREEN state: Guarded fallback runs handler unmonitored.
+    - **Test F5.7 (NEW — codex Suggestion 2 — post-callback propagation)**: mock `Sentry.withMonitor` to throw AFTER the callback completed successfully (simulate transport failure on `ok` check-in). Assert: (a) `handler` was called, (b) the post-callback error propagates from `withCronMonitor`. Test name: `"Sentry post-callback check-in throws → handler ran, error propagates to outer wrapper"`.
+
+    - **Modify** existing tests asserting `captureCheckIn` directly: replace with F5.1-F5.7 cases. Update test file top-comment (lines 1-17) to reference D-08 GUARDED variant + ADR-0029.
   </behavior>
   <action>
-    [BLOCKING] Run `gitnexus_impact({target: "withCronMonitor", direction: "upstream"})` on cron-monitor.ts; record risk. Per ./CLAUDE.md this is BLOCKING for symbol body edits and the risk level MUST be reported to the user via the commit body. If HIGH or CRITICAL: include explicit "proceed-anyway" rationale referencing D-08's user authorization.
+    [BLOCKING] Run `gitnexus_impact({target: "withCronMonitor", direction: "upstream"})`; record risk. Per ./CLAUDE.md this is BLOCKING for symbol body edits and risk level MUST be reported in commit body. If HIGH or CRITICAL: include "proceed-anyway" rationale citing D-08 (Guarded) user authorization.
 
-    Also: grep `withCronMonitor` callers across the repo and across the documented downstream consumers (fxsa, callbot per CONTEXT.md). The PR will land in claude-workflow only; downstream pulls via the add-observability minor bump. Document any consumers found.
+    Grep `withCronMonitor` callers across repo + downstream (fxsa, callbot). Document found consumers in commit body.
 
-    Also: read `add-observability/templates/ts-cloudflare-worker/middleware.ts` and verify `withObservabilityScheduled` catches SDK errors (per T-23-02). If it does NOT, add an explicit catch around `Sentry.withMonitor` in cron-monitor.ts that swallows SDK transport errors only (not handler errors). Document the verdict in the commit body.
+    **Verify outer wrapper catches POST-callback SDK errors per T-23-02 narrowed:**
+    Read `add-observability/templates/ts-cloudflare-worker/middleware.ts` — confirm `withObservabilityScheduled` catches and rethrows. Document verdict in commit body. (Note: Guarded Shape A means PRE-callback errors fall back to unmonitored handler; only POST-callback errors propagate. Outer wrapper still needs to catch those.)
 
-    **RED commit** (`test(23): F5 worker Shape A behavioural-parity — RED`):
+    **RED commit** (`test(23): F5 worker GUARDED Shape A behavioural-parity + pre-callback regression — RED`):
     1. Update cron-monitor.test.ts to mock `Sentry.withMonitor`:
        ```typescript
        const withMonitorMock = vi.fn();
-       const captureCheckIn = vi.fn();  // kept for the no-call assertion
+       const captureCheckIn = vi.fn();
        vi.mock("@sentry/cloudflare", () => ({
          captureCheckIn: (...args: unknown[]) => captureCheckIn(...args),
          withMonitor: (...args: unknown[]) => withMonitorMock(...args),
        }));
        ```
-       Default mock behaviour: `withMonitorMock.mockImplementation(async (_slug, cb) => cb());` (immediate callback exec). Override per-test for the throw case.
-    2. Replace old happy-path / error-path / DEBUG-log tests with the F5.1-F5.5 cases per `<behavior>`. Preserve the existing slug-resolution (D6) describe-block but augment per F5.5.
-    3. Update the test file's top-comment (lines 1-17) to reference D-08 and the documented regression.
-    4. Run `cd add-observability/templates/ts-cloudflare-worker && npx vitest run cron-monitor.test.ts 2>&1 | tee /tmp/red-f5-worker.txt`
-    5. Assert: F5.1, F5.2, F5.3 FAIL (production code still calls captureCheckIn directly). F5.4 may pass (no-DSN guard is unchanged). F5.5 may pass partially.
-    6. Commit test file ONLY.
+       Default mock: `withMonitorMock.mockImplementation(async (_slug, cb) => cb());`. Override per-test:
+       - F5.6: `withMonitorMock.mockImplementation(async () => { throw new Error("transport down"); });` (throws BEFORE cb runs)
+       - F5.7: `withMonitorMock.mockImplementation(async (_slug, cb) => { await cb(); throw new Error("post-callback transport down"); });` (throws AFTER cb completes)
+    2. Replace old tests with F5.1-F5.7 per `<behavior>`. Update top-comment to reference D-08 GUARDED + ADR-0029.
+    3. Run `npx vitest run cron-monitor.test.ts 2>&1 | tee /tmp/red-f5-worker.txt`
+    4. Assert: F5.1, F5.2, F5.3, F5.6, F5.7 FAIL. F5.4 + F5.5 may pass.
+    5. Commit test file ONLY.
 
-    **GREEN commit** (`feat(23): F5 worker Shape A — replace lifecycle with Sentry.withMonitor — GREEN`):
+    **GREEN commit** (`feat(23): F5 worker GUARDED Shape A — handlerStarted fallback (R-rev-1) — GREEN`):
     1. Modify `add-observability/templates/ts-cloudflare-worker/cron-monitor.ts`:
-       a. Change import: `import { captureCheckIn } from "@sentry/cloudflare";` → `import * as Sentry from "@sentry/cloudflare";` (so the impl can call `Sentry.withMonitor(...)`)
-       b. PRESERVE lines 137-148 (the wrapper's outer function body up to and including `const monitorConfig = buildMonitorConfig(config);`)
-       c. REPLACE lines 148-181 (the entire in_progress/ok/error lifecycle block) with EXACTLY:
+       a. Change import: `import { captureCheckIn } from "@sentry/cloudflare";` → `import * as Sentry from "@sentry/cloudflare";`
+       b. PRESERVE lines 137-148 (outer body up to and including `const monitorConfig = buildMonitorConfig(config);`)
+       c. REPLACE lines 148-181 with EXACTLY the Guarded Shape A block (canonical source: CONTEXT.md D-08):
           ```typescript
-              // D-08 Shape A — compose Sentry.withMonitor underneath outer wrapper.
-              // PRESERVED: D6 slug resolution (above), R02 fail-safe (above), D12 monitorConfig forwarding (above).
-              // REGRESSED (vs v0.6.0): R02/R04 SDK-error swallow drops — Sentry.withMonitor re-throws
-              //   transport errors during captureCheckIn instead of silently swallowing. Operators see
-              //   them in the outer withObservabilityScheduled capture path. SENTRY_DEBUG=1 surfaces
-              //   them; outer wrapper catches them per Phase 23 T-23-02 verification.
-              // ADDED: withIsolationScope wrapping — each cron run gets its own Sentry scope
-              //   (correctness improvement; non-breaking for downstream consumers).
-              await Sentry.withMonitor(monitorSlug, () => handler(controller, env, ctx), monitorConfig);
+              // D-08 GUARDED Shape A (per ADR-0029, amended post-multi-AI-review).
+              // PRESERVED: D6 slug resolution (above), R02 fail-safe (above), D12 monitorConfig forwarding (above),
+              //   AND the "cron always runs" guarantee (Guarded fallback handles pre-callback SDK failures).
+              // NARROWED REGRESSION (vs v0.6.0): only POST-callback SDK errors propagate to outer wrapper.
+              //   PRE-callback errors (Sentry transport failing on in_progress check-in) trigger the
+              //   fallback path below: handler runs unmonitored, no propagation, no skip.
+              // ADDED: withIsolationScope wrapping per cron run. NOTE: handler-set scope state
+              //   (Sentry.setTag, breadcrumbs inside cron body) may not be visible to outer
+              //   error-capture handlers after isolation unwinds (per ADR-0029 honest semantic).
+              let handlerStarted = false;
+              try {
+                await Sentry.withMonitor(
+                  monitorSlug,
+                  () => {
+                    handlerStarted = true;
+                    return handler(controller, env, ctx);
+                  },
+                  monitorConfig,
+                );
+              } catch (err) {
+                if (!handlerStarted) {
+                  // Sentry transport failed before handler ran — fall back to unmonitored.
+                  await handler(controller, env, ctx);
+                  return;
+                }
+                throw err; // handler-thrown OR post-callback errors propagate as before
+              }
             };
           }
           ```
-       d. DELETE the `debugLog` helper function declaration (lines 102-112 in the pre-edit file) AND its `isDebug` helper (lines 50-52) — they are no longer used. Search the file for any remaining references; if `SENTRY_DEBUG` is referenced elsewhere in the same file, restore the helpers; otherwise delete.
-       e. Update the wrapper's JSDoc (lines 116-132) to reflect Shape A:
-          - Replace "SDK exceptions during checkin are caught and swallowed; opt-in `SENTRY_DEBUG=1` surfaces them via `console.error`." with: "SDK exceptions during checkin propagate via `Sentry.withMonitor` to the outer `withObservabilityScheduled` capture path (D-08 documented regression vs v0.6.0)."
-          - Add line: "Each invocation runs inside its own `withIsolationScope` (D-08 documented addition)."
-    2. Run `npx vitest run cron-monitor.test.ts 2>&1 | tee /tmp/green-f5-worker.txt`
-    3. Assert: ALL F5.1-F5.5 + preserved D6 tests pass.
-    4. Run the FULL template test harness for the worker stack: `cd add-observability/templates/ts-cloudflare-worker && npx vitest run 2>&1 | tee /tmp/green-f5-worker-all.txt` — assert: zero regressions in healthz tests (Wave 1 task 1.4).
-    5. Commit production file.
+       d. DELETE `debugLog` + `isDebug` helpers (no longer used). Search for remaining `SENTRY_DEBUG` references; if found elsewhere, restore helpers; otherwise delete.
+       e. Update JSDoc (lines 116-132):
+          - Replace "SDK exceptions during checkin are caught and swallowed; opt-in `SENTRY_DEBUG=1` surfaces them" with: "POST-callback SDK exceptions propagate via `Sentry.withMonitor` to the outer `withObservabilityScheduled` capture path (D-08 narrowed regression vs v0.6.0). PRE-callback SDK failures trigger the Guarded fallback: handler runs unmonitored."
+          - Add: "Each invocation runs inside its own `withIsolationScope` — note handler-set scope state may not be visible to outer error capture after isolation unwinds (D-08 documented addition)."
+    2. Run `npx vitest run cron-monitor.test.ts`. Assert: F5.1-F5.7 + preserved D6 tests all pass.
+    3. Run FULL worker harness: `npx vitest run`. Assert: zero regressions in Wave 1 healthz tests.
+    4. Commit production file.
   </action>
   <verify>
     <automated>
       cd add-observability/templates/ts-cloudflare-worker && npx vitest run cron-monitor.test.ts &&
-      grep -q "Sentry.withMonitor(monitorSlug" add-observability/templates/ts-cloudflare-worker/cron-monitor.ts &&
-      grep -q "D-08 Shape A" add-observability/templates/ts-cloudflare-worker/cron-monitor.ts &&
-      ! grep -q "debugLog\\|isDebug" add-observability/templates/ts-cloudflare-worker/cron-monitor.ts  # helpers removed
+      grep -q "handlerStarted = false" add-observability/templates/ts-cloudflare-worker/cron-monitor.ts &&
+      grep -q "GUARDED Shape A" add-observability/templates/ts-cloudflare-worker/cron-monitor.ts &&
+      grep -q "fall back to unmonitored" add-observability/templates/ts-cloudflare-worker/cron-monitor.ts &&
+      ! grep -q "debugLog\\|isDebug" add-observability/templates/ts-cloudflare-worker/cron-monitor.ts
     </automated>
   </verify>
-  <done>
-    RED→GREEN pair. Worker cron-monitor.ts composes `Sentry.withMonitor`. Lines 137-148 preserved. Lines 148-181 replaced. Tests assert (slug, callback, monitorConfig) signature and no direct captureCheckIn calls from the wrapper.
-  </done>
+  <done>RED→GREEN pair with Guarded Shape A; 7 tests pass including pre-callback regression (F5.6) and post-callback propagation (F5.7); handlerStarted flag wires the fallback.</done>
   <acceptance_criteria>
-    - vitest reports all cron-monitor.test.ts + healthz-snippet.test.ts tests passing
-    - cron-monitor.ts contains the literal string `Sentry.withMonitor(monitorSlug`
-    - cron-monitor.ts contains the literal string `D-08 Shape A`
-    - cron-monitor.ts NO LONGER contains `debugLog` or `isDebug` (unless retained for other usage — document why if retained)
-    - Pre-existing `resolveSlug` and `buildMonitorConfig` functions byte-identical to HEAD (D6 + D12 preservation)
-    - The middleware.ts verification verdict (does outer catch SDK errors?) recorded in commit body
+    - vitest reports all cron-monitor.test.ts (7 F5 + preserved tests) + healthz-snippet.test.ts (5) passing
+    - cron-monitor.ts contains literal `handlerStarted = false`, `GUARDED Shape A`, `fall back to unmonitored`
+    - cron-monitor.ts NO LONGER contains `debugLog` or `isDebug`
+    - `resolveSlug` and `buildMonitorConfig` byte-identical to HEAD (D6 + D12 preservation)
+    - middleware.ts verification verdict (does outer catch POST-callback SDK errors?) recorded in commit body
     - gitnexus_impact run; risk level + downstream caller list recorded in commit body
+    - F5.6 (pre-callback regression) RED→GREEN transition explicit in commit log
+    - F5.7 (post-callback propagation) RED→GREEN transition explicit in commit log
   </acceptance_criteria>
 </task>
 
 <task type="auto" tdd="true">
-  <name>Task 2.2 (Wave 2, F5.pages): withCronMonitor Shape A — TS Cloudflare Pages (TDD)</name>
+  <name>Task 2.2 (Wave 2, F5.pages): withCronMonitor GUARDED Shape A — TS Cloudflare Pages (TDD) — R-rev-1</name>
   <files>add-observability/templates/ts-cloudflare-pages/cron-monitor.ts, add-observability/templates/ts-cloudflare-pages/cron-monitor.test.ts</files>
+  <depends_on>Task 0.2 (ADR-0029)</depends_on>
   <read_first>
     - add-observability/templates/ts-cloudflare-pages/cron-monitor.ts FULL FILE
     - add-observability/templates/ts-cloudflare-pages/cron-monitor.test.ts FULL FILE
     - add-observability/templates/ts-cloudflare-worker/cron-monitor.ts (just-edited GREEN reference)
-    - .planning/phases/23-observability-followups/CONTEXT.md D-08
+    - .planning/phases/23-observability-followups/CONTEXT.md §D-08 (Guarded canonical block)
+    - docs/decisions/0029-cron-monitor-sdk-composition.md
+    - .planning/phases/23-observability-followups/23-REVIEWS.md §Codex HIGH-1 (note: Pages has NO outer observability wrapper — pre-callback failure would go to external caller; Guarded mitigates this)
   </read_first>
   <behavior>
-    Identical F5.1-F5.5 test shape as Task 2.1 (worker), adapted to the pages-stack's wrapper signature if it diverges. If pages's cron-monitor.ts is byte-identical to worker's (apart from the file path), mirror exactly.
+    Identical F5.1-F5.7 test shape as Task 2.1 (worker), adapted to pages-stack signature. Note: codex HIGH-1 highlighted that Pages has NO outer observability wrapper — so the pre-callback regression test F5.6 is ESPECIALLY critical for Pages (without Guarded, the cron skip would propagate directly to the external caller).
   </behavior>
   <action>
     [BLOCKING] gitnexus_impact on pages `withCronMonitor` symbol.
 
-    Mirror Task 2.1 for the pages stack. Same Shape A substitution: preserve "lines 137-148 equivalent" (the fail-safe + slug + monitorConfig build), replace "lines 148-181 equivalent" (the lifecycle) with the same `Sentry.withMonitor(monitorSlug, () => handler(controller, env, ctx), monitorConfig)` call + same JSDoc updates + same helper removal.
+    Mirror Task 2.1. Same Guarded Shape A substitution: preserve outer body + slug + monitorConfig build; replace lifecycle with Guarded block (handlerStarted flag + pre-callback fallback). Same JSDoc updates + same helper removal.
 
-    Same RED + GREEN commit shape; commits use `pages` in the scope label.
+    Add to commit body: "Pages has NO outer observability wrapper (codex HIGH-1) — the Guarded fallback is especially critical here; without it, pre-callback Sentry failures would skip the cron AND propagate to the external caller."
+
+    Same RED + GREEN commit shape; commits use `pages` in scope label.
   </action>
   <verify>
     <automated>
       cd add-observability/templates/ts-cloudflare-pages && npx vitest run cron-monitor.test.ts &&
-      grep -q "Sentry.withMonitor(monitorSlug" add-observability/templates/ts-cloudflare-pages/cron-monitor.ts &&
-      grep -q "D-08 Shape A" add-observability/templates/ts-cloudflare-pages/cron-monitor.ts
+      grep -q "handlerStarted = false" add-observability/templates/ts-cloudflare-pages/cron-monitor.ts &&
+      grep -q "GUARDED Shape A" add-observability/templates/ts-cloudflare-pages/cron-monitor.ts &&
+      grep -q "fall back to unmonitored" add-observability/templates/ts-cloudflare-pages/cron-monitor.ts
     </automated>
   </verify>
-  <done>RED→GREEN pair for pages stack; Shape A composition matches worker.</done>
+  <done>RED→GREEN pair for pages stack; Guarded Shape A matches worker.</done>
   <acceptance_criteria>
-    - All cron-monitor.test.ts tests pass
-    - Same literal-string criteria as Task 2.1 hold
+    - All cron-monitor.test.ts tests (7 F5 + preserved) pass
+    - Same literal-string criteria as Task 2.1 hold for pages file
+    - Commit body documents the Pages-specific severity (no outer wrapper) of the Guarded mitigation
     - gitnexus_impact recorded
   </acceptance_criteria>
 </task>
 
 <task type="auto" tdd="true">
-  <name>Task 2.3 (Wave 2, F5.supabase): withCronMonitor Shape A — TS Supabase Edge (TDD)</name>
+  <name>Task 2.3 (Wave 2 CLOSER, F5.supabase): withCronMonitor GUARDED Shape A — TS Supabase Edge (TDD) — R-rev-1 + R-rev-6 (Deno seam) + R-rev-8 (gitnexus_detect_changes)</name>
   <files>add-observability/templates/ts-supabase-edge/cron-monitor.ts, add-observability/templates/ts-supabase-edge/cron-monitor.test.ts</files>
+  <depends_on>Task 0.2 (ADR-0029)</depends_on>
   <read_first>
-    - add-observability/templates/ts-supabase-edge/cron-monitor.ts FULL FILE
-    - add-observability/templates/ts-supabase-edge/cron-monitor.test.ts FULL FILE
-    - add-observability/templates/ts-cloudflare-worker/cron-monitor.ts (reference)
-    - .planning/phases/23-observability-followups/CONTEXT.md D-08
+    - add-observability/templates/ts-supabase-edge/cron-monitor.ts FULL FILE (line 166 is the outer wrapper)
+    - add-observability/templates/ts-supabase-edge/cron-monitor.test.ts:17 (existing Deno-friendly test seam — must not break per codex MEDIUM-4)
+    - add-observability/templates/run-template-tests.sh:499 (pins @sentry/* to ^8.0.0 — verify version compat for Guarded shape)
+    - add-observability/templates/ts-cloudflare-worker/cron-monitor.ts (worker GREEN reference)
+    - **.planning/phases/23-observability-followups/CONTEXT.md §D-08 (Guarded canonical block)**
+    - docs/decisions/0029-cron-monitor-sdk-composition.md
+    - .planning/phases/23-observability-followups/23-REVIEWS.md §Codex MEDIUM-4 (Deno seam blocker — must verify @sentry/deno exports withMonitor BEFORE editing impl)
   </read_first>
   <behavior>
-    Identical F5.1-F5.5 test shape as Tasks 2.1/2.2, adapted to supabase-edge's wrapper signature. If supabase-edge imports from `@sentry/deno` instead of `@sentry/cloudflare`, adapt the mock import path accordingly; the `Sentry.withMonitor` SDK surface is identical (re-exported from @sentry/core in all three SDKs per the Context7 lookup).
+    **Per codex MEDIUM-4: TWO PRECONDITIONS before any implementation edit:**
+
+    **Precondition 1: Verify `@sentry/deno` exports `withMonitor`.** Run a module-shape check:
+    ```bash
+    # Use the pinned @sentry/deno major from run-template-tests.sh:499
+    cd add-observability/templates/ts-supabase-edge && \
+      deno eval --no-prompt 'import("@sentry/deno").then(m => console.log("withMonitor type:", typeof m.withMonitor))'
+    ```
+    Expected: `withMonitor type: function`. If NOT function: **STOP. Escalate as CHECKPOINT.** Do NOT silently shim with a re-implementation from `@sentry/core`.
+
+    **Precondition 2: Introduce `_setWithMonitorForTest` Deno-friendly seam BEFORE Guarded Shape A substitution.** The existing Supabase test suite (`cron-monitor.test.ts:17`) deliberately avoids module-boundary mocking under `deno test`. Adding a test-only export that the test file uses to inject a fake `withMonitor` keeps the seam pattern intact.
+
+    Test cases (identical F5.1-F5.7 from Task 2.1, adapted for Deno seam):
+    - Tests use `_setWithMonitorForTest(fakeWithMonitor)` in beforeEach; restore in afterEach.
+    - F5.6 (pre-callback regression) and F5.7 (post-callback propagation) MUST pass via the seam.
   </behavior>
   <action>
-    [BLOCKING] gitnexus_impact on supabase-edge `withCronMonitor` symbol.
+    [BLOCKING] gitnexus_impact on supabase-edge `withCronMonitor`.
 
-    Mirror Task 2.1. Same Shape A line-range substitution. If `@sentry/deno` is the import source, verify it exports `withMonitor` (Context7-confirmed equivalent in @sentry/javascript core; Deno SDK re-exports from same core). If absent, fail loudly and surface as a CHECKPOINT for orchestrator escalation.
+    **Step 0 (PRECONDITION — execute before any other step):**
+    1. Verify `@sentry/deno` exports `withMonitor` via the deno eval command above. Document the verdict in commit body.
+    2. If absent: STOP, escalate as CHECKPOINT to orchestrator with the verdict. Do NOT proceed.
+
+    **Step 1 (PRECONDITION — introduce Deno-friendly seam BEFORE Shape A substitution):**
+    Add to `cron-monitor.ts` BEFORE the Guarded block edit:
+    ```typescript
+    // Deno-friendly test seam (codex MEDIUM-4): the existing Supabase suite avoids
+    // module-boundary mocking under `deno test`. This seam lets tests inject a fake
+    // withMonitor without breaking that pattern. Production code uses Sentry.withMonitor
+    // directly via the default reference below.
+    let _withMonitorImpl: typeof Sentry.withMonitor = Sentry.withMonitor;
+    export function _setWithMonitorForTest(impl: typeof Sentry.withMonitor) {
+      _withMonitorImpl = impl;
+    }
+    ```
+    Commit this scaffolding as `feat(23): F5 supabase-edge — _setWithMonitorForTest seam (precondition for Guarded Shape A per codex MEDIUM-4)`. (Standalone commit so the seam can be verified before the Shape A substitution lands.)
+
+    **RED commit** (`test(23): F5 supabase-edge GUARDED Shape A behavioural-parity + pre-callback regression — RED`):
+    1. Update cron-monitor.test.ts to use the seam:
+       ```typescript
+       import { _setWithMonitorForTest, withCronMonitor } from "./cron-monitor";
+
+       const withMonitorMock = (vi || /* deno mock */ ...).fn();
+       beforeEach(() => _setWithMonitorForTest(withMonitorMock));
+       afterEach(() => _setWithMonitorForTest(Sentry.withMonitor));
+       ```
+       Implement F5.1-F5.7 per behaviour block. F5.6 + F5.7 use mock overrides per Task 2.1.
+    2. Run the existing test command (vitest or deno test per existing seam).
+    3. Assert F5.1, F5.2, F5.3, F5.6, F5.7 FAIL.
+    4. Commit test file ONLY.
+
+    **GREEN commit** (`feat(23): F5 supabase-edge GUARDED Shape A via _setWithMonitorForTest seam (R-rev-1 + R-rev-6) — GREEN`):
+    1. Modify cron-monitor.ts:
+       a. Replace the lifecycle block with the Guarded Shape A canonical block, BUT call `_withMonitorImpl` (the seamed reference) instead of `Sentry.withMonitor` directly:
+          ```typescript
+          let handlerStarted = false;
+          try {
+            await _withMonitorImpl(
+              monitorSlug,
+              () => {
+                handlerStarted = true;
+                return handler(controller, env, ctx);
+              },
+              monitorConfig,
+            );
+          } catch (err) {
+            if (!handlerStarted) {
+              await handler(controller, env, ctx);
+              return;
+            }
+            throw err;
+          }
+          ```
+       b. Same comment block as Task 2.1 (GUARDED Shape A, narrowed regression, isolation-scope honest note).
+    2. Run tests via the existing seam. Assert F5.1-F5.7 pass.
+    3. Commit.
+
+    **WAVE 2 CLOSER (R-rev-8): Run `gitnexus_detect_changes()` after the GREEN commit.** Verify only Wave 2 expected symbols. If unexpected: STOP, surface as CHECKPOINT.
   </action>
   <verify>
     <automated>
-      cd add-observability/templates/ts-supabase-edge && npx vitest run cron-monitor.test.ts &&
-      grep -q "Sentry.withMonitor(monitorSlug" add-observability/templates/ts-supabase-edge/cron-monitor.ts
+      cd add-observability/templates/ts-supabase-edge && (npx vitest run cron-monitor.test.ts 2>/dev/null || deno test cron-monitor.test.ts) &&
+      grep -q "handlerStarted = false" add-observability/templates/ts-supabase-edge/cron-monitor.ts &&
+      grep -q "_setWithMonitorForTest" add-observability/templates/ts-supabase-edge/cron-monitor.ts &&
+      grep -q "GUARDED Shape A" add-observability/templates/ts-supabase-edge/cron-monitor.ts &&
+      grep -q "Deno-friendly test seam" add-observability/templates/ts-supabase-edge/cron-monitor.ts
     </automated>
   </verify>
-  <done>RED→GREEN pair for supabase-edge stack.</done>
+  <done>RED→GREEN pair for supabase-edge with Deno-friendly seam preserved; Guarded Shape A via _setWithMonitorForTest; pre-callback regression test passes. Wave 2 gitnexus_detect_changes run.</done>
   <acceptance_criteria>
-    - All cron-monitor.test.ts tests pass
-    - Literal-string criteria from Task 2.1 hold for supabase-edge file
-    - If `@sentry/deno` doesn't export `withMonitor`, executor escalates instead of silently shimming
+    - `@sentry/deno` `withMonitor` export verified in commit body (precondition 1)
+    - `_setWithMonitorForTest` seam present and used by tests (precondition 2)
+    - All F5.1-F5.7 tests pass
+    - Literal-string criteria from Task 2.1 hold (handlerStarted, GUARDED Shape A, fall back to unmonitored)
+    - If `@sentry/deno` export absent: executor escalated as CHECKPOINT (did NOT silently shim from @sentry/core)
+    - **WAVE 2 CLOSER (R-rev-8): `gitnexus_detect_changes()` run; output verified; no unexpected symbols**
     - gitnexus_impact recorded
   </acceptance_criteria>
 </task>
 
+
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- WAVE 3 — F3 SIGTERM trap (sequential — trap insertion in engine + harness changes) -->
+<!-- WAVE 3 — F3 SIGTERM split-trap design (codex HIGH-2)                   -->
+<!-- depends_on: Task 0.1 (dispatcher extension precondition)                -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 
 <task type="auto" tdd="true">
-  <name>Task 3.1 (Wave 3, F3): SIGTERM trap + --pause-between-passes flag + test (TDD)</name>
-  <files>migrations/run-tests.sh, templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh (no top-level migrations/apply.sh exists — see behaviour block)</files>
+  <name>Task 3.1 (Wave 3 CLOSER, F3): SIGTERM SPLIT trap (EXIT silent / INT exit 130 / TERM exit 143) + path-validated --pause-between-passes flag + test — R-rev-2 + R-rev-8</name>
+  <files>migrations/run-tests.sh, templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh</files>
+  <depends_on>Task 0.1 (dispatcher extension — without this, the new test name is a no-op)</depends_on>
   <read_first>
-    - migrations/run-tests.sh FULL FILE (existing run_all + test registration pattern)
-    - migrations/0019-sentry-crons-and-healthz.md (canonical 2-pass migration shape; the test exercises this engine)
-    - templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh (the actual 2-pass implementation — the trap lands here AND/OR in a wrapper apply.sh)
-    - .planning/phases/23-observability-followups/CONTEXT.md D-05 (--pause-between-passes <signal-file> test-only flag spec)
-    - .planning/phases/22-sentry-crons-healthz/SECURITY.md §S6 (the original SIGTERM finding)
-    - Threat-model T-23-05 (cleanup must not leak secrets) and T-23-07 (--pause-between-passes path validation)
+    - migrations/run-tests.sh FULL FILE
+    - migrations/0019-sentry-crons-and-healthz.md (canonical 2-pass migration shape)
+    - templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh (the actual 2-pass implementation)
+    - .planning/phases/23-observability-followups/CONTEXT.md D-05
+    - .planning/phases/22-sentry-crons-healthz/SECURITY.md §S6
+    - .planning/phases/23-observability-followups/23-REVIEWS.md §Codex HIGH-2 (split trap design + path validation fix)
+    - Threat-model T-23-05 (cleanup must not leak secrets, silent-on-success) and T-23-07 (path validation REWORKED — `${TMPDIR:-/tmp}` + explicit allow-list prefix)
   </read_first>
   <behavior>
-    The phase scope says "migrations/apply.sh" but the repo currently has no top-level apply.sh — the actual apply work is inside `templates/.claude/scripts/migrate-NNNN-*.sh` engines. The trap MUST land where it actually matters:
-    1. The trap goes into the migration-0019 engine (and 0017 for parity, since 0017 follows the same shape — see CONTEXT D-07 audit clause)
-    2. The `--pause-between-passes <signal-file>` flag is ADDED to the migration-0019 engine (test-only, but lives in the engine itself per D-05)
-    3. The test fixture in `migrations/run-tests.sh` orchestrates: spawn the engine in background → wait until signal-file is created by the engine before pass 2 → SIGTERM the engine → verify trap fired + no half-written canonical file + re-run succeeds
+    **Per codex HIGH-2: split trap design with three SEPARATE handlers (NOT a single `trap 'cleanup' INT TERM EXIT`).**
 
-    Test cases (single new test, named `test-sigterm-mid-apply-preserves-state`):
-    1. RED: create temp project fixture (mirror 0019 fixture 01-fresh-apply); run `migrate-0019-…sh --pause-between-passes /tmp/sigterm-test-XXXX &` in background; assert the signal file is created; SIGTERM the engine; assert (a) trap fires (engine exit code is 143 — SIGTERM — OR engine prints "trapped TERM, running cleanup"), (b) no `cron-monitor.ts` exists in any wrapper root (state preserved — pass 2 never wrote), (c) re-running the engine without --pause flag succeeds and produces the canonical post-state.
-    2. T-23-05: cleanup output captured to file; assert `! grep -qE "(SENTRY_DSN|API_KEY|TOKEN)=" /tmp/cleanup-output.txt`.
-    3. T-23-07: `migrate-0019-…sh --pause-between-passes /etc/passwd` exits 2 with "test-only flag with non-fixture path"; `migrate-0019-…sh --pause-between-passes "$TMPDIR/sig"` proceeds normally.
+    - **`trap on_exit EXIT`**: runs silently on every exit (success OR signal). Idempotent. **NO warning output. NO signal re-raise.** Just cleans up state (e.g., removes pause signal file if it exists).
+    - **`trap on_int INT`**: runs cleanup THEN `exit 130` (signal-compatible exit code: 128 + 2 = SIGINT).
+    - **`trap on_term TERM`**: runs cleanup THEN `exit 143` (signal-compatible exit code: 128 + 15 = SIGTERM).
+
+    **Path validation rework (T-23-07):**
+    - Use `${TMPDIR:-/tmp}` (handle unset TMPDIR — previous `"$TMPDIR"/*` was bypassable when TMPDIR empty).
+    - Explicit allow-list prefix patterns:
+      - `${TMPDIR:-/tmp}/sigterm-test-*` — for fixture-driven tests
+      - `migrations/test-fixtures/0019/*/sigterm-*` — for fixture-prefix fallback
+    - Reject ANY path that doesn't match either pattern.
+
+    Test cases (single new test, name: `test-sigterm-mid-apply-preserves-state`):
+
+    1. **Signal-driven cleanup output check (positive)**: spawn engine with `--pause-between-passes "${TMPDIR:-/tmp}/sigterm-test-XXXX"` in background; wait for signal file; SIGTERM; assert engine exit code is **143** (not 0 or 1); assert NO `cron-monitor.ts` exists in any wrapper root; assert re-run produces canonical post-state with exit 0.
+    2. **Silent-on-success (negative — codex HIGH-2 KEY ASSERTION)**: run the engine to NORMAL successful completion (no signal). Capture stderr. Assert `grep -q "cleanup" /tmp/normal-stderr.txt` returns NON-zero (cleanup output ABSENT for successful exits — EXIT trap must be silent).
+    3. **T-23-05 (no secret leak)**: SIGTERM-driven cleanup output captured; assert `! grep -qE "(SENTRY_DSN|API_KEY|TOKEN)=" /tmp/cleanup-output.txt`
+    4. **T-23-07 (path validation REWORKED)**:
+       - `migrate-0019-…sh --pause-between-passes /etc/passwd` exits 2 with "test-only flag with non-allow-listed path" (rejected)
+       - `migrate-0019-…sh --pause-between-passes "${TMPDIR:-/tmp}/sigterm-test-abc"` proceeds (allow-listed prefix)
+       - `migrate-0019-…sh --pause-between-passes "migrations/test-fixtures/0019/06-test/sigterm-foo"` proceeds (allow-listed fixture prefix)
+       - With `unset TMPDIR`: `migrate-0019-…sh --pause-between-passes /etc/passwd` STILL exits 2 (the `${TMPDIR:-/tmp}` default makes the validation robust)
   </behavior>
   <action>
-    [BLOCKING] Run `gitnexus_impact({target: "emit_refuse_artifacts", direction: "upstream"})` on the 0019 engine (the function nearest the trap insertion); record risk. Also gitnexus_impact on `run_all` in run-tests.sh.
+    [BLOCKING] Run `gitnexus_impact({target: "emit_refuse_artifacts", direction: "upstream"})` AND `gitnexus_impact` on `run_all` in run-tests.sh; record risks.
 
-    **RED commit** (`test(23): F3 SIGTERM mid-apply preserves state — RED`):
-    1. Add test function `test_sigterm_mid_apply_preserves_state` to `migrations/run-tests.sh`, registered after the test from Task 1.3:
-       - Set up a fixture project from `migrations/test-fixtures/0019/01-fresh-apply/setup.sh` (or equivalent) in a tmpdir.
-       - Create a signal-file path: `SIG="$tmpdir/sigterm-test.signal"`
-       - Launch engine: `bash templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh --templates-dir "$TEMPLATES" --project-dir "$tmpdir" --pause-between-passes "$SIG" 2>"$tmpdir/cleanup-output.txt" &`
-       - Capture engine PID: `ENGINE_PID=$!`
-       - Poll for signal-file creation up to 10s: `for i in {1..50}; do [ -f "$SIG" ] && break; sleep 0.2; done; [ -f "$SIG" ] || { echo "engine never reached pause"; kill -9 $ENGINE_PID; exit 1; }`
-       - Send SIGTERM: `kill -TERM $ENGINE_PID`
-       - Wait for engine to exit (with 5s timeout): `wait $ENGINE_PID; engine_exit=$?`
-       - Assert: no `cron-monitor.ts` exists in any wrapper root in $tmpdir
-       - Assert: cleanup-output.txt does NOT contain `SENTRY_DSN=` or `API_KEY=` or `TOKEN=` (T-23-05)
-       - Re-run without --pause: `bash templates/.claude/scripts/migrate-0019-…sh --templates-dir "$TEMPLATES" --project-dir "$tmpdir"` ; assert exit 0; assert cron-monitor.ts NOW exists in all clean wrapper roots
-       - T-23-07 sub-tests:
-         - Verify `bash …sh --pause-between-passes /etc/passwd` exits 2 + stderr contains "test-only flag with non-fixture path"
-         - Verify `bash …sh --pause-between-passes "$TMPDIR/somefile"` is accepted (doesn't error on the flag parsing)
+    **RED commit** (`test(23): F3 SIGTERM split trap + path validation rework — RED`):
+    1. Add test function `test_sigterm_mid_apply_preserves_state` to `migrations/run-tests.sh` (dispatcher entry exists from Task 0.1):
+       ```bash
+       test_sigterm_mid_apply_preserves_state() {
+         local tmpdir; tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/sigterm-test-XXXX")
+         local SIG="$tmpdir/sigterm-test-signal"
+         # ... fixture setup mirroring 0019/01-fresh-apply ...
+
+         # Case 1: signal-driven cleanup
+         bash templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh \
+           --templates-dir "$TEMPLATES" --project-dir "$tmpdir" \
+           --pause-between-passes "$SIG" 2>"$tmpdir/sigterm-stderr.txt" &
+         ENGINE_PID=$!
+         for i in $(seq 1 50); do [ -f "$SIG" ] && break; sleep 0.2; done
+         [ -f "$SIG" ] || { echo "engine never reached pause"; kill -9 $ENGINE_PID; FAIL=$((FAIL+1)); return; }
+         kill -TERM $ENGINE_PID
+         wait $ENGINE_PID; engine_exit=$?
+         # ASSERT: exit code 143 (codex HIGH-2)
+         [ "$engine_exit" -eq 143 ] || { echo "expected exit 143, got $engine_exit"; FAIL=$((FAIL+1)); return; }
+         # ASSERT: no half-written canonical files
+         find "$tmpdir" -name "cron-monitor.ts" -type f | grep -q . && { echo "half-written cron-monitor.ts"; FAIL=$((FAIL+1)); return; }
+         # T-23-05: no secrets in cleanup
+         grep -qE "(SENTRY_DSN|API_KEY|TOKEN)=" "$tmpdir/sigterm-stderr.txt" && { echo "secrets leaked"; FAIL=$((FAIL+1)); return; }
+
+         # Case 2: silent-on-success (codex HIGH-2 KEY)
+         local clean_tmpdir; clean_tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/sigterm-test-clean-XXXX")
+         # ... fixture setup (clean roots only — engine will exit 0) ...
+         bash templates/.claude/scripts/migrate-0019-…sh --templates-dir "$TEMPLATES" --project-dir "$clean_tmpdir" \
+           2>"$clean_tmpdir/normal-stderr.txt"
+         normal_exit=$?
+         [ "$normal_exit" -eq 0 ] || { echo "normal run expected exit 0, got $normal_exit"; FAIL=$((FAIL+1)); return; }
+         # ASSERT: cleanup output ABSENT for successful exit (EXIT trap is silent)
+         grep -q "cleanup" "$clean_tmpdir/normal-stderr.txt" && { echo "EXIT trap leaked cleanup output on success"; FAIL=$((FAIL+1)); return; }
+
+         # Case 3: re-run succeeds
+         bash templates/.claude/scripts/migrate-0019-…sh --templates-dir "$TEMPLATES" --project-dir "$tmpdir"
+         [ $? -eq 0 ] || { echo "re-run failed"; FAIL=$((FAIL+1)); return; }
+
+         # Case 4 (T-23-07 path validation):
+         bash templates/.claude/scripts/migrate-0019-…sh --pause-between-passes /etc/passwd 2>"$tmpdir/badpath-stderr.txt"
+         [ $? -eq 2 ] && grep -q "test-only flag with non-allow-listed path" "$tmpdir/badpath-stderr.txt" || { echo "bad-path rejection failed"; FAIL=$((FAIL+1)); return; }
+         # Case 4b: with TMPDIR unset
+         ( unset TMPDIR; bash templates/.claude/scripts/migrate-0019-…sh --pause-between-passes /etc/passwd 2>/dev/null )
+         [ $? -eq 2 ] || { echo "bad-path rejection failed with TMPDIR unset"; FAIL=$((FAIL+1)); return; }
+         # Case 4c: good fixture path
+         bash templates/.claude/scripts/migrate-0019-…sh --pause-between-passes "migrations/test-fixtures/0019/06-multi-root-mixed-clean-dirty-refuses-all/sigterm-foo" 2>/dev/null || true
+         # (exits non-2 on the rest of arg parsing; just verify flag accepted)
+
+         PASS=$((PASS+1))
+         echo "${GREEN}PASS${RESET}: test-sigterm-mid-apply-preserves-state"
+       }
+       ```
     2. Run `bash migrations/run-tests.sh test-sigterm-mid-apply-preserves-state 2>&1 | tee /tmp/red-f3.txt`
-    3. Assert: test fails because the engine has neither the trap nor the --pause flag yet.
+    3. Assert test fails (engine has no split trap or path-validated flag yet).
     4. Commit test ONLY.
 
-    **GREEN commit** (`feat(23): F3 SIGTERM trap + --pause-between-passes (test-only) in 0019 engine — GREEN`):
+    **GREEN commit** (`feat(23): F3 split trap + path-validated --pause-between-passes (R-rev-2) — GREEN`):
     1. Modify `templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh`:
-       a. Add flag parsing for `--pause-between-passes <file>`:
+       a. Add flag parsing with REWORKED path validation:
           ```bash
           PAUSE_SIGFILE=""
-          # in the while-getopts loop, add:
+          # in the while loop:
           --pause-between-passes)
             PAUSE_SIGFILE="$2"
-            # T-23-07 path validation: signal file MUST live under $TMPDIR or migrations/test-fixtures/
+            # T-23-07 REWORKED (codex HIGH-2): ${TMPDIR:-/tmp} default + explicit allow-list prefix.
+            _tmp="${TMPDIR:-/tmp}"
             case "$PAUSE_SIGFILE" in
-              "$TMPDIR"/*|/tmp/*|*/migrations/test-fixtures/*) : ;;
-              *) echo "migrate-0019: --pause-between-passes is a test-only flag; signal-file path must be under \$TMPDIR or migrations/test-fixtures/ (got: $PAUSE_SIGFILE)" >&2; exit 2 ;;
+              "$_tmp"/sigterm-test-*) : ;;
+              */migrations/test-fixtures/0019/*/sigterm-*) : ;;
+              *)
+                echo "migrate-0019: --pause-between-passes is a test-only flag with non-allow-listed path: $PAUSE_SIGFILE" >&2
+                echo "migrate-0019: allowed prefixes are \${TMPDIR:-/tmp}/sigterm-test-* or migrations/test-fixtures/0019/*/sigterm-*" >&2
+                exit 2
+                ;;
             esac
             echo "migrate-0019: WARNING — --pause-between-passes is a test-only flag; do not use in production" >&2
             shift 2
             ;;
           ```
-       b. Add an idempotent `cleanup` function near the top of the script (after logging helpers):
+       b. **SPLIT TRAP DESIGN** (replace any prior `trap 'cleanup' INT TERM EXIT` formulation):
           ```bash
-          cleanup_fired=0
-          cleanup() {
-            [ "$cleanup_fired" -eq 1 ] && return 0
-            cleanup_fired=1
-            # T-23-05: do NOT print env vars or partial canonical contents.
-            warn "trapped signal — cleanup running (no partial state written; re-run engine without --pause to complete)."
-            # Remove the pause signal file if we created one.
-            [ -n "$PAUSE_SIGFILE" ] && [ -f "$PAUSE_SIGFILE" ] && rm -f "$PAUSE_SIGFILE"
+          # T-23-05 + codex HIGH-2: SPLIT trap.
+          # EXIT runs silently on EVERY exit (success + signal). Idempotent. NO warning.
+          # INT runs cleanup THEN exit 130 (signal-compatible).
+          # TERM runs cleanup THEN exit 143 (signal-compatible).
+          _cleanup_fired=0
+          _do_cleanup() {
+            [ "$_cleanup_fired" -eq 1 ] && return 0
+            _cleanup_fired=1
+            # Idempotent state teardown. NO env-var echo, NO partial-file dump (T-23-05).
+            [ -n "$PAUSE_SIGFILE" ] && [ -f "$PAUSE_SIGFILE" ] && rm -f "$PAUSE_SIGFILE" 2>/dev/null
           }
-          trap 'cleanup' INT TERM EXIT
+          on_exit() { _do_cleanup; }  # silent
+          on_int() { _do_cleanup; exit 130; }
+          on_term() { _do_cleanup; exit 143; }
+          trap on_exit EXIT
+          trap on_int INT
+          trap on_term TERM
           ```
-       c. At the boundary between pass 1 (classification / dirty detection) and pass 2 (apply_root loop — line ~592 in the existing file), insert:
+       c. At the boundary between pass 1 and pass 2, insert the signal-file rendezvous:
           ```bash
           if [ -n "$PAUSE_SIGFILE" ]; then
-            : > "$PAUSE_SIGFILE"  # create the signal file
-            # Wait up to 30s for the file to be deleted by the test, OR for a signal to interrupt us.
+            : > "$PAUSE_SIGFILE"
             for i in $(seq 1 300); do
               [ ! -f "$PAUSE_SIGFILE" ] && break
               sleep 0.1
             done
           fi
           ```
-    2. ALSO add the same trap to `migrations/run-tests.sh` (the test harness itself — T-23-05 / SECURITY.md S6). Insert near the top after the color-setup block:
+    2. ALSO add a SPLIT trap to `migrations/run-tests.sh` (harness-level — same shape, simpler cleanup body):
        ```bash
-       runtests_cleanup() {
-         # idempotent harness-level cleanup
+       _runtests_cleanup_fired=0
+       _runtests_do_cleanup() {
+         [ "$_runtests_cleanup_fired" -eq 1 ] && return 0
+         _runtests_cleanup_fired=1
+         # harness-level cleanup (intentionally empty — no shared state to tear down)
          :
        }
-       trap 'runtests_cleanup' INT TERM EXIT
+       trap '_runtests_do_cleanup' EXIT
+       trap '_runtests_do_cleanup; exit 130' INT
+       trap '_runtests_do_cleanup; exit 143' TERM
        ```
-    3. Run the test: `bash migrations/run-tests.sh test-sigterm-mid-apply-preserves-state`. Assert pass.
-    4. Run the full harness: `bash migrations/run-tests.sh`. Assert: no regressions in other tests (the trap is harmless on normal exit).
-    5. Commit production files (migrate-0019 script + run-tests.sh).
+    3. Run `bash migrations/run-tests.sh test-sigterm-mid-apply-preserves-state`. Assert pass (all 4+ test cases).
+    4. Run full harness `bash migrations/run-tests.sh`. Assert no regressions.
+    5. Commit.
+
+    **WAVE 3 CLOSER (R-rev-8): Run `gitnexus_detect_changes()`.** Verify Wave 3 expected symbols only.
   </action>
   <verify>
     <automated>
       bash migrations/run-tests.sh test-sigterm-mid-apply-preserves-state &&
-      grep -q "trap 'cleanup' INT TERM EXIT" templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh &&
-      grep -q "trap 'runtests_cleanup' INT TERM EXIT" migrations/run-tests.sh &&
-      grep -q "PAUSE_SIGFILE" templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh &&
-      grep -q "test-only flag" templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh
+      grep -q "trap on_exit EXIT" templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh &&
+      grep -q "trap on_int INT" templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh &&
+      grep -q "trap on_term TERM" templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh &&
+      grep -q "exit 130" templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh &&
+      grep -q "exit 143" templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh &&
+      grep -q "non-allow-listed path" templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh &&
+      grep -q '\${TMPDIR:-/tmp}/sigterm-test-' templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh &&
+      grep -q 'trap.*EXIT' migrations/run-tests.sh &&
+      grep -q 'exit 130' migrations/run-tests.sh &&
+      grep -q 'exit 143' migrations/run-tests.sh
     </automated>
   </verify>
-  <done>
-    RED→GREEN. 0019 engine has INT/TERM/EXIT trap + --pause-between-passes test-only flag with path validation. run-tests.sh has its own trap. Test passes deterministically (no sleeps in the assertion path — signal-file rendezvous).
-  </done>
+  <done>RED→GREEN. 0019 engine has SPLIT trap (EXIT silent / INT exit 130 / TERM exit 143) + path-validated --pause-between-passes flag with `${TMPDIR:-/tmp}` fallback and allow-list prefix matching. run-tests.sh has matching split trap. Test asserts: signal-driven exit 143; silent-on-success (cleanup output absent for exit-0 runs); no secret leak; path validation rejects /etc/passwd even with TMPDIR unset. Wave 3 gitnexus_detect_changes run.</done>
   <acceptance_criteria>
     - `bash migrations/run-tests.sh test-sigterm-mid-apply-preserves-state` exits 0
-    - `trap 'cleanup' INT TERM EXIT` present in migrate-0019 engine
-    - `trap 'runtests_cleanup' INT TERM EXIT` present in run-tests.sh
-    - --pause-between-passes flag rejects paths outside $TMPDIR / test-fixtures (T-23-07)
-    - cleanup stderr contains no `SENTRY_DSN=` / `API_KEY=` / `TOKEN=` echoes (T-23-05)
-    - Full harness `migrations/run-tests.sh` still passes (no regressions)
+    - **Split trap explicit**: `trap on_exit EXIT`, `trap on_int INT`, `trap on_term TERM` (NOT a single combined trap)
+    - **EXIT handler silent on success**: `grep -q "cleanup" <normal-exit-stderr>` returns non-zero (codex HIGH-2 key assertion)
+    - **Signal exit codes correct**: SIGTERM → exit 143; SIGINT → exit 130
+    - **Path validation REWORKED**: `${TMPDIR:-/tmp}` default + allow-list prefix; rejects `/etc/passwd` even with TMPDIR unset
+    - cleanup stderr contains no SENTRY_DSN/API_KEY/TOKEN echoes (T-23-05)
+    - Full `migrations/run-tests.sh` passes (no regressions)
+    - **WAVE 3 CLOSER (R-rev-8): `gitnexus_detect_changes()` run; verified against expected Wave 3 symbols**
     - gitnexus_impact recorded for affected symbols
     - RED commit + GREEN commit pair in history
   </acceptance_criteria>
 </task>
 
+
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- WAVE 4 — D-07 default-flip (depends on Task 3.1 because both edit the   -->
-<!-- 0019 engine; sequencing avoids merge conflicts in the same file)        -->
+<!-- WAVE 4 — D-07 default-flip with HONEST REFRAME (codex MEDIUM-6)         -->
+<!-- depends_on: Task 3.1 (both edit 0019 engine; sequencing avoids conflicts) -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 
 <task type="auto">
-  <name>Task 4.1 (Wave 4, D-07 audit): Migration 0017 atomic-refuse audit (read-only)</name>
+  <name>Task 4.1 (Wave 4, D-07 audit): Migration 0017 atomic-refuse audit (read-only) — R-rev-5 HONEST REFRAME</name>
   <files>(no files modified; produces an audit note in commit body)</files>
+  <depends_on>Task 3.1 (avoid file conflicts on 0019 engine)</depends_on>
   <read_first>
-    - templates/.claude/scripts/migrate-0017-axiom-destination.sh (lines 352-425 — the all-clean-gate + emit_refuse_artifacts function)
-    - .planning/phases/23-observability-followups/CONTEXT.md D-07 (Migration 0017 audit precedes the change to align both engines' refuse semantics)
+    - templates/.claude/scripts/migrate-0017-axiom-destination.sh (lines 352-425 — emit_refuse_artifacts function); **line 368 in particular** — codex MEDIUM-6 verified that 0017 ALREADY writes dirty-root patches on refuse, contradicting the original PLAN's "zero-side-effect refuse" framing
+    - .planning/phases/23-observability-followups/CONTEXT.md D-07
+    - .planning/phases/23-observability-followups/23-REVIEWS.md §Codex MEDIUM-6 (honest reframe required)
   </read_first>
   <action>
-    Per D-07's audit clause: verify that migration 0017's atomic-refuse semantics ALREADY default to zero-side-effect (no patches to clean roots on default refuse), with `--allow-partial` being the opt-in for emit-everywhere.
+    **REVISED audit posture per codex MEDIUM-6 (R-rev-5):** The original PLAN framed D-07 as "0019 will match 0017's zero-side-effect refuse". Codex MEDIUM-6 verified that 0017 ALREADY writes dirty-root patches on default refuse (at line 368). The accurate framing is:
+
+    **"Default refuse no longer writes to CLEAN roots; DIRTY roots still receive recovery artifacts (.observability-0019.patch + .gitignore entries) for splice recovery."**
+
+    Audit exit-condition: 0017 conforms to this HONEST-REFRAMED target (clean roots NOT patched; dirty roots ARE patched). The original audit would have falsely escalated when finding the dirty-root patches in 0017.
 
     Concretely:
     1. Read migrate-0017's `emit_refuse_artifacts` function and its caller in the all-clean-gate block.
-    2. Verify: on the default-refuse path (ALLOW_PARTIAL=0), patches are NOT emitted to CLEAN_DIRS — only to DIRTY_DIRS.
-    3. Verify: on the --allow-partial path (ALLOW_PARTIAL=1), patches are emitted to all roots OR clean roots are simply applied (mutually exclusive paths).
-    4. If verification PASSES (0017 already correct): record verdict in the commit body and proceed to Task 4.2 (the 0019 fix to align).
-    5. If verification FAILS (0017 also has the 0019 bug): expand Task 4.2 to also fix 0017 in the same shape, and add a fixture for 0017 to match.
+    2. Verify: on default refuse path (ALLOW_PARTIAL=0), patches are NOT emitted to CLEAN_DIRS — only to DIRTY_DIRS. **This is the audit pass criterion. Dirty-root patches are EXPECTED and acceptable.**
+    3. Verify: on --allow-partial path (ALLOW_PARTIAL=1), patches are emitted to all roots OR clean roots are simply applied.
+    4. If 0017 conforms to honest-reframed target: record verdict in commit body and proceed to Task 4.2 to bring 0019 into alignment.
+    5. If 0017 ALSO writes patches to CLEAN roots on default refuse (would be a 0017 bug): expand Task 4.2 to fix 0017 too, BUT this is unexpected — codex MEDIUM-6 already verified line 368 shows the honest-reframed behaviour.
 
-    Write the audit verdict as a commit:
-    `chore(23): D-07 audit — migration 0017 atomic-refuse semantics verified`
-    Commit body: documents the verdict + cites the line numbers in migrate-0017 that demonstrate it.
+    Commit: `chore(23): D-07 audit — migration 0017 atomic-refuse semantics honestly verified (R-rev-5)`.
+    Commit body: documents the verdict + cites line 368 + explicit acknowledgment that 0017 writes dirty-root patches (NOT "zero-side-effect" — operator-honest framing).
 
-    This task produces NO file changes if 0017 is already correct (empty commit with `--allow-empty` is acceptable).
+    NO file changes if 0017 conforms (empty commit with `--allow-empty` acceptable).
   </action>
   <verify>
     <automated>
-      grep -q "DEFAULT refuse path is atomic" templates/.claude/scripts/migrate-0017-axiom-destination.sh &&
-      # Verify migration 0017 does NOT emit patches to clean roots on default refuse (read its code path):
-      ! grep -A 5 "ALLOW_PARTIAL.*-eq 0" templates/.claude/scripts/migrate-0017-axiom-destination.sh | grep -q "emit_refuse_artifacts_for.*CLEAN"
+      # Verify 0017's existing behaviour matches the honest-reframed target:
+      # patches emitted to dirty roots (expected, not a bug), NOT to clean roots in default mode.
+      grep -q "emit_refuse_artifacts" templates/.claude/scripts/migrate-0017-axiom-destination.sh
     </automated>
   </verify>
-  <done>Audit verdict recorded in commit body. If 0017 already conforms (expected case), no production-file changes; commit is documentation-only.</done>
+  <done>Audit verdict recorded in commit body using honest framing. 0017 conforms (expected case per codex MEDIUM-6); no production-file changes.</done>
   <acceptance_criteria>
-    - Commit body contains "AUDIT VERDICT:" followed by either "0017 conforms" or "0017 needs same fix as 0019"
-    - If "0017 conforms": Task 4.2 proceeds as scoped
-    - If "0017 needs same fix": Task 4.2 scope expands to include 0017 (executor escalates to orchestrator before proceeding)
+    - Commit body contains "AUDIT VERDICT:" followed by honest-framed assessment
+    - Commit body explicitly acknowledges 0017 writes dirty-root patches on refuse (NOT "zero-side-effect")
+    - Commit body cites codex MEDIUM-6 + line 368 as evidence
+    - If 0017 conforms (expected): Task 4.2 proceeds as scoped
+    - If 0017 needs fix (unexpected — would contradict codex's read): escalate to orchestrator before proceeding
   </acceptance_criteria>
 </task>
 
 <task type="auto">
-  <name>Task 4.2 (Wave 4, D-07): Migration 0019 atomic-refuse default-flip + fixture 06 + fixture 07</name>
+  <name>Task 4.2 (Wave 4 CLOSER, D-07): Migration 0019 atomic-refuse default-flip + fixture 06 + fixture 07 — R-rev-5 HONEST REFRAME + R-rev-8</name>
   <files>
     templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh,
     migrations/test-fixtures/0019/06-multi-root-mixed-clean-dirty-refuses-all/verify.sh,
@@ -1072,41 +1592,41 @@ Severity gating: T-23-02 (D), T-23-04 (D), T-23-05 (T), T-23-07 (S) are MEDIUM. 
     migrations/test-fixtures/0019/07-allow-partial-emits-patches/verify.sh,
     migrations/test-fixtures/0019/07-allow-partial-emits-patches/expected-exit
   </files>
+  <depends_on>Task 4.1 (audit must pass first); Task 3.1 (avoid 0019 engine conflicts)</depends_on>
   <read_first>
-    - templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh lines 540-590 (the function being modified; including the all-clean gate at 577-590)
-    - migrations/test-fixtures/0019/06-multi-root-mixed-clean-dirty-refuses-all/verify.sh (existing fixture — its assertion shape flips per D-07)
-    - migrations/test-fixtures/0019/06-multi-root-mixed-clean-dirty-refuses-all/setup.sh (used by fixture 07 as its starting state)
-    - migrations/test-fixtures/0019/06-multi-root-mixed-clean-dirty-refuses-all/expected-exit (current expected exit code)
-    - templates/.claude/scripts/migrate-0017-axiom-destination.sh §all-clean-gate (reference shape — 0019 aligns to match)
-    - .planning/phases/23-observability-followups/CONTEXT.md D-07 (default flips to zero-side-effect; --allow-partial opt-in; precedence: flag > env, both must explicitly opt in)
-    - Task 4.1's audit verdict (commit body)
+    - templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh lines 540-590 (emit_refuse_artifacts + all-clean gate)
+    - migrations/test-fixtures/0019/06-multi-root-mixed-clean-dirty-refuses-all/verify.sh
+    - migrations/test-fixtures/0019/06-multi-root-mixed-clean-dirty-refuses-all/setup.sh
+    - templates/.claude/scripts/migrate-0017-axiom-destination.sh §all-clean-gate (reference shape — 0019 aligns)
+    - .planning/phases/23-observability-followups/CONTEXT.md D-07
+    - .planning/phases/23-observability-followups/23-REVIEWS.md §Codex MEDIUM-6 (honest reframe — DO NOT use "zero-side-effect" or "truly atomic refusal" language)
+    - Task 4.1's audit verdict
   </read_first>
   <action>
-    [BLOCKING] Run `gitnexus_impact({target: "emit_refuse_artifacts", direction: "upstream"})` on the 0019 engine; record risk.
+    [BLOCKING] Run `gitnexus_impact({target: "emit_refuse_artifacts", direction: "upstream"})`; record risk.
 
-    Per D-07: change the migrate-0019 engine's default refuse behaviour from "patches everywhere" to "patches only on the dirty root(s)". The --allow-partial flag (existing) AND a new `ALLOW_PARTIAL=true` env var entry-point both restore the emit-everywhere behaviour. Precedence per Claude's Discretion in CONTEXT: flag wins over env, both must explicitly opt in.
+    Per D-07 + R-rev-5 honest reframe: change the migrate-0019 engine's default refuse behaviour. **HONEST framing throughout — DO NOT say "zero-side-effect" or "truly atomic refusal".** Use: "default refuse no longer writes to CLEAN roots; DIRTY roots still receive recovery artifacts (.observability-0019.patch + .gitignore entries) for splice recovery."
 
-    **Step 1 — Modify the engine** (single commit `feat(23): D-07 0019 atomic-refuse default zero-side-effect + ALLOW_PARTIAL env opt-in`):
+    The --allow-partial flag (existing) AND new `ALLOW_PARTIAL=true` env var both restore the emit-everywhere behaviour for clean roots. Precedence: flag wins over env, both must explicitly opt in.
+
+    **Step 1 — Engine edit** (single commit `feat(23): D-07 0019 default refuse no longer touches CLEAN roots; DIRTY roots keep recovery artifacts; ALLOW_PARTIAL env opt-in (R-rev-5 honest reframe)`):
 
     Edit `templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh`:
 
-    a. Add ALLOW_PARTIAL env-var reading near the flag-parsing block (line 37-57), with flag-wins-over-env precedence:
+    a. Add ALLOW_PARTIAL env-var reading:
        ```bash
-       # D-07: ALLOW_PARTIAL env var opt-in (the --allow-partial flag still wins).
-       # Both must explicitly evaluate to "true" / "1" / "yes" to enable patches on clean roots.
+       # D-07: ALLOW_PARTIAL env var opt-in (CLI --allow-partial still wins).
        _env_allow_partial=0
        case "${ALLOW_PARTIAL:-}" in
          1|true|yes) _env_allow_partial=1 ;;
        esac
-       # CLI flag is parsed in the while-getopts loop above; --allow-partial sets ALLOW_PARTIAL=1.
-       # Apply env-var only if the flag did NOT already set it.
        if [ "$ALLOW_PARTIAL" -eq 0 ] && [ "$_env_allow_partial" -eq 1 ]; then
          ALLOW_PARTIAL=1
          info "ALLOW_PARTIAL env var detected — treating as --allow-partial."
        fi
        ```
 
-    b. Modify `emit_refuse_artifacts` function (lines 542-574) to gate the clean-roots loop on ALLOW_PARTIAL:
+    b. Modify `emit_refuse_artifacts` to gate CLEAN-root patch emission:
        ```bash
        emit_refuse_artifacts() {
          local i
@@ -1115,25 +1635,16 @@ Severity gating: T-23-02 (D), T-23-04 (D), T-23-05 (T), T-23-07 (S) are MEDIUM. 
            local dir="${DIRTY_DIRS[$i]}" stack="${DIRTY_STACKS[$i]}"
            warn "    DIRTY: $dir  (stack: $stack)"
            emit_refuse_artifacts_for "$dir" "$stack" "DIRTY"
-           # Per-fingerprint-file diff against baseline (excerpt, for the operator).
-           local files; files=$(stack_fingerprint_files "$stack")
-           local f src tmpl
-           src=$(stack_template_dir "$stack")
-           for f in $files; do
-             tmpl="$src/$f"
-             if [ -f "$tmpl" ] && [ -f "$dir/$f" ]; then
-               warn "      diff $f (excerpt vs known v1.17.0 baseline):"
-               diff -u "$tmpl" "$dir/$f" 2>/dev/null | head -10 | sed 's/^/        /' >&2
-             fi
-           done
+           # ... existing per-file diff output preserved ...
            warn "      wrote recovery artefact: $dir/.observability-0019.patch"
            warn "      recover: (a) revert the wrapper drift; (b) re-run migrate-0019;"
            warn "               (c) optionally splice .observability-0019.patch manually."
          done
 
-         # D-07: default refuse is zero-side-effect on clean roots. Only --allow-partial
-         # (or ALLOW_PARTIAL=1 env) restores the v0.6.0 "patches everywhere" behaviour
-         # so operators with manual recovery automation can still get the splice aids.
+         # D-07 (R-rev-5 HONEST REFRAME): default refuse no longer writes to CLEAN roots.
+         # DIRTY roots still receive .observability-0019.patch + .gitignore entries for splice recovery.
+         # --allow-partial (or ALLOW_PARTIAL=1 env) restores v0.6.0 "patches everywhere on refuse" for operators
+         # with existing manual-recovery automation.
          if [ "$ALLOW_PARTIAL" -eq 1 ]; then
            if [ ${#CLEAN_DIRS[@]} -gt 0 ]; then
              warn "  would-be-clean roots (patches emitted under --allow-partial for reference):"
@@ -1144,7 +1655,7 @@ Severity gating: T-23-02 (D), T-23-04 (D), T-23-05 (T), T-23-07 (S) are MEDIUM. 
            fi
          else
            if [ ${#CLEAN_DIRS[@]} -gt 0 ]; then
-             info "  would-be-clean roots (patches NOT emitted — default atomic refuse; pass --allow-partial or set ALLOW_PARTIAL=1 to also emit patches for clean roots):"
+             info "  would-be-clean roots (patches NOT emitted by default; pass --allow-partial or set ALLOW_PARTIAL=1 to also emit patches for clean roots):"
              for i in "${!CLEAN_DIRS[@]}"; do
                info "    CLEAN: ${CLEAN_DIRS[$i]}  (stack: ${CLEAN_STACKS[$i]})"
              done
@@ -1153,161 +1664,89 @@ Severity gating: T-23-02 (D), T-23-04 (D), T-23-05 (T), T-23-07 (S) are MEDIUM. 
        }
        ```
 
-    c. Update the script's exit-code documentation at the top (lines 34-38) to reflect that the default refuse is now zero-side-effect on clean roots.
+    c. Update script `--help` output and top-of-file documentation to use HONEST reframe language. **Replace any mention of "zero-side-effect" or "truly atomic refusal" with "default refuse no longer touches clean roots; dirty roots still get recovery artifacts".**
 
-    **Step 2 — Flip fixture 06's assertion** (same commit):
+    **Step 2 — Flip fixture 06's assertion:**
 
     Edit `migrations/test-fixtures/0019/06-multi-root-mixed-clean-dirty-refuses-all/verify.sh`:
-    - Existing assertion (lines 31-38) requires patches on ALL three roots — flip to: patches ONLY on the DIRTY root; clean roots have NO patch file.
-    - Assertion shape:
-      ```bash
-      # D-07 — DEFAULT refuse is zero-side-effect on clean roots. Only the dirty root receives a patch.
-      test -f "$DIRTY/.observability-0019.patch" || { echo "patch not emitted for DIRTY root"; exit 1; }
-      test -s "$DIRTY/.observability-0019.patch" || { echo "patch empty at DIRTY root"; exit 1; }
-      for d in "$CLEAN_A" "$CLEAN_B"; do
-        test ! -e "$d/.observability-0019.patch" || { echo "D-07 VIOLATION: patch emitted to clean root $d in DEFAULT refuse path"; exit 1; }
-      done
-      ```
-    - The output-matching grep for clean-root paths can stay (the script still NAMES them in stderr, just doesn't write to them).
+    ```bash
+    # D-07 (R-rev-5 honest reframe): DEFAULT refuse no longer writes to CLEAN roots.
+    # DIRTY roots still receive .observability-0019.patch for splice recovery.
+    test -f "$DIRTY/.observability-0019.patch" || { echo "patch not emitted for DIRTY root"; exit 1; }
+    test -s "$DIRTY/.observability-0019.patch" || { echo "patch empty at DIRTY root"; exit 1; }
+    for d in "$CLEAN_A" "$CLEAN_B"; do
+      test ! -e "$d/.observability-0019.patch" || { echo "D-07 VIOLATION: patch emitted to clean root $d in DEFAULT refuse path"; exit 1; }
+    done
+    ```
 
-    **Step 3 — Create fixture 07** (same commit):
+    **Step 3 — Create fixture 07:**
 
     Create `migrations/test-fixtures/0019/07-allow-partial-emits-patches/`:
-    - `expected-exit`: contents `0\n` (--allow-partial returns 0 because it migrates the clean roots; the dirty root is skipped but logged)
-    - `setup.sh`: source-and-extend fixture 06's setup so the starting state is identical (2 clean, 1 dirty)
-    - `verify.sh`: assert (a) `bash migrate-0019-…sh --allow-partial …` exits 0 (or 2 if 0019 returns 2 even when applying clean roots — match the engine's actual exit-code semantics for --allow-partial; see line 37 of the engine "--allow-partial mode = clean roots applied, dirty skipped" — likely returns 0 with informational dirty-skipped output); (b) clean roots received cron-monitor.ts (migrated); (c) dirty root has NO cron-monitor.ts (skipped); (d) `.observability-0019.patch` is present at the DIRTY root and the CLEAN roots (--allow-partial re-enables emit-everywhere per D-07).
+    - `expected-exit`: contents `0\n`
+    - `setup.sh`: source fixture 06's setup (2 clean + 1 dirty)
+    - `verify.sh`: assert
+      - `bash migrate-0019-…sh --allow-partial …` exits 0 (clean roots applied, dirty skipped)
+      - clean roots received cron-monitor.ts (migrated)
+      - dirty root has NO cron-monitor.ts (skipped)
+      - `.observability-0019.patch` present at DIRTY root AND CLEAN roots (--allow-partial restores emit-everywhere)
 
-    Wire fixture 07 into the test harness: edit `migrations/run-tests.sh` `test_migration_0019` function to include fixture 07 in its per-fixture loop (per Task 3.1's read of the existing 0019 test driver).
+    Wire fixture 07 into harness: edit `migrations/run-tests.sh` `test_migration_0019` to include fixture 07 in its per-fixture loop.
 
-    **Step 4** — Run the full migration test harness: `bash migrations/run-tests.sh`. Assert all tests including fixture 06 (flipped), fixture 07 (new), and the Task 3.1 sigterm test pass.
+    **Step 4** — Run full harness `bash migrations/run-tests.sh`. Assert all tests including fixture 06 (flipped), fixture 07 (new), and Task 3.1 sigterm test pass.
 
-    Commit as a single semantic commit (engine + fixtures + harness wiring all describe one logical change).
+    **WAVE 4 CLOSER (R-rev-8): Run `gitnexus_detect_changes()`.** Verify Wave 4 expected symbols.
+
+    Commit as a single semantic commit (engine + fixtures + harness wiring).
   </action>
   <verify>
     <automated>
       bash migrations/run-tests.sh test_migration_0019 &&
-      grep -q "D-07: default refuse is zero-side-effect" templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh &&
+      grep -q "default refuse no longer writes to CLEAN roots" templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh &&
+      grep -q "DIRTY roots still receive" templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh &&
       grep -q "ALLOW_PARTIAL env var detected" templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh &&
+      ! grep -q "zero-side-effect" templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh &&
+      ! grep -q "truly atomic refusal" templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh &&
       grep -q "D-07 VIOLATION" migrations/test-fixtures/0019/06-multi-root-mixed-clean-dirty-refuses-all/verify.sh &&
       test -f migrations/test-fixtures/0019/07-allow-partial-emits-patches/verify.sh &&
-      test -f migrations/test-fixtures/0019/07-allow-partial-emits-patches/setup.sh
+      test -f migrations/test-fixtures/0019/07-allow-partial-emits-patches/setup.sh &&
+      test -f migrations/test-fixtures/0019/07-allow-partial-emits-patches/expected-exit
     </automated>
   </verify>
-  <done>
-    0019 engine default refuse is zero-side-effect on clean roots; --allow-partial + ALLOW_PARTIAL=1 env both opt in to emit-everywhere; fixture 06 flipped; new fixture 07 covers --allow-partial path.
-  </done>
+  <done>0019 engine default refuse no longer touches CLEAN roots; DIRTY roots still get recovery artifacts (honest framing). --allow-partial + ALLOW_PARTIAL=1 env both opt in to emit-everywhere; fixture 06 flipped; new fixture 07 covers --allow-partial. Wave 4 gitnexus_detect_changes run.</done>
   <acceptance_criteria>
     - Full 0019 fixture suite passes (fixtures 01-07)
-    - Engine documentation reflects new default
-    - Fixture 06 verify.sh asserts CLEAN roots have NO patch in default mode
-    - Fixture 07 verify.sh asserts clean roots are migrated AND patched under --allow-partial
-    - ALLOW_PARTIAL=1 env var also triggers opt-in (flag precedence preserved)
+    - Engine documentation uses honest reframe language; no "zero-side-effect" or "truly atomic refusal" strings present
+    - Fixture 06 verify.sh asserts CLEAN roots have NO patch in default mode (D-07 VIOLATION sentinel)
+    - Fixture 07 verify.sh asserts clean roots migrated AND patched under --allow-partial
+    - ALLOW_PARTIAL=1 env var triggers opt-in (flag precedence preserved)
+    - **WAVE 4 CLOSER (R-rev-8): `gitnexus_detect_changes()` run; verified**
     - gitnexus_impact on emit_refuse_artifacts recorded
   </acceptance_criteria>
 </task>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- WAVE 5 — Version bump + CHANGELOG + ADR + final verification            -->
+<!-- WAVE 5 — Version bump + CHANGELOG + final verification                   -->
+<!-- (ADR-0029 moved to Wave 0 per codex Suggestion 7 / R-rev-7)             -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 
 <task type="auto">
-  <name>Task 5.1 (Wave 5, ADR-0029): Author cron-monitor-sdk-composition ADR</name>
-  <files>docs/decisions/0029-cron-monitor-sdk-composition.md</files>
-  <read_first>
-    - .planning/phases/23-observability-followups/CONTEXT.md §"Discussion log" OQ-8 (all 5 shapes A/B/C/D/F with rationales)
-    - .planning/phases/23-observability-followups/DISCUSSION-LOG.md OQ-8 table (the alternatives table)
-    - docs/decisions/0028-sentry-crons-healthz-conventions.md (template for ADR shape + tone)
-    - docs/decisions/0027-postphase-observability-hook.md (another template — short ADRs)
-    - Task 2.1's GREEN commit (the actual Shape A implementation — ADR's Consequences section references this)
-  </read_first>
-  <action>
-    Author `docs/decisions/0029-cron-monitor-sdk-composition.md` capturing D-08 Shape A. Use Phase 22 ADR 0028 as the structural template.
-
-    Required sections (per CONTEXT §"ADR candidate"):
-
-    **# 0029 — cron-monitor SDK composition (Shape A)**
-    Status: Accepted
-    Date: 2026-05-29
-    Phase: 23-observability-followups
-    Supersedes: none (extends 0028's cron-monitor conventions)
-
-    **## Context**
-    Phase 22 reinvented Sentry's in_progress→ok/error lifecycle (duration tracking, thenable handling) around a 3-source slug-resolution wrapper. `Sentry.withMonitor<T>(slug, callback, monitorConfig?): T` ships in `@sentry/core` and is re-exported by `@sentry/cloudflare`. Post-PR-#53 the user requested a refactor to compose with the SDK helper rather than reinvent the lifecycle. Five honest shapes considered.
-
-    **## Decision**
-    Shape A — compose `Sentry.withMonitor` underneath our existing outer wrapper. Preserve `cron-monitor.ts:137-148` (fail-safe + slug resolution + monitorConfig build); replace `:148-181` (the lifecycle) with a single `await Sentry.withMonitor(monitorSlug, () => handler(controller, env, ctx), monitorConfig);` call.
-
-    **## Alternatives Rejected**
-
-    | Shape | Description | Why rejected |
-    |-------|-------------|--------------|
-    | B (Drop-in replacement) | `withCronMonitor(handler, config?) = (c, e, ctx) => Sentry.withMonitor(resolveSlug(...), () => handler(c, e, ctx), buildMonitorConfig(config))` | Drops R02 fail-safe (Sentry logs warning on no-DSN). Drops R04 swallow. Loses D6's silent-on-no-DSN behaviour. |
-    | C (Deprecate + parallel `withCronMonitorV2`) | Keep v0.6.0 wrapper with `@deprecated`; add `withCronMonitorV2` as Shape A | +50 LOC per file. Zero downstream risk but compounds future maintenance — two wrappers to keep in sync for the deprecation window. |
-    | D (Compose with SDK-throw firewall via stack inspection) | Shape A but wrap `Sentry.withMonitor` in additional try/catch that catches errors whose stack frame includes `captureCheckIn` and swallows them | Restores R02/R04 at significant complexity cost. Brittle stack-frame inspection. High test surface. |
-    | F (No refactor — port only `duration` tracking pattern) | +8 LOC per file. All Phase 22 contracts preserved. | Loses strategic value of using upstream's primitive. User's "baked in" directive interpreted as a genuine refactor, not a touch-up. |
-
-    **## Consequences**
-
-    **Preserved contracts (Phase 22):** D6 (3-source slug resolution), R02 fail-safe no-DSN, D11 (multi-cron explicit-slug), D12 (monitorConfig 2nd-arg forwarding shape).
-
-    **Documented regression:** R02/R04 SDK-error swallow drops. `Sentry.withMonitor` re-throws SDK transport errors during `captureCheckIn`. The outer `withObservabilityScheduled` wrapper catches these (verified in Task 2.1's commit body). Operators see SDK transport failures in their normal error-capture path instead of silent swallow. `SENTRY_DEBUG=1` is no longer the surfacing mechanism for SDK errors.
-
-    **Documented addition:** `withIsolationScope` wrapping. Each cron run gets its own Sentry scope. Non-breaking; correctness improvement (scope tags / breadcrumbs / user-context no longer leak between cron invocations).
-
-    **Downstream impact:** fxsa and callbot pull `add-observability 0.7.0` → see the regression + addition. CHANGELOG.md 0.7.0 calls both out explicitly. No code change required downstream.
-
-    **Go stack unchanged.** `sentry-go` ships no `WithMonitor` equivalent (Context7-verified). The Go `WithCronMonitor` impl IS the cross-stack parity. See D-09 / `cron_monitor.go` package-doc note.
-
-    **## Links**
-    - CONTEXT: `.planning/phases/23-observability-followups/CONTEXT.md` §D-08
-    - Discussion log: `.planning/phases/23-observability-followups/DISCUSSION-LOG.md` §OQ-8
-    - Implementation: this phase's Task 2.1 / 2.2 / 2.3 GREEN commits
-    - Phase 22 contracts: `.planning/phases/22-sentry-crons-healthz/PLAN.md` §R02 §R04, `…/CONTEXT.md` §D6 §D11 §D12
-    - SDK reference: `@sentry/cloudflare` re-export of `@sentry/core` `withMonitor<T>` in `packages/core/src/exports.ts`
-  </action>
-  <verify>
-    <automated>
-      test -f docs/decisions/0029-cron-monitor-sdk-composition.md &&
-      grep -q "^# 0029" docs/decisions/0029-cron-monitor-sdk-composition.md &&
-      grep -q "Shape A" docs/decisions/0029-cron-monitor-sdk-composition.md &&
-      grep -q "Alternatives Rejected" docs/decisions/0029-cron-monitor-sdk-composition.md &&
-      grep -q "withIsolationScope" docs/decisions/0029-cron-monitor-sdk-composition.md &&
-      grep -q "R02/R04" docs/decisions/0029-cron-monitor-sdk-composition.md &&
-      grep -E "\\| B \\(|Shape B" docs/decisions/0029-cron-monitor-sdk-composition.md &&
-      grep -E "\\| C \\(|Shape C" docs/decisions/0029-cron-monitor-sdk-composition.md &&
-      grep -E "\\| D \\(|Shape D" docs/decisions/0029-cron-monitor-sdk-composition.md &&
-      grep -E "\\| F \\(|Shape F" docs/decisions/0029-cron-monitor-sdk-composition.md
-    </automated>
-  </verify>
-  <done>ADR-0029 authored with all 4 rejected shapes documented + consequences + Sentry-SDK reference. Ready for `/gsd-review` to audit before execute.</done>
-  <acceptance_criteria>
-    - File exists at docs/decisions/0029-cron-monitor-sdk-composition.md
-    - Headers: Context / Decision / Alternatives Rejected / Consequences / Links present
-    - All 4 rejected shapes (B, C, D, F) appear with their rejection rationale
-    - The documented R02/R04 regression and withIsolationScope addition are spelled out
-    - Commit: `docs(23): ADR-0029 cron-monitor SDK composition (Shape A)`
-  </acceptance_criteria>
-</task>
-
-<task type="auto">
-  <name>Task 5.2 (Wave 5, D-01 part 1): SKILL.md version bump 0.6.0 → 0.7.0</name>
+  <name>Task 5.1 (Wave 5, D-01 part 1): SKILL.md version bump 0.6.0 → 0.7.0</name>
   <files>add-observability/SKILL.md</files>
+  <depends_on>Tasks 2.1/2.2/2.3 (F5 lands first — version bump reflects the F5 behaviour change)</depends_on>
   <read_first>
     - add-observability/SKILL.md (line 3 currently `version: 0.6.0`)
-    - .planning/phases/23-observability-followups/CONTEXT.md D-01 (0.6.0 → 0.7.0 minor)
+    - .planning/phases/23-observability-followups/CONTEXT.md D-01
   </read_first>
   <action>
     Edit `add-observability/SKILL.md` line 3:
     - FROM: `version: 0.6.0`
     - TO: `version: 0.7.0`
 
-    No other field in the frontmatter changes. The `implements_spec: 0.3.2` stays — Phase 23 does not change the spec version.
+    No other field changes. `implements_spec: 0.3.2` stays — Phase 23 doesn't change spec.
+    No `claude-workflow` version bump (per D-01).
+    No new migration (per N2).
 
-    No `claude-workflow` version bump (per D-01 — engine fix + tests + doc only, per the `versioning-tracks-migrations` invariant).
-
-    No new migration (per N2 in CONTEXT — forward-only template change).
-
-    Commit: `chore(23): D-01 bump add-observability 0.6.0 → 0.7.0`. Commit body cites D-01 and the version-bump justification (F5's withIsolationScope + R02/R04 SDK-error regression are observable downstream behaviour → honest minor).
+    Commit: `chore(23): D-01 bump add-observability 0.6.0 → 0.7.0`. Commit body cites D-01 + Guarded Shape A withIsolationScope addition + narrowed post-callback regression as the honest minor-bump justification.
   </action>
   <verify>
     <automated>
@@ -1319,25 +1758,27 @@ Severity gating: T-23-02 (D), T-23-04 (D), T-23-05 (T), T-23-07 (S) are MEDIUM. 
   <done>add-observability/SKILL.md is at version 0.7.0.</done>
   <acceptance_criteria>
     - Line 3 of add-observability/SKILL.md is exactly `version: 0.7.0`
-    - No other lines in the frontmatter changed (compare git diff)
+    - No other lines in frontmatter changed
     - No claude-workflow SKILL.md version touched
     - No new migration file created
   </acceptance_criteria>
 </task>
 
 <task type="auto">
-  <name>Task 5.3 (Wave 5, D-01 part 2): CHANGELOG.md 0.7.0 entry</name>
+  <name>Task 5.2 (Wave 5, D-01 part 2): CHANGELOG.md 0.7.0 entry — R-rev-1 narrowed regression + R-rev-5 honest D-07 reframe + R-rev-9 AbortController note</name>
   <files>add-observability/CHANGELOG.md</files>
+  <depends_on>Task 5.1</depends_on>
   <read_first>
-    - add-observability/CHANGELOG.md (if exists; if not, create with conventional Keep-a-Changelog header)
-    - add-observability/SKILL.md (post Task 5.2 — confirm version is 0.7.0)
-    - .planning/phases/23-observability-followups/CONTEXT.md §"Resolved decisions" (the regression+addition that need to be called out)
-    - Phase 22 PR #53 body shape (for tone parity — informal but precise)
+    - add-observability/CHANGELOG.md (if exists; if not, create)
+    - add-observability/SKILL.md (post Task 5.1 — confirm 0.7.0)
+    - .planning/phases/23-observability-followups/CONTEXT.md §"Resolved decisions" (D-08 amended Guarded; D-07 honest reframe)
+    - docs/decisions/0029-cron-monitor-sdk-composition.md (Wave 0 — the architectural rationale)
+    - .planning/phases/23-observability-followups/23-REVIEWS.md (revision provenance)
   </read_first>
   <action>
-    Create or modify `add-observability/CHANGELOG.md` with a new `## 0.7.0 — 2026-05-29` entry at the top.
+    Create or modify `add-observability/CHANGELOG.md` with a `## 0.7.0 — 2026-05-29` entry at top.
 
-    If the file does not exist, create it with header:
+    If file doesn't exist, create with:
     ```markdown
     # add-observability — CHANGELOG
 
@@ -1347,193 +1788,251 @@ Severity gating: T-23-02 (D), T-23-04 (D), T-23-05 (T), T-23-07 (S) are MEDIUM. 
 
     ```
 
-    The 0.7.0 entry MUST contain THREE explicit sections matching the phase's three operator-visible changes:
+    The 0.7.0 entry MUST contain these sections with REVISED language:
 
     ```markdown
     ## 0.7.0 — 2026-05-29
 
-    Phase 23 follow-ups from Phase 22's deferred review-gate residuals + a user-directed `withCronMonitor` refactor. See `.planning/phases/23-observability-followups/CONTEXT.md` for the full decision basis and `docs/decisions/0029-cron-monitor-sdk-composition.md` for the architectural rationale.
+    Phase 23 follow-ups from Phase 22's deferred review-gate residuals + user-directed `withCronMonitor` refactor. Multi-AI plan review (`23-REVIEWS.md`) refined the shape of F2 (per-stack heterogeneity), F5 (Guarded Shape A), F3 (split trap), and D-07 (honest reframe).
+
+    See `.planning/phases/23-observability-followups/CONTEXT.md` for decision basis and `docs/decisions/0029-cron-monitor-sdk-composition.md` for the F5 architectural rationale (including 5 rejected alternatives).
 
     ### Added
 
-    - **F2 — `/healthz` per-probe timeout** in all 4 stacks (TS Cloudflare Worker, TS Cloudflare Pages, TS Supabase Edge, Go fly-http). Default 2000ms (TS `DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS`, Go `defaultHealthzProbeTimeout`); caller overrides via the existing probe-registration shape (TS: 3rd arg to `healthzHandler`; Go: `HealthzDeps.ProbeTimeout`). Aborted probes report as `{status: "degraded", checks: {<probe>: "timeout"}}` — the string `"timeout"` distinguishes timeout from genuine probe failure.
-    - **`Sentry.withMonitor` composition** in 3 TS stacks' `withCronMonitor` (worker, pages, supabase-edge) — see "Changed" below for the regression that comes with this.
-    - **`withIsolationScope` wrapping per cron run** (via `Sentry.withMonitor`). Each cron invocation now runs in its own Sentry scope; tags, breadcrumbs, and user-context no longer leak between consecutive runs. Non-breaking; arguably a correctness improvement.
-    - **`docs/decisions/0029-cron-monitor-sdk-composition.md`** ADR capturing D-08 Shape A reasoning with the 4 rejected shapes.
+    - **F2 — `/healthz` per-probe timeout** in all 4 stacks with per-stack heterogeneous configuration (per codex MEDIUM-5):
+      - Worker: 3rd-arg override `healthzHandler(req, env, { probeTimeoutMs })` (Worker signature supports this)
+      - Pages: `context.env.HEALTHZ_PROBE_TIMEOUT_MS` env var (onRequest signature runtime-fixed — no 3rd-arg path)
+      - Supabase-Edge: `Deno.env.get("HEALTHZ_PROBE_TIMEOUT_MS")` env var (Deno runtime + restrictive test seam)
+      - Go: `HealthzDeps.ProbeTimeout` field — **NOTE**: caps handler latency only; underlying `Get(url)` outbound call may continue in background until natural completion (codex MEDIUM-5 honest documentation)
+      - Default 2000ms (TS `DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS`, Go `defaultHealthzProbeTimeout`)
+      - Aborted probes report `{status: "degraded", checks: {<probe>: "timeout"}}` — string `"timeout"` distinguishes timeout from genuine probe failure
+      - TS implementation uses `AbortController` + `setTimeout`/`clearTimeout` in `try/finally` (per gemini MEDIUM-1; NOT `Promise.race` with abort-rejection — prevents unhandled promise rejections)
+    - **`Sentry.withMonitor` Guarded composition** in 3 TS stacks' `withCronMonitor` (worker, pages, supabase-edge) — see "Changed" below for narrowed regression + honest isolation-scope semantic.
+    - **`withIsolationScope` wrapping per cron run** (via `Sentry.withMonitor`). Each cron invocation now runs in its own Sentry scope. **HONEST SEMANTIC (per codex MEDIUM):** tags, breadcrumbs, and user-context no longer leak between consecutive runs (intended benefit) — BUT handler-set scope state (`Sentry.setTag`, breadcrumbs set inside the cron body) may NOT be visible to outer error-capture handlers after isolation unwinds. Downstream consumers relying on cron-body scope mutations becoming visible to outer error handlers will see different behaviour.
+    - **`docs/decisions/0029-cron-monitor-sdk-composition.md`** ADR (authored in Wave 0 — before code — per codex Suggestion 7) capturing Guarded Shape A reasoning with 5 rejected shapes (incl. original Shape A unguarded).
 
     ### Changed
 
-    - **`withCronMonitor` (TS stacks) — Shape A refactor.** The in_progress / ok / error lifecycle (formerly `cron-monitor.ts:148-181`) is now composed via `Sentry.withMonitor(monitorSlug, () => handler(...), monitorConfig)`. The outer fail-safe + 3-source slug resolution + monitorConfig build (`cron-monitor.ts:137-148`) are preserved verbatim. Per-stack net LOC delta: ~−25 lines. Behavioural-parity test added (`cron-monitor.test.ts`).
-    - **Migration 0019 atomic-refuse semantics flipped (D-07).** The default refuse path is now zero-side-effect on clean roots (matches migration 0017). Patches are written only to the dirty root(s). Operators who want the v0.6.0 "patches everywhere on refuse" behaviour for manual splice-aid pass `--allow-partial` (CLI) or `ALLOW_PARTIAL=1` (env). Flag wins over env when both are set; both must explicitly opt in.
+    - **`withCronMonitor` (TS stacks) — Guarded Shape A refactor.** The in_progress / ok / error lifecycle is now composed via `Sentry.withMonitor` with a `handlerStarted` flag guard. If Sentry transport fails BEFORE the callback runs (pre-callback `in_progress` check-in failure), the handler falls back to running UNMONITORED — preserving the "cron always runs" contract. If transport fails AFTER the handler completed (post-callback check-in), the error propagates to the outer wrapper. The outer fail-safe + 3-source slug resolution + monitorConfig build are preserved verbatim. Per-stack net LOC delta: ~−15 lines (vs −25 for unguarded Shape A). Behavioural-parity tests added including one explicit pre-callback regression test per stack.
+    - **Migration 0019 atomic-refuse semantics flipped (D-07 — honest reframe per codex MEDIUM-6).** The default refuse path NO LONGER WRITES TO CLEAN ROOTS. DIRTY roots still receive `.observability-0019.patch` + `.gitignore` entries for splice recovery (unchanged from v0.6.0 — this is NOT "zero-side-effect refuse"). Operators who want v0.6.0 "patches everywhere on refuse" for manual splice-aid pass `--allow-partial` (CLI) or `ALLOW_PARTIAL=1` (env). Flag wins over env; both must explicitly opt in.
 
-    ### Regressed (documented)
+    ### Regressed (documented — NARROWED vs original Shape A)
 
-    - **R02/R04 SDK-error swallow drops** in `withCronMonitor`. `Sentry.withMonitor` re-throws SDK transport errors during `captureCheckIn` instead of silently swallowing them. The errors now propagate to the outer `withObservabilityScheduled` capture path. **Operator action**: if your downstream observability layer (fxsa, callbot, etc.) treats cron-handler exceptions and SDK-transport exceptions identically, no change is needed. If you previously relied on the silent swallow to keep cron handlers running through Sentry outages, the new `withObservabilityScheduled` will surface those failures. Setting `SENTRY_DEBUG=1` no longer surfaces SDK-call failures from inside `withCronMonitor` — the SDK now surfaces them through normal error paths.
+    - **R02/R04 SDK-error swallow drops only for POST-callback errors** in `withCronMonitor`. Pre-callback errors (Sentry transport failing on `in_progress`) trigger the Guarded fallback — handler runs unmonitored, no propagation. Post-callback errors (transport failing on `ok`/`error` after handler completed) propagate to the outer `withObservabilityScheduled` capture path. **Operator action**: if your outer wrapper catches SDK errors, no change needed. If you relied on silent swallow to keep cron handlers running through Sentry outages, the new behaviour: pre-callback failures fall back to unmonitored execution; post-callback failures surface via outer wrapper. `SENTRY_DEBUG=1` no longer surfaces SDK call failures from inside `withCronMonitor`.
 
     ### Internal
 
-    - **F1** — `add-observability/init/INIT.md` Phase 5 per-stack subsections (worker, pages, supabase-edge, go) gained ≤5-line `withCronMonitor` composition notes citing the per-stack composition order (D5a/D5b/D5d) with file:line links into the wrapper source.
-    - **F3** — Migration test harness (`migrations/run-tests.sh`) and migration-0019 engine added `trap 'cleanup' INT TERM EXIT`. A test-only `--pause-between-passes <signal-file>` flag enables deterministic SIGTERM testing without timing-fragile sleeps.
-    - **F4** — `migrations/run-tests.sh` added `test-skill-md-version-matches-latest-migration-to-version` — asserts `skill/SKILL.md` `version` equals the highest-numbered migration's `to_version`. Catches the drift bug that PR #52 introduced.
-    - **D-09** — `add-observability/templates/go-fly-http/cron_monitor.go` package doc gained a ≤5-line note explaining that `sentry-go` ships no `WithMonitor` equivalent. The Go `WithCronMonitor` impl is the cross-stack parity for the missing helper.
+    - **F1** — `add-observability/init/INIT.md` Phase 5 per-stack subsections (worker, pages, supabase-edge, go) gained ≤5-line `withCronMonitor` composition notes citing D5a/D5b/D5d composition order with file:line links.
+    - **F3** — Migration test harness (`migrations/run-tests.sh`) and migration-0019 engine added **SPLIT trap design** (codex HIGH-2): `EXIT` runs cleanup silently (idempotent, no warning); `INT` runs cleanup then `exit 130`; `TERM` runs cleanup then `exit 143`. Path-validated test-only `--pause-between-passes <signal-file>` flag with `${TMPDIR:-/tmp}` default and allow-list prefix matching (`${TMPDIR:-/tmp}/sigterm-test-*` OR `migrations/test-fixtures/0019/*/sigterm-*`).
+    - **F4** — `migrations/run-tests.sh` added `test-skill-md-version-matches-latest-migration-to-version`. Dispatcher extended in Wave 0 to support new named filters (codex MEDIUM-7).
+    - **D-09** — `add-observability/templates/go-fly-http/cron_monitor.go` package doc gained ≤5-line note: `sentry-go` ships no `WithMonitor` equivalent.
+    - **Multi-AI plan review** — Phase 23 underwent a `/gsd-review` pass (`23-REVIEWS.md`); codex HIGH verdict + gemini MEDIUM-1 fed back into 9 revisions before execute. ADR-0029 documents the empirical evidence supporting Guarded Shape A.
 
     ### Operator migration notes
 
-    Existing installs already have `v0.6.0`'s `cron-monitor.{ts,go}` and `healthz-snippet.{ts,go}` copied into their wrapper directories. There is NO migration auto-retrofit (forward-only template change per Phase 23 N2). Two paths:
-
-    1. **Stay on v0.6.0 behaviour**: do nothing. Your installed wrappers keep working.
-    2. **Adopt v0.7.0 behaviour**: re-copy the updated templates from `add-observability/templates/{stack}/cron-monitor.{ts,go}` and `healthz-snippet.{ts,go}` into your wrapper directories. The R02/R04 SDK-error regression applies once you adopt; verify your outer wrapper catches SDK-transport failures.
+    Existing installs already have v0.6.0's `cron-monitor.{ts,go}` and `healthz-snippet.{ts,go}` copied. No auto-retrofit (forward-only template change per N2). Paths:
+    1. **Stay on v0.6.0**: do nothing.
+    2. **Adopt v0.7.0**: re-copy updated templates. The narrowed regression applies only to post-callback errors; verify your outer wrapper catches SDK transport failures.
+    3. **D-07 operators**: if your automation relied on patches landing in clean roots on refuse, add `--allow-partial` to your invocations or set `ALLOW_PARTIAL=1`.
     ```
 
-    Commit: `docs(23): D-01 CHANGELOG 0.7.0 entry — F2/F5/D-07/regression callout`.
+    Commit: `docs(23): D-01 CHANGELOG 0.7.0 entry — Guarded Shape A narrowed regression + honest D-07 reframe + F2 per-stack`.
   </action>
   <verify>
     <automated>
       grep -q "^## 0.7.0" add-observability/CHANGELOG.md &&
-      grep -q "Shape A" add-observability/CHANGELOG.md &&
-      grep -q "R02/R04 SDK-error swallow drops" add-observability/CHANGELOG.md &&
+      grep -q "Guarded Shape A" add-observability/CHANGELOG.md &&
+      grep -q "narrowed" add-observability/CHANGELOG.md &&
+      grep -q "POST-callback" add-observability/CHANGELOG.md &&
       grep -q "withIsolationScope" add-observability/CHANGELOG.md &&
-      grep -q "DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS\\|2000ms\\|2 seconds" add-observability/CHANGELOG.md &&
+      grep -q "HONEST SEMANTIC" add-observability/CHANGELOG.md &&
+      grep -q "handler-set scope state" add-observability/CHANGELOG.md &&
+      grep -q "AbortController" add-observability/CHANGELOG.md &&
       grep -q "ALLOW_PARTIAL\\|--allow-partial" add-observability/CHANGELOG.md &&
+      grep -q "default refuse path NO LONGER WRITES TO CLEAN ROOTS" add-observability/CHANGELOG.md &&
+      grep -q "DIRTY roots still receive" add-observability/CHANGELOG.md &&
+      ! grep -q "zero-side-effect" add-observability/CHANGELOG.md &&
+      grep -q "SPLIT trap" add-observability/CHANGELOG.md &&
+      grep -q "exit 130" add-observability/CHANGELOG.md &&
+      grep -q "exit 143" add-observability/CHANGELOG.md &&
       grep -q "F1\\|INIT.md" add-observability/CHANGELOG.md &&
-      grep -q "F3\\|SIGTERM\\|trap" add-observability/CHANGELOG.md &&
-      grep -q "F4\\|test-skill-md-version-matches-latest-migration-to-version\\|drift" add-observability/CHANGELOG.md &&
       grep -q "D-09\\|sentry-go" add-observability/CHANGELOG.md
     </automated>
   </verify>
-  <done>CHANGELOG.md has a 0.7.0 entry covering all 5 F-items + D-07 + D-09 with explicit Regressed (documented) section calling out R02/R04.</done>
+  <done>CHANGELOG.md has a 0.7.0 entry covering all 5 F-items + D-07 honest reframe + D-09 + narrowed Guarded regression + honest isolation-scope semantic + per-stack F2.</done>
   <acceptance_criteria>
-    - 0.7.0 entry exists in add-observability/CHANGELOG.md
-    - The three required callouts (F2, F5 + R02/R04 regression, D-07 default flip) all appear
-    - withIsolationScope addition called out
-    - Operator migration notes section explains the forward-only template change
-    - F1, F3, F4, D-09 also covered in Internal section
+    - 0.7.0 entry exists
+    - Guarded Shape A + narrowed regression (post-callback only) explicit
+    - Honest isolation-scope semantic (handler-set scope state may not propagate) explicit
+    - D-07 honest reframe (no "zero-side-effect"; DIRTY roots still get artifacts) explicit
+    - F2 per-stack heterogeneity documented (Worker 3rd-arg / Pages env / Supabase Deno.env / Go handler-latency-only)
+    - AbortController + clearTimeout pattern called out (gemini MEDIUM-1)
+    - F3 split trap (EXIT silent / INT 130 / TERM 143) called out
+    - F1, F4, D-09 in Internal section
+    - Operator migration notes section
   </acceptance_criteria>
 </task>
 
 <task type="auto">
-  <name>Task 5.4 (Wave 5, final verification): Full test harness pass</name>
+  <name>Task 5.3 (Wave 5 CLOSER, final verification): Full test harness pass + named-test presence check (G6 REPLACED) + global gitnexus_detect_changes — R-rev-4 + R-rev-8</name>
   <files>(no files modified; verification gate)</files>
+  <depends_on>Tasks 5.1, 5.2 (all prior waves complete)</depends_on>
   <read_first>
-    - migrations/run-tests.sh (the harness)
-    - add-observability/templates/run-template-tests.sh (if exists — the per-template harness)
-    - .planning/phases/23-observability-followups/CONTEXT.md G6 (test count target: migration 178+2 → 180, template 228+3 → 231)
+    - migrations/run-tests.sh
+    - add-observability/templates/run-template-tests.sh
+    - .planning/phases/23-observability-followups/CONTEXT.md G6 (REPLACED gate shape — see action)
+    - .planning/phases/23-observability-followups/23-REVIEWS.md §Codex MEDIUM-7 (G6 numeric counter is non-executable)
   </read_first>
   <action>
-    Final pre-commit gate before /gsd-review. Run BOTH test harnesses end-to-end with no filter, capture output, and assert green:
+    Final pre-commit gate before /gsd-review. **G6 numeric counter is REPLACED (per codex MEDIUM-7) — harnesses have no test-total summary, so numeric gates are non-executable. New gate: named-test presence + harness exit 0.**
 
-    1. `bash migrations/run-tests.sh 2>&1 | tee /tmp/final-migration-tests.txt; echo "exit=$?"`
-       - Assert exit 0
-       - Assert PASS count ≥ 178 + 2 (Phase 22 baseline + F4 drift + F3 sigterm = at least 180). The F4 + F3 tests must appear in PASS log.
+    1. Run migration harness end-to-end:
+       ```bash
+       bash migrations/run-tests.sh 2>&1 | tee /tmp/final-migration-tests.txt
+       echo "exit=$?"
+       ```
+       Assertions (REPLACED — per R-rev-4):
+       - Exit code 0
+       - **Named-test presence**: `grep -q "PASS.*test-skill-md-version-matches-latest-migration-to-version" /tmp/final-migration-tests.txt`
+       - **Named-test presence**: `grep -q "PASS.*test-sigterm-mid-apply-preserves-state" /tmp/final-migration-tests.txt`
+       - **NO numeric counter check** (codex MEDIUM-7: harness has no global summary)
 
-    2. `bash add-observability/templates/run-template-tests.sh all 2>&1 | tee /tmp/final-template-tests.txt; echo "exit=$?"`
-       - Assert exit 0
-       - Assert PASS count ≥ 228 baseline + behavioural-parity tests added by Tasks 2.1/2.2/2.3 + healthz-timeout tests added by Tasks 1.4/1.5/1.6/1.7.
+    2. Run template harness end-to-end:
+       ```bash
+       bash add-observability/templates/run-template-tests.sh all 2>&1 | tee /tmp/final-template-tests.txt
+       echo "exit=$?"
+       ```
+       Assertions:
+       - Exit code 0
+       - **Named-test files present in invocation list**: `grep -q "healthz-snippet.test.ts" /tmp/final-template-tests.txt` (proves F2 test files invoked across stacks)
+       - **Named-test files present**: `grep -q "cron-monitor.test.ts" /tmp/final-template-tests.txt` (proves F5 parity tests invoked)
+       - **NO numeric counter check**
 
-    3. Run gitnexus_detect_changes per ./CLAUDE.md "MUST run gitnexus_detect_changes() before committing":
-       - `gitnexus_detect_changes()` — verify changes only affect expected symbols and flows (the ones enumerated in <gitnexus_required_symbols>).
-       - If unexpected symbols flagged: surface as CHECKPOINT, do not commit.
+    3. **Global gitnexus_detect_changes()** (final gate per ./CLAUDE.md):
+       - `gitnexus_detect_changes()` — verify changes only affect expected symbols per `<gitnexus_required_symbols>`
+       - If unexpected symbols flagged: CHECKPOINT, do not commit
+       - This is the FINAL global pass; wave-closer detect_changes already ran in 1.7 / 2.3 / 3.1 / 4.2
 
-    4. Print phase-completion summary to stdout in this exact format:
+    4. Phase summary to stdout:
        ```
        Phase 23 — observability-followups — FINAL VERIFICATION
        =======================================================
-       Migration tests:   <PASS>/<TOTAL>  (was 178; now <TOTAL>)
-       Template tests:    <PASS>/<TOTAL>  (was 228; now <TOTAL>)
-       gitnexus changes:  <expected | unexpected>
-       Files modified:    <count> across <stacks-changed>
-       Decisions covered: D-01..D-09 (all 9 lock-state preserved)
-       ADR-0029:          authored
-       SKILL.md:          0.6.0 → 0.7.0
-       CHANGELOG.md:      0.7.0 entry added
+       Migration harness exit:    0
+       Migration named tests:     test-skill-md-version-matches-latest-migration-to-version PASS
+                                  test-sigterm-mid-apply-preserves-state PASS
+       Template harness exit:     0
+       Template test invocations: healthz-snippet.test.ts (× 4 stacks), cron-monitor.test.ts (× 3 stacks)
+       gitnexus changes:          expected (matches <gitnexus_required_symbols> table)
+       Files modified:            <count> across <stacks-changed>
+       Decisions covered:         D-01..D-09 (D-08 amended to Guarded)
+       Revisions applied:         R-rev-1..R-rev-9 (all 9 from 23-REVIEWS.md)
+       ADR-0029:                  authored in Wave 0
+       SKILL.md:                  0.6.0 → 0.7.0
+       CHANGELOG.md:              0.7.0 entry added (honest reframe + narrowed regression)
        ```
 
-    Commit: `chore(23): final verification — all harnesses green; Phase 23 ready for /gsd-review`. May be `--allow-empty` if the verification produced no file changes.
+    Commit: `chore(23): final verification — all harnesses green + named tests present; Phase 23 ready for /gsd-review`. May be `--allow-empty`.
   </action>
   <verify>
     <automated>
-      bash migrations/run-tests.sh &&
+      bash migrations/run-tests.sh 2>&1 | tee /tmp/final-migration-tests.txt &&
+      grep -q "PASS.*test-skill-md-version-matches-latest-migration-to-version" /tmp/final-migration-tests.txt &&
+      grep -q "PASS.*test-sigterm-mid-apply-preserves-state" /tmp/final-migration-tests.txt &&
       bash add-observability/templates/run-template-tests.sh all
     </automated>
   </verify>
-  <done>Both test harnesses pass. gitnexus_detect_changes reports only expected symbols. Phase summary printed.</done>
+  <done>Both harnesses pass with named-test presence (G6 REPLACED gate). gitnexus_detect_changes global gate clean. Phase summary printed.</done>
   <acceptance_criteria>
-    - migrations/run-tests.sh exits 0 with ≥ 180 passing tests
-    - run-template-tests.sh all exits 0 with no regressions
-    - gitnexus_detect_changes() reports only the symbols listed in <gitnexus_required_symbols>
-    - Phase summary printed to stdout in the required format
+    - migrations/run-tests.sh exits 0
+    - Two named tests appear in PASS output (presence check, NOT numeric counter)
+    - add-observability/templates/run-template-tests.sh all exits 0
+    - Template-side new test files appear in invocation list
+    - gitnexus_detect_changes() reports only expected symbols
+    - Phase summary printed
   </acceptance_criteria>
 </task>
 
 </tasks>
 
+
 <verification>
-**Phase-level verification (run after Task 5.4):**
+**Phase-level verification (run after Task 5.3):**
 
 1. **Decision coverage** — every D-XX (D-01..D-09) has at least one task implementing it:
-   - D-01 → Tasks 5.2 + 5.3
+   - D-01 → Tasks 5.1 + 5.2
    - D-02 → entire batched plan (this PLAN.md is one phase, not split)
-   - D-03 → Tasks 1.4 + 1.5 + 1.6 + 1.7
+   - D-03 → Tasks 1.4 + 1.5 + 1.6 + 1.7 (REVISED per-stack heterogeneity per codex MEDIUM-5)
    - D-04 → Task 1.3 (uses grep + awk only)
-   - D-05 → Task 3.1 (`--pause-between-passes` flag)
-   - D-06 → Task 1.3 (test name + location)
-   - D-07 → Tasks 4.1 + 4.2
-   - D-08 → Tasks 2.1 + 2.2 + 2.3 (Shape A) + Task 5.1 (ADR-0029)
+   - D-05 → Task 3.1 (`--pause-between-passes` flag with reworked path validation)
+   - D-06 → Task 1.3 (test name + location); Task 0.1 dispatcher precondition
+   - D-07 → Tasks 4.1 + 4.2 (HONEST REFRAME per codex MEDIUM-6)
+   - **D-08 → Tasks 2.1 + 2.2 + 2.3 (GUARDED Shape A per CONTEXT.md amendment + R-rev-1) + Task 0.2 (ADR-0029 moved to Wave 0 per R-rev-7)**
    - D-09 → Task 1.2
 
-2. **Goal coverage** — every G1..G8 has evidence:
+2. **Revision coverage** — every R-rev-N from `23-REVIEWS.md` has a task implementing it:
+   - R-rev-1 (Guarded Shape A) → Tasks 2.1, 2.2, 2.3 + Task 0.2 ADR
+   - R-rev-2 (split trap) → Task 3.1
+   - R-rev-3 (F2 per-stack) → Tasks 1.4, 1.5, 1.6, 1.7
+   - R-rev-4 (G6 gate replacement) → Task 0.1 (dispatcher) + Task 5.3 (named-test check)
+   - R-rev-5 (D-07 honest reframe) → Tasks 4.1, 4.2, 5.2 CHANGELOG
+   - R-rev-6 (Supabase Deno seam) → Task 2.3
+   - R-rev-7 (ADR-0029 to Wave 0) → Task 0.2 (was 5.1)
+   - R-rev-8 (GitNexus per-wave) → Tasks 1.7, 2.3, 3.1, 4.2, 5.3 (wave closers)
+   - R-rev-9 (gemini F2 unhandled rejection) → Tasks 1.4, 1.5, 1.6 (AbortController + clearTimeout)
+
+3. **Goal coverage** — every G1..G8 has evidence:
    - G1 → INIT.md 4 stack subsections (Task 1.1)
-   - G2 → 4 healthz-snippet timeout impls + tests (Tasks 1.4-1.7)
-   - G3 → trap + sigterm test (Task 3.1)
-   - G4 → drift test (Task 1.3)
-   - G5 → SKILL.md 0.7.0 bump only; no claude-workflow bump; no new migration (Tasks 5.2 + 5.3 + N2 compliance)
-   - G6 → final harness pass (Task 5.4)
-   - G7 → Shape A composition tests + impl (Tasks 2.1-2.3)
+   - G2 → 4 healthz-snippet timeout impls + tests (Tasks 1.4-1.7) with per-stack heterogeneity
+   - G3 → split trap + sigterm test (Task 3.1)
+   - G4 → drift test (Task 1.3) with Task 0.1 dispatcher precondition
+   - G5 → SKILL.md 0.7.0; no claude-workflow bump; no new migration (Tasks 5.1 + 5.2 + N2)
+   - **G6 → REPLACED per codex MEDIUM-7**: named-test presence + harness exit 0 (NOT numeric counter) — see Task 5.3
+   - G7 → Guarded Shape A composition tests + impl (Tasks 2.1-2.3) including pre-callback regression test per stack
    - G8 → Go SDK gap doc note (Task 1.2)
 
-3. **Threat-model coverage** — every T-23-NN has a mitigation owner task:
-   - T-23-01 (I, withIsolationScope) → Tasks 2.1-2.3 (assertion in parity tests)
-   - T-23-02 (D, SDK-error propagation) → Task 2.1 (middleware.ts verification recorded in commit body)
-   - T-23-03 (I, healthz timing oracle) → Tasks 1.4-1.7 (2s timeout + "timeout" sentinel)
-   - T-23-04 (D, leaked resources on abort) → Tasks 1.4-1.7 (Promise.race + ctx propagation)
-   - T-23-05 (T, signal cleanup secret leak) → Task 3.1 (cleanup output assertion)
-   - T-23-06 (E, --allow-partial misuse) → Task 5.3 (CHANGELOG operator-facing note) — ACCEPTED
-   - T-23-07 (S, test-only flag in prod) → Task 3.1 (path validation in flag parser)
+4. **Threat-model coverage** — every T-23-NN has a mitigation owner task:
+   - T-23-01 (I, withIsolationScope honest semantic) → Tasks 2.1-2.3 + ADR-0029
+   - T-23-02 (D, NARROWED — Guarded preserves cron-always-runs) → Tasks 2.1-2.3 (pre-callback regression test F5.6 + middleware.ts verification)
+   - T-23-03 (I, healthz timing oracle) → Tasks 1.4-1.7 (per-stack timeouts + "timeout" sentinel)
+   - T-23-04 (D, leaked resources) → Tasks 1.4-1.7 (AbortController + clearTimeout in try/finally)
+   - T-23-05 (T, signal cleanup secret leak + silent-on-success) → Task 3.1
+   - T-23-06 (E, --allow-partial misuse) → Task 5.2 (CHANGELOG operator note) — ACCEPTED
+   - T-23-07 (S, test-only flag path validation REWORKED) → Task 3.1 (`${TMPDIR:-/tmp}` + allow-list prefix)
 
-4. **Test count target (G6):**
-   - migrations/run-tests.sh: 178 → 180 (+2: F4 drift, F3 sigterm)
-   - add-observability/templates/run-template-tests.sh all: 228 → 231+ (+1 healthz timeout test × 4 stacks - 1 stack-overlap + 1 cron-monitor parity test × 3 stacks)
+5. **G6 gate (REPLACED per codex MEDIUM-7):**
+   - migrations/run-tests.sh: assert harness exit 0 + grep `PASS.*test-skill-md-version-matches-latest-migration-to-version` + grep `PASS.*test-sigterm-mid-apply-preserves-state`
+   - add-observability/templates/run-template-tests.sh all: assert harness exit 0 + presence of new test files in invocation
+   - **No numeric counter check** — harnesses lack the necessary global summary mechanism
 
-5. **gitnexus_impact ledger** — `<gitnexus_required_symbols>` table fully populated; every task that touches a named symbol has its `gitnexus_impact` risk level recorded in its commit body.
+6. **gitnexus_impact + detect_changes ledger** — `<gitnexus_required_symbols>` table fully populated. Wave-closer detect_changes in 1.7 / 2.3 / 3.1 / 4.2 / 5.3 per codex Suggestion 8.
 </verification>
 
 <success_criteria>
-- [ ] All 5 waves executed in order; tasks within waves 1 and 2 may parallelise
-- [ ] Wave 1: F1 + D-09 + F4 + F2×4 stacks (7 commits minimum, 4 RED+GREEN pairs)
-- [ ] Wave 2: F5×3 stacks (6 commits minimum, 3 RED+GREEN pairs)
-- [ ] Wave 3: F3 (2 commits: RED + GREEN)
+- [ ] All 6 waves executed in order; tasks within waves 1, 2 (and Wave 0) may parallelise
+- [ ] Wave 0: Task 0.1 (dispatcher extension) + Task 0.2 (ADR-0029) — 2 commits, parallel-safe
+- [ ] Wave 1: F1 + D-09 + F4 + F2×4 stacks (7 tasks; mix of RED+GREEN pairs)
+- [ ] Wave 2: F5×3 stacks GUARDED Shape A (6 commits minimum + 1 supabase seam precondition = ~7 commits)
+- [ ] Wave 3: F3 split trap (2 commits: RED + GREEN)
 - [ ] Wave 4: D-07 audit (1 commit) + D-07 implementation (1 commit)
-- [ ] Wave 5: ADR-0029 + SKILL.md + CHANGELOG.md + final verification (4 commits)
-- [ ] Total commit count: 22-24 commits (depending on RED/GREEN pair count)
+- [ ] Wave 5: SKILL.md + CHANGELOG.md + final verification (3 commits, ADR moved to Wave 0)
+- [ ] Total commit count: ~24-26 commits (was 22-24 pre-revision; +Wave 0 + supabase seam precondition)
 - [ ] add-observability/SKILL.md = `version: 0.7.0`
-- [ ] add-observability/CHANGELOG.md has `## 0.7.0` entry covering all 5 F-items + D-07 + D-09 + R02/R04 regression
-- [ ] docs/decisions/0029-cron-monitor-sdk-composition.md exists with all 4 rejected shapes
+- [ ] add-observability/CHANGELOG.md has `## 0.7.0` entry with honest D-07 reframe + narrowed Guarded regression + AbortController callout
+- [ ] docs/decisions/0029-cron-monitor-sdk-composition.md exists (WAVE 0) with 5 rejected shapes (incl. original Shape A)
 - [ ] No claude-workflow SKILL.md version touched
 - [ ] No new migration file in migrations/
-- [ ] migrations/run-tests.sh exits 0 with ≥ 180 tests
+- [ ] migrations/run-tests.sh exits 0; two new named tests appear in PASS output
 - [ ] add-observability/templates/run-template-tests.sh all exits 0
-- [ ] gitnexus_detect_changes() reports only symbols in <gitnexus_required_symbols> table
+- [ ] gitnexus_detect_changes() (global + wave-closers) reports only expected symbols
 - [ ] Threat-model dispositions documented in commits where mitigations land
-- [ ] Branch `feat/observability-followups-v0.7.0` ready for `/gsd-review`
+- [ ] Branch `feat/observability-followups-v0.7.0` ready for re-review via `/gsd-review --phase 23 --all` to confirm HIGH concerns landed
 </success_criteria>
 
 <output>
 After completion:
-1. Create `.planning/phases/23-observability-followups/SUMMARY.md` (the executor authors this from the GSD summary template at $HOME/.claude/get-shit-done/templates/summary.md)
-2. Cut PR `feat: observability follow-ups + withCronMonitor Sentry.withMonitor composition (add-observability 0.7.0)` against `main` with PR body referencing CONTEXT.md + ADR-0029 + CHANGELOG.md 0.7.0 + the regression callout
-3. Mandatory `/gsd-review` (multi-AI plan review) per Phase 22 ADR 0018 — F5 promotes this phase from "review-residual cleanup" to "architectural change touching downstream consumers"
+1. Create `.planning/phases/23-observability-followups/SUMMARY.md` from $HOME/.claude/get-shit-done/templates/summary.md
+2. Cut PR `feat: observability follow-ups + GUARDED withCronMonitor Sentry.withMonitor composition (add-observability 0.7.0)` against `main` with PR body referencing CONTEXT.md (amended) + ADR-0029 (Wave 0) + CHANGELOG.md 0.7.0 + narrowed regression callout + 9 revision IDs from 23-REVIEWS.md
+3. Re-run `/gsd-review --phase 23 --all` (codex + gemini) to confirm HIGH concerns landed and verdict moves to LOW
 4. Mandatory `/cso` per global CLAUDE.md — F5 changes how Sentry credentials/check-in payloads flow through `withIsolationScope` boundaries
-5. `/qa` SKIPPED — no dev server in this repo (existing repo invariant)
+5. `/qa` SKIPPED — no dev server in this repo
 </output>
-</content>
-</invoke>
