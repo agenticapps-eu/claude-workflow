@@ -11,15 +11,15 @@
 // happens inline in the existing wrapper's `init()`); the layering is 2-deep,
 // not 3-deep like the Worker stack.
 //
-// Sentry SDK interaction is wrapped in try/swallow + opt-in debug log so an
-// SDK throw during captureCheckIn doesn't break the cron — the heartbeat is
-// not in the critical path. See PLAN R02/R03/R04.
+// Phase 23 / ADR-0029: refactored from hand-rolled captureCheckIn lifecycle to
+// GUARDED Shape A — composes Sentry.withMonitor (via _withMonitorImpl seam) with
+// a handlerStarted flag so a pre-callback transport failure falls back to
+// unmonitored execution (cron always runs). Post-callback errors propagate to
+// the outer withObservability. See D-08 + codex MEDIUM-4.
 //
 // Env access uses `Deno.env.get(...)` per the rest of this stack. The lookup
-// is guarded so the wrapper can be loaded under a non-Deno runtime (e.g.
-// vitest, if a downstream project ever wants to unit-test it in Node) without
-// throwing at import time — the underlying capability is detected at call
-// time.
+// is guarded so the wrapper can be loaded under a non-Deno runtime without
+// throwing at import time — the underlying capability is detected at call time.
 //
 
 // Import via the stack's npm: specifier — matches destinations/sentry.ts
@@ -116,10 +116,6 @@ function isConfigured(): boolean {
   return typeof dsn === "string" && dsn.length > 0;
 }
 
-function isDebug(): boolean {
-  return denoEnv("SENTRY_DEBUG") === "1";
-}
-
 /**
  * D6 — 3-source slug resolution (precedence: explicit > env > auto-derive).
  * Supabase-edge auto-shape: `${SERVICE_NAME ?? "service"}:${handlerName ?? "scheduled"}`
@@ -161,42 +157,27 @@ function buildMonitorConfig(
   return out;
 }
 
-/**
- * R04 — surface swallowed errors only when `SENTRY_DEBUG=1`.
- * The Error object reaches the log call's argument list (test asserts via
- * `args.some((a) => a instanceof Error)`).
- */
-function debugLog(msg: string, err: unknown): void {
-  if (isDebug()) {
-    // eslint-disable-next-line no-console
-    console.error(msg, err);
-  }
-}
-
 // ─── Public wrapper ───────────────────────────────────────────────────────────
 
 /**
  * withCronMonitor — wraps a Deno-style `(req: Request) => Promise<Response>`
- * handler with Sentry Crons heartbeats (in_progress → ok | error) for
- * Supabase Edge functions invoked by `pg_cron`.
+ * handler with Sentry Crons heartbeats via `Sentry.withMonitor` for Supabase
+ * Edge functions invoked by `pg_cron`.
  *
  * Per CONTEXT D5b, compose as:
  *
  *   Deno.serve(withObservability(withCronMonitor(handler, { monitorSlug })))
  *
- * `withCronMonitor` is INNERMOST so its try/catch runs first and the rethrown
- * error still propagates to the outer `withObservability` capture path.
- *
- * Behaviour:
- *  - No-ops when `SENTRY_DSN` is unset (fail-safe per PLAN R02).
+ * GUARDED Shape A (ADR-0029 / D-08):
+ *  - No-ops when `SENTRY_DSN` is unset (fail-safe per R02).
  *  - Slug resolves per D6 (explicit > env > auto-derive on handlerName).
- *  - `monitorConfig` (schedule + maxRuntime) is forwarded as Sentry's 2nd arg
- *    on the in_progress checkin only; subsequent ok/error checkins pass only
- *    the first arg (Sentry treats the monitor as already-configured).
- *  - SDK exceptions during checkin are caught and swallowed; opt-in
- *    `SENTRY_DEBUG=1` surfaces them via `console.error`.
- *  - Handler exceptions are re-thrown after the error checkin so the outer
- *    `withObservability` still captures them.
+ *  - `monitorConfig` (schedule + maxRuntime) forwarded as Sentry's 3rd arg.
+ *  - Pre-callback transport failure → falls back to unmonitored handler run
+ *    (cron always executes — Guarded Shape A guarantee).
+ *  - Post-callback errors (handler throw OR ok/error check-in transport) →
+ *    propagate to outer withObservability (no longer swallowed).
+ *  - Uses `_withMonitorImpl` seam (codex MEDIUM-4 / R-rev-6) so Deno tests
+ *    can inject a fake without module-boundary mocking.
  */
 export function withCronMonitor(
   handler: (req: Request) => Promise<Response>,
@@ -211,37 +192,25 @@ export function withCronMonitor(
     const monitorSlug = resolveSlug(config);
     const monitorConfig = buildMonitorConfig(config);
 
-    // in_progress checkin — captures checkInId for the completion call.
-    let checkInId: string | undefined;
+    // GUARDED Shape A (ADR-0029 / D-08):
+    // handlerStarted distinguishes pre-callback transport failure (fall back to
+    // unmonitored) from post-callback errors (propagate to outer wrapper).
+    let handlerStarted = false;
     try {
-      const ret = monitorConfig !== undefined
-        ? captureCheckInFn({ monitorSlug, status: "in_progress" }, monitorConfig)
-        : captureCheckInFn({ monitorSlug, status: "in_progress" });
-      checkInId = ret as unknown as string;
-    } catch (e) {
-      debugLog("[withCronMonitor] in_progress checkin failed:", e);
-    }
-
-    try {
-      const res = await handler(req);
-      if (checkInId !== undefined) {
-        try {
-          // No monitorConfig on completion — only in_progress upserts.
-          captureCheckInFn({ checkInId, monitorSlug, status: "ok" });
-        } catch (e) {
-          debugLog("[withCronMonitor] ok checkin failed:", e);
-        }
-      }
-      return res;
+      return await _withMonitorImpl(
+        monitorSlug,
+        () => {
+          handlerStarted = true;
+          return handler(req);
+        },
+        monitorConfig,
+      ) as Response;
     } catch (err) {
-      if (checkInId !== undefined) {
-        try {
-          captureCheckInFn({ checkInId, monitorSlug, status: "error" });
-        } catch (e) {
-          debugLog("[withCronMonitor] error checkin failed:", e);
-        }
+      if (!handlerStarted) {
+        // Sentry transport failed before handler ran — fall back to unmonitored.
+        return handler(req);
       }
-      // Re-throw original — outer withObservability captures it.
+      // handler-thrown OR post-callback errors propagate to outer withObservability.
       throw err;
     }
   };
