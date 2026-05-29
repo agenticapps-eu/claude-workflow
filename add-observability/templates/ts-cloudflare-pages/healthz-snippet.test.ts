@@ -22,7 +22,7 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
-import { onRequest } from "./healthz-snippet";
+import { onRequest, DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS } from "./healthz-snippet";
 
 /** Minimal stand-in for Pages' EventContext — only request + env are read. */
 function makeCtx(env: Record<string, unknown>): {
@@ -119,5 +119,75 @@ describe("onRequest (healthz) — any probe failure → degraded", () => {
     expect(res.status).toBe(503);
     const body = await res.json();
     expect(body).toEqual({ status: "degraded", checks: { db: false } });
+  });
+});
+
+// ─── F2 per-probe timeout tests (Phase 23 / D-03 / R-rev-3 narrowed for Pages) ─
+
+describe("onRequest (healthz) — per-probe timeout (F2 Pages)", () => {
+  it("Test 1: fast probe resolves within timeout → status ok", async () => {
+    const env = {
+      OBSERVABILITY_KV: { get: vi.fn().mockResolvedValue(null) },
+    };
+    // deno-lint-ignore no-explicit-any
+    const res = await (onRequest as any)(makeCtx(env));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.status).toBe("ok");
+  });
+
+  it("Test 2: probe hanging > default timeout → degraded with 'timeout' sentinel", async () => {
+    const env = {
+      OBSERVABILITY_KV: {
+        get: vi.fn().mockImplementation(() =>
+          new Promise<null>(() => { /* never resolves */ }),
+        ),
+      },
+    };
+    const start = Date.now();
+    // deno-lint-ignore no-explicit-any
+    const res = await (onRequest as any)(makeCtx(env));
+    const elapsed = Date.now() - start;
+    expect(elapsed).toBeLessThan(DEFAULT_HEALTHZ_PROBE_TIMEOUT_MS + 200);
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.checks.kv).toBe("timeout");
+  }, 10000);
+
+  it("Test 3 (REVISED — env var instead of 3rd arg): context.env.HEALTHZ_PROBE_TIMEOUT_MS overrides timeout", async () => {
+    // D-03 (narrowed for Pages per codex MEDIUM-5): onRequest signature is runtime-fixed —
+    // operators configure timeout via env var, not function args. Worker keeps the 3rd-arg path.
+    const env = {
+      HEALTHZ_PROBE_TIMEOUT_MS: "500",
+      OBSERVABILITY_KV: {
+        get: vi.fn().mockImplementation(() =>
+          new Promise<null>(() => { /* hangs 1000ms > 500ms override */ }),
+        ),
+      },
+    };
+    const start = Date.now();
+    // deno-lint-ignore no-explicit-any
+    const res = await (onRequest as any)(makeCtx(env));
+    const elapsed = Date.now() - start;
+    expect(elapsed).toBeLessThan(700); // 500ms + 200ms slack
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.checks.kv).toBe("timeout");
+  }, 5000);
+
+  it("Test 5 (gemini MEDIUM-1): no unhandled rejection after fast probe", async () => {
+    const unhandledRejections: unknown[] = [];
+    const listener = (reason: unknown) => unhandledRejections.push(reason);
+    process.on("unhandledRejection", listener);
+
+    const env = {
+      OBSERVABILITY_KV: { get: vi.fn().mockResolvedValue(null) },
+    };
+    // deno-lint-ignore no-explicit-any
+    await (onRequest as any)(makeCtx(env));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    process.off("unhandledRejection", listener);
+    expect(unhandledRejections).toHaveLength(0);
   });
 });
