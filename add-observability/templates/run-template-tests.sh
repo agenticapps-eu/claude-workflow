@@ -479,8 +479,14 @@ run_ts_supabase_edge() {
   # T18/R12: existence gate removed — file is part of the canonical set now.
   substitute_tokens "$SRC/healthz-snippet.ts" "$OBS_DIR/healthz-snippet.ts"
 
+  # Phase 24 — recordLLMResponseMeta helper (T24.1.3). Impl is `.ts` (not
+  # `.test.ts`) so the test-glob below misses it — explicit copy. The
+  # .test.ts file is auto-picked-up by the glob.
+  substitute_tokens "$SRC/llm-response-meta.ts" "$OBS_DIR/llm-response-meta.ts"
+
   # Copy every *.test.ts (index contract suite + phase-21 axiom suite +
-  # phase-22 cron-monitor suite + phase-22 healthz-snippet suite).
+  # phase-22 cron-monitor suite + phase-22 healthz-snippet suite + phase-24
+  # llm-response-meta suite).
   for f in "$SRC"/*.test.ts; do
     [[ -f "$f" ]] || continue
     substitute_tokens "$f" "$OBS_DIR/$(basename "$f")"
