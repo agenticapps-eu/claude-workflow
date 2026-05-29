@@ -510,6 +510,8 @@ out of the anchored zones).
   rewritten `src/index.ts` with anchored imports + anchored default
   export, and `CLAUDE.md` with the observability block.
 
+**Scheduled handler — `withCronMonitor` composition.** Per Phase 22 D5a, `withCronMonitor` composes INNERMOST: `withSentry(env)(withObservabilityScheduled(withCronMonitor(handler, {...})))`. See `templates/ts-cloudflare-worker/cron-monitor.ts:133` for the exported wrapper signature.
+
 #### Phase 5 detail — `ts-cloudflare-pages`
 
 Pages Functions use a fundamentally different mount pattern from
@@ -607,6 +609,8 @@ anchored).
   `before/`** (the load-bearing assertion for this stack), and
   `CLAUDE.md` with the observability block whose `policy:` points at
   `functions/_lib/observability/policy.md`.
+
+**Scheduled handler — `withCronMonitor` composition.** Per Phase 22 D5a (Pages mirrors Worker), `withCronMonitor` composes INNERMOST when the Pages function exports a `scheduled` handler. See `templates/ts-cloudflare-pages/cron-monitor.ts:133` for the exported wrapper signature.
 
 #### Phase 5 detail — `ts-supabase-edge`
 
@@ -730,6 +734,8 @@ Deno.serve(withObservability(handler))
   policy.md}`, rewritten `supabase/functions/hello/index.ts` with the
   anchored import at the top and the anchored `Deno.serve(...)` wrap,
   and `CLAUDE.md` with the observability block.
+
+**Scheduled handler — `withCronMonitor` composition.** Per Phase 22 D5b (supabase-edge composition order), `withCronMonitor` composes INNERMOST under `withObservability`. See `templates/ts-supabase-edge/cron-monitor.ts:182` for the exported wrapper signature.
 
 #### Phase 5 detail — `ts-react-vite`
 
@@ -1076,6 +1082,8 @@ Each `expected-after/` shows the wrapper materialised at
 the entry file rewritten per the pattern's wrap shape, and `CLAUDE.md`
 with the observability block whose `policy:` points at
 `internal/observability/policy.md`.
+
+**Scheduled handler — `WithCronMonitor` composition.** Per Phase 22 D5d, `WithCronMonitor` composes INNERMOST in the middleware chain. See `templates/go-fly-http/cron_monitor.go:225` for the exported wrapper signature. NOTE (D-09): `sentry-go` ships no `WithMonitor` equivalent — this impl IS the cross-stack parity for that helper.
 
 ### Phase 6 — Write `observability:` metadata to CLAUDE.md (consent gate 3 of 3 — CLAUDE.md)
 
