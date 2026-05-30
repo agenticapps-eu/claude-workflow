@@ -144,6 +144,11 @@ run_ts_cloudflare_worker() {
   substitute_tokens "$SRC/healthz-snippet.test.ts" "$OBS_DIR/healthz-snippet.test.ts"
   substitute_tokens "$SRC/healthz-snippet.ts"      "$OBS_DIR/healthz-snippet.ts"
 
+  # Phase 24 — recordLLMResponseMeta helper (T24.1.1). Test file wired in RED;
+  # impl file wired in GREEN (TDD discipline per workflow skill).
+  substitute_tokens "$SRC/llm-response-meta.test.ts" "$OBS_DIR/llm-response-meta.test.ts"
+  substitute_tokens "$SRC/llm-response-meta.ts"      "$OBS_DIR/llm-response-meta.ts"
+
   # destinations/ sub-dir (role-based registry + adapters, phase 21).
   # Copy every .ts file (registry, adapters, and their tests) into the
   # materialized destinations/ dir so the registry tests run.
@@ -257,6 +262,11 @@ run_ts_cloudflare_pages() {
   # T18/R12: existence gates removed — files are part of the canonical set now.
   substitute_tokens "$SRC/healthz-snippet.test.ts" "$OBS_DIR/healthz-snippet.test.ts"
   substitute_tokens "$SRC/healthz-snippet.ts"      "$OBS_DIR/healthz-snippet.ts"
+
+  # Phase 24 — recordLLMResponseMeta helper (T24.1.2). Test wired in RED;
+  # impl in GREEN. Byte-identical to worker stack.
+  substitute_tokens "$SRC/llm-response-meta.test.ts" "$OBS_DIR/llm-response-meta.test.ts"
+  substitute_tokens "$SRC/llm-response-meta.ts"      "$OBS_DIR/llm-response-meta.ts"
 
   # destinations/ sub-dir (role-based registry + adapters, phase 21).
   if [[ -d "$SRC/destinations" ]]; then
@@ -469,8 +479,14 @@ run_ts_supabase_edge() {
   # T18/R12: existence gate removed — file is part of the canonical set now.
   substitute_tokens "$SRC/healthz-snippet.ts" "$OBS_DIR/healthz-snippet.ts"
 
+  # Phase 24 — recordLLMResponseMeta helper (T24.1.3). Impl is `.ts` (not
+  # `.test.ts`) so the test-glob below misses it — explicit copy. The
+  # .test.ts file is auto-picked-up by the glob.
+  substitute_tokens "$SRC/llm-response-meta.ts" "$OBS_DIR/llm-response-meta.ts"
+
   # Copy every *.test.ts (index contract suite + phase-21 axiom suite +
-  # phase-22 cron-monitor suite + phase-22 healthz-snippet suite).
+  # phase-22 cron-monitor suite + phase-22 healthz-snippet suite + phase-24
+  # llm-response-meta suite).
   for f in "$SRC"/*.test.ts; do
     [[ -f "$f" ]] || continue
     substitute_tokens "$f" "$OBS_DIR/$(basename "$f")"
