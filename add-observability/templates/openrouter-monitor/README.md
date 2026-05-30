@@ -38,7 +38,7 @@ wrangler secret put AXIOM_DATASET # optional
 
 | Var | Default | Purpose |
 |---|---|---|
-| `DEPLOY_ENV` | `production` | Sentry environment tag. |
+| `DEPLOY_ENV` | `dev` (code fallback) / `production` (set by `wrangler.toml [vars]`) | Sentry environment tag. Real `wrangler deploy` runs pick up `"production"` from `[vars]`; local `wrangler dev` falls back to `"dev"` so dev traffic never lands in the prod Sentry environment. |
 | `SERVICE_NAME` | `openrouter-monitor` | Sentry release identifier. |
 | `OPENROUTER_WARNING_RATIO` | `0.85` | Emits `credit_low` warn at this used-ratio. |
 | `OPENROUTER_CRITICAL_RATIO` | `0.95` | `captureError(OpenRouterBudgetCriticalError)` at this used-ratio. |

@@ -38,7 +38,11 @@ vi.mock("./observability", () => ({
 }));
 import { logEvent, captureError } from "./observability";
 
-interface Env {
+// Mirrors check-credit.ts's Env interface (kept local so the test file is
+// self-contained — Env isn't exported from check-credit). Must extend
+// Record<string, unknown> to match check-credit's parameter type, which
+// extends it to satisfy the ScheduledFn<E> constraint in cron-monitor.ts.
+interface Env extends Record<string, unknown> {
   OPENROUTER_API_KEY: string;
   OPENROUTER_WARNING_RATIO?: string;
   OPENROUTER_CRITICAL_RATIO?: string;

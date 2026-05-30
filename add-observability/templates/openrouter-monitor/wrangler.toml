@@ -8,6 +8,11 @@
 name = "openrouter-monitor"
 main = "src/index.ts"
 compatibility_date = "2026-05-29"
+# nodejs_compat is REQUIRED for AbortSignal.timeout() in check-credit.ts (Stage 1
+# F-3 fix — 10s fetch timeout on the OpenRouter healthcheck). Dropping it would
+# silently break the timeout: the call would hang up to the 30s scheduled-handler
+# wall-clock and surface as an opaque worker kill instead of a clean
+# OpenRouterHealthcheckFailedError(0, "network") emission.
 compatibility_flags = ["nodejs_compat"]
 
 [triggers]

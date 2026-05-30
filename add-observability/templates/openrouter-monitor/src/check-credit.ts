@@ -62,7 +62,12 @@ export class OpenRouterHealthcheckFailedError extends Error {
   }
 }
 
-interface Env {
+// Env extends Record<string, unknown> so it satisfies the constraint on
+// ScheduledFn<E> in cron-monitor.ts (`E extends Record<string, unknown>`) —
+// without this, index.ts has to cast `checkCredit as never` to wire the
+// composition chain. Stage 2 M-1+M-3 fix: type the handler signature
+// properly so the cast disappears.
+interface Env extends Record<string, unknown> {
   OPENROUTER_API_KEY: string;
   OPENROUTER_WARNING_RATIO?: string;
   OPENROUTER_CRITICAL_RATIO?: string;
@@ -89,9 +94,9 @@ function parseRatio(raw: string | undefined, fallback: number): number {
 }
 
 export async function checkCredit(
-  _controller: unknown,
+  _controller: ScheduledController,
   env: Env,
-  _ctx: unknown,
+  _ctx: ExecutionContext,
 ): Promise<void> {
   let warningRatio = parseRatio(env.OPENROUTER_WARNING_RATIO, DEFAULT_WARNING_RATIO);
   let criticalRatio = parseRatio(env.OPENROUTER_CRITICAL_RATIO, DEFAULT_CRITICAL_RATIO);

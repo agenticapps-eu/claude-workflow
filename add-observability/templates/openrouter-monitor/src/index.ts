@@ -57,7 +57,7 @@ export default withSentry(
   }),
   {
     scheduled: withObservabilityScheduled(
-      withCronMonitor(checkCredit as never, {
+      withCronMonitor(checkCredit, {
         monitorSlug: "openrouter-credit-check",
         handlerName: "scheduled",
       }),
