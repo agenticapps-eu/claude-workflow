@@ -58,9 +58,9 @@ Caught **4 HIGH + 5 MEDIUM** real bugs before code shipped. Folded into CONTEXT 
 | MED | codex | Sentry SDK 10.2.0+ requirement missing | D-17 — runbook §1 + INIT §5.5 SDK-version check |
 | MED | codex | Detection grep too narrow | D-13 broadened — wrangler.toml + .dev.vars + workspace package.jsons |
 
-## Commit Log (chronological — 14 commits)
+## Commit Log (chronological — 16 commits)
 
-```
+```text
 ed63ae9 feat(24): Wave 3 — INIT.md §5.5 + version bumps + CHANGELOG entries + migration 0020
 3a246e3 docs(24): Wave 2.1 — openrouter-integration.md runbook (ADR-0030 §2-§5)
 91b49ec feat(24): GREEN — openrouter-monitor handler + composition entry
@@ -103,6 +103,7 @@ All emissions go through `logEvent` / `captureError` (helper) or the bundled wra
 - **Go stack helper / react-vite helper** — out of scope for v0.8.0.
 - **`OPENROUTER_BUDGET_OVERRIDE` ops override** — v0.9.0 candidate.
 - **`@sentry/cloudflare ^10.x` typecheck issues in bundled subtree** — pre-existing in worker template; surfaces as `tsc --noEmit` errors. The worker template's harness only runs vitest, so this is latent. Fork upgrading to 10.x will need to address; documented in scaffold README.
+- **Worker-template wrapper gaps** (also inherited by the monitor's bundled subtree): (a) `TRACE_SAMPLE_RATE` is declared in `observability/index.ts:62` but never wired into any sampler; (b) `REDACTED_KEYS` doesn't include `authorization` / `bearer`, so any future code path that logs request headers would leak credentials; (c) `serviceName` / `deployEnv` are module-level mutable singletons, which is safe today but couples to Cloudflare's current "no concurrent invocations per isolate" guarantee. Fix-shape spans worker + pages + supabase-edge templates simultaneously — separate Phase 25.x cleanup; surfaced by Phase 24 `/review`.
 - **ROADMAP.md / STATE.md retroactive bootstrap** — still the highest-leverage workflow gap. Separate phase.
 - **GH Actions CI** — independent of this PR.
 - **Upstream `WithMonitor` contribution to `getsentry/sentry-go`** — out of repo scope (per ADR-0029 D-09).

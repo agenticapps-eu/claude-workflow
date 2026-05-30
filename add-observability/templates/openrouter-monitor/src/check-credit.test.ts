@@ -1,7 +1,7 @@
 /**
  * check-credit.test.ts — openrouter-monitor handler contract suite.
  *
- * Phase 24 / ADR-0030. 12 fixtures per CONTEXT D-15 covering:
+ * Phase 24 / ADR-0030. 13 fixtures per CONTEXT D-15 covering:
  *   (1)  under WARNING                       → pulse only
  *   (2)  at WARNING exactly (0.85)           → pulse + credit_low warn
  *   (3)  between WARNING and CRITICAL (0.90) → pulse + credit_low warn
@@ -14,6 +14,7 @@
  *   (10) limit: null (unlimited)             → pulse only, ratio = 0
  *   (11) inverted thresholds                 → misconfig warn + fallback
  *   (12) invalid env vars                    → fallback to default 0.85
+ *   (13) 200 OK + missing body.data           → HealthcheckFailedError(-1, parse)
  *
  * Mocks `./observability` (the bundled wrapper). The composition chain
  * (withSentry/withObservabilityScheduled/withCronMonitor) is wired in
@@ -200,8 +201,12 @@ describe("checkCredit", () => {
     );
   });
 
-  it("(12) invalid env vars (NaN/negative/>1/empty) — fallback to default 0.85", async () => {
-    for (const bad of ["not-a-number", "-1", "1.5", ""]) {
+  it("(12) invalid env vars (NaN/negative/zero/>1/trailing-garbage/empty) — fallback to default 0.85", async () => {
+    // "0" must fallback (would otherwise spam credit_low on every pulse since
+    // any non-negative used_ratio satisfies `>= 0`).
+    // "0.85extra" must fallback (parseFloat would silently accept 0.85; Number
+    // correctly rejects trailing garbage).
+    for (const bad of ["not-a-number", "-1", "0", "1.5", "0.85extra", ""]) {
       vi.clearAllMocks();
       mockFetchOk({ data: { usage: 85, limit: 100 } });
       await checkCredit(noController, makeEnv({ OPENROUTER_WARNING_RATIO: bad }), noCtx);
@@ -209,6 +214,23 @@ describe("checkCredit", () => {
       expect(logEvent).toHaveBeenCalledWith(
         expect.objectContaining({ event: "openrouter.credit_low", severity: "warn" }),
       );
+    }
+  });
+
+  it("(13) 200 OK + missing data — HealthcheckFailedError(-1, parse) NOT a false-healthy pulse", async () => {
+    // Three malformed-200 shapes that the optional-chain would have silently
+    // converted to used=0/limit=0/ratio=0 (a clean Axiom pulse) before the
+    // contract guard was added. Each must now surface as a parse-class error.
+    for (const malformed of [{}, { error: "key revoked" }, { data: null }]) {
+      vi.clearAllMocks();
+      mockFetchOk(malformed);
+      await checkCredit(noController, makeEnv(), noCtx);
+      expect(logEvent).not.toHaveBeenCalled(); // no false-healthy pulse
+      expect(captureError).toHaveBeenCalledTimes(1);
+      const [err] = (captureError as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(err).toBeInstanceOf(OpenRouterHealthcheckFailedError);
+      expect((err as OpenRouterHealthcheckFailedError).status).toBe(-1);
+      expect((err as OpenRouterHealthcheckFailedError).cause_kind).toBe("parse");
     }
   });
 });

@@ -46,7 +46,11 @@ interface Env extends Record<string, unknown> {
 export default withSentry(
   (env: Env) => ({
     dsn: env.SENTRY_DSN,
-    environment: env.DEPLOY_ENV ?? "production",
+    // Default to "dev" (same as the wrapper's init() in observability/index.ts)
+    // so an unset DEPLOY_ENV during local `wrangler dev` doesn't pollute the
+    // "production" Sentry environment. The wrangler.toml [vars] block sets
+    // "production" explicitly for real deploys.
+    environment: env.DEPLOY_ENV ?? "dev",
     release: env.SERVICE_NAME ?? "openrouter-monitor",
     tracesSampleRate: 0.1,
     sendDefaultPii: false,

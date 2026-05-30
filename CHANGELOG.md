@@ -33,7 +33,8 @@ See `.planning/phases/24-openrouter-integration/24-REVIEWS.md` for the full revi
 - `skill/SKILL.md` frontmatter `version: 1.18.0 → 1.19.0` (minor — purely additive).
 - `add-observability/SKILL.md` frontmatter `version: 0.7.0 → 0.8.0` (minor — purely additive).
 - `add-observability/templates/openrouter-monitor/package.json` pins `@sentry/cloudflare ^8.0.0` (matches the bundled wrapper subtree's baseline). The 10.2.0 minimum applies to the main app using AI Monitoring; the monitor itself makes no LLM calls.
-- Test surface delta: +21 helper fixtures (across worker/pages/supabase-edge template harness) + 12 monitor fixtures (separate `npm test` in the scaffold dir).
+- Test surface delta: +21 helper fixtures (across worker/pages/supabase-edge template harness) + 13 monitor fixtures (separate `npm test` in the scaffold dir; +1 from the post-`/review` contract guard for 200-OK-missing-data).
+- Phase 24 `/review` flagged 3 pre-existing concerns in the worker-template wrapper subtree (also inherited by the monitor's bundled copy): `TRACE_SAMPLE_RATE` declared but unwired; `REDACTED_KEYS` missing `authorization`/`bearer`; module-level mutable `serviceName`/`deployEnv` singletons. Carried forward to a Phase 25.x worker-template cleanup — the fix-shape spans worker + pages + supabase-edge simultaneously and is out of scope for this PR.
 
 ### Fixed (`add-observability` 0.5.0 → 0.5.1 — wrapper template correctness, issue #49)
 

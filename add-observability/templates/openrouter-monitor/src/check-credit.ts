@@ -72,16 +72,20 @@ const DEFAULT_WARNING_RATIO = 0.85;
 const DEFAULT_CRITICAL_RATIO = 0.95;
 
 /**
- * Parse a string env-var as a [0, 1] ratio. Falls back to `fallback` when:
+ * Parse a string env-var as a (0, 1] ratio. Falls back to `fallback` when:
  *   - undefined / empty
  *   - not a finite number (e.g. "not-a-number")
- *   - negative
- *   - > 1
+ *   - has trailing garbage (e.g. "0.85 # comment" — Number() rejects, parseFloat
+ *     would silently accept the leading 0.85)
+ *   - zero or negative (zero would spam credit_low on every pulse since
+ *     `used_ratio >= 0` is always true for any non-negative spend)
+ *   - > 1 (ratios above 1 are nonsensical for a usage/limit fraction)
  */
 function parseRatio(raw: string | undefined, fallback: number): number {
   if (raw === undefined || raw === "") return fallback;
-  const n = parseFloat(raw);
-  return Number.isFinite(n) && n >= 0 && n <= 1 ? n : fallback;
+  // Number() rejects trailing garbage that parseFloat would silently truncate.
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 && n <= 1 ? n : fallback;
 }
 
 export async function checkCredit(
@@ -112,10 +116,15 @@ export async function checkCredit(
 
   // ─── Fetch /api/v1/key ──────────────────────────────────────────────────
   // Separate try/catch for network errors (fetch reject = no response).
+  // 10s timeout: Cloudflare Workers' scheduled handler wall-clock is 30s, so
+  // a stalled connection would already get killed — but an explicit timeout
+  // surfaces the failure cleanly through the existing network-error path
+  // (OpenRouterHealthcheckFailedError(0, "network")) instead of an opaque kill.
   let res: Response;
   try {
     res = await fetch("https://openrouter.ai/api/v1/key", {
       headers: { Authorization: `Bearer ${env.OPENROUTER_API_KEY}` },
+      signal: AbortSignal.timeout(10_000),
     });
   } catch (err) {
     captureError(new OpenRouterHealthcheckFailedError(0, "network"), {
@@ -158,10 +167,30 @@ export async function checkCredit(
     return;
   }
 
-  const used = body.data?.usage ?? 0;
+  // Contract check: OpenRouter's documented /api/v1/key shape ALWAYS includes
+  // `data`. A 200 with body `{}` / `{"error":"..."}` / `{"data":null}` means
+  // the contract is broken (key revoked mid-flight, deprecated endpoint,
+  // partial outage with maintenance JSON). Without this guard, body.data?.x
+  // optional-chains would silently produce used=0/limit=0/ratio=0 — a
+  // false-healthy pulse. Surface as a parse-class failure so operators get
+  // a real alert instead of a clean Axiom signal.
+  if (!body.data || typeof body.data !== "object") {
+    captureError(new OpenRouterHealthcheckFailedError(-1, "parse"), {
+      event: "openrouter.healthcheck_failed",
+      severity: "error",
+      attrs: {
+        status: -1,
+        cause: "parse",
+        message: "200 OK but body.data missing or non-object — OpenRouter contract broken",
+      },
+    });
+    return;
+  }
+
+  const used = body.data.usage ?? 0;
   // OpenRouter returns `limit: null` for unlimited keys. Treat as ratio 0
   // (pulse only — no warn/critical for unbounded budgets).
-  const limit = body.data?.limit ?? 0;
+  const limit = body.data.limit ?? 0;
   const used_ratio = limit > 0 ? used / limit : 0;
 
   // Always emit pulse for the Axiom time-series.

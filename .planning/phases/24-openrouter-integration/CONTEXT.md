@@ -154,7 +154,7 @@ export default withSentry(
 
 **Scaffold file list (revised)**:
 
-```
+```text
 add-observability/templates/openrouter-monitor/
 ├── package.json
 ├── wrangler.toml

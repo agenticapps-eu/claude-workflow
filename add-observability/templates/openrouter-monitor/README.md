@@ -75,7 +75,7 @@ The cost of containment is orders of magnitude lower with read-only scope.
 
 Use separate keys per environment:
 
-```
+```text
 OPENROUTER_API_KEY_DEV   →  for the dev/staging Worker
 OPENROUTER_API_KEY_PROD  →  for the prod Worker
 ```

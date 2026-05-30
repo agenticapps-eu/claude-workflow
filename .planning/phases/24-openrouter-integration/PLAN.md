@@ -59,7 +59,7 @@ must_haves:
     - "Runbook §2 (PII GATE) includes the synthetic / non-user data carve-out (D-19): `recordInputs:true`/`recordOutputs:true` are allowed ONLY for non-user/synthetic/approved-eval-dataset traces with written policy.md approval. Concrete acceptable examples listed; non-acceptable examples explicit (real user prompts, PHI, financial PII, chat-history)."
     - "INIT.md §5.5 detection grep broadened per D-13: matches package.json (or workspace package.jsons) for 'openai' or '@anthropic-ai/sdk' AND any of (i) *.ts/*.tsx/*.js/*.mts file containing 'openrouter.ai' (case-insensitive); (ii) wrangler.toml/wrangler.jsonc [env.production.vars] containing OPENROUTER_API_KEY; (iii) .dev.vars/.env.example setting OPENROUTER_API_KEY. Action (a) checks installed @sentry/* version >= 10.2.0 before offering integration insertion."
     - "Monitor README.md leads with 'Use a keys:read-scoped OpenRouter API key' callout (not the generation key) and documents threshold tuning + cron tuning + Sentry alert wiring."
-    - "Monitor uses NO second Sentry.init — emits via the project's standard wrapper (logEvent + captureError from the destinations registry). Monitor's src/index.ts has zero direct @sentry/cloudflare imports beyond what withCronMonitor itself transitively pulls."
+    - "Monitor uses NO second Sentry.init — emits via the project's standard wrapper (logEvent + captureError from the destinations registry). Monitor's handler logic (check-credit.ts) has zero direct @sentry/cloudflare imports; the entry composition (src/index.ts) does import `withSentry` for the standard Cloudflare Sentry SDK setup pattern — this is by design (composition layer ≠ handler logic, per §10.6)."
     - "INIT.md Phase 5 has a new §'Optional: LLM observability' subsection that: (a) runs detection grep (package.json contains 'openai' or '@anthropic-ai/sdk' AND src/ contains 'openrouter.ai'); (b) offers 3 consent-gated actions on match — (i) insert openAIIntegration into existing Sentry init, (ii) copy llm-response-meta.ts, (iii) skip; (c) defaults to (iii) on --yes runs (consent gate 4 matches the existing gate-1/2/3 convention)."
     - "skill/SKILL.md frontmatter version: 1.18.0 → 1.19.0."
     - "add-observability/SKILL.md frontmatter version: 0.7.0 → 0.8.0."
@@ -375,8 +375,8 @@ must_haves:
   </files>
   <depends_on>Task 0.1</depends_on>
   <read_first>
-    - add-observability/templates/ts-supabase-edge/lib-observability.ts (Envelope shape — Deno-flavoured but Envelope identical)
-    - add-observability/templates/ts-supabase-edge/lib-observability.test.ts (Deno test harness conventions — `Deno.test` if used)
+    - add-observability/templates/ts-supabase-edge/index.ts (Envelope shape — Deno-flavoured but Envelope identical; the supabase-edge source dir uses `index.ts` directly, no harness rename per D-04a)
+    - add-observability/templates/ts-supabase-edge/index.test.ts (Deno test harness conventions — `Deno.test` if used)
     - Task 1.1 artifacts (helper file shape)
   </read_first>
   <action>

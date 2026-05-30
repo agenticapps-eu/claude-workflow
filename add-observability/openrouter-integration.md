@@ -12,39 +12,76 @@ No raw-fetch wrapper exists — both target consumers (factiv/callbot, factiv/fx
 
 ## 1. Enable Sentry AI Monitoring (SDK path)
 
-The OpenAI SDK against OpenRouter (`new OpenAI({ baseURL: 'https://openrouter.ai/api/v1' })`) is auto-instrumentable by Sentry's AI Monitoring. One init-line change gives you per-call spans (model / tokens / cost / latency) in Sentry's AI Monitoring dashboard, with zero per-call-site code changes.
+The OpenAI SDK against OpenRouter (`new OpenAI({ baseURL: 'https://openrouter.ai/api/v1' })`) is instrumentable by Sentry's AI Monitoring. Per-call spans (model / tokens / cost / latency) appear in Sentry's AI Monitoring dashboard once you wire it in.
 
-**Prerequisite**: `@sentry/cloudflare ≥ 10.2.0` (or equivalent for `@sentry/node`, `@sentry/deno`). Sentry's OpenAI integration was added in SDK 10.2 — older versions don't ship it. Run `npm ls @sentry/cloudflare` to check your current version; upgrade if needed.
+**Prerequisite**: `@sentry/<host> ≥ 10.2.0`. Sentry's OpenAI integration shipped in SDK 10.2 — older versions don't have it. Run `npm ls @sentry/<host>` to check; upgrade if needed.
 
-**Cloudflare Workers / Pages**:
+**The wiring is runtime-specific.** Cloudflare Workers/Pages can't auto-instrument the SDK from the integration alone (the V8-isolate runtime lacks the require-hook seam that `@sentry/node` uses); you must manually wrap the client. Node.js auto-instruments via the integration array. Both paths are documented:
+
+### Cloudflare Workers / Pages — `Sentry.instrumentOpenAiClient` wrap
 
 ```typescript
 // src/lib/observability/index.ts (or wherever your Sentry init lives)
+import * as Sentry from "@sentry/cloudflare";
 import { withSentry } from "@sentry/cloudflare";
-import { openAIIntegration } from "@sentry/cloudflare"; // since 10.2.0
+import OpenAI from "openai";
 
 export default withSentry(
   (env) => ({
     dsn: env.SENTRY_DSN,
-    integrations: [
-      openAIIntegration({
-        recordInputs: false,   // ⚠️ PII — see §2
-        recordOutputs: false,  // ⚠️ PII — see §2
-      }),
-    ],
-    // ... other options
+    // ... other options (tracesSampleRate, environment, etc.)
   }),
   { /* handler exports */ },
 );
+
+// At every OpenRouter call site (or in a shared factory), wrap the client:
+const openai = new OpenAI({
+  apiKey: env.OPENROUTER_API_KEY,
+  baseURL: "https://openrouter.ai/api/v1",
+});
+
+const client = Sentry.instrumentOpenAiClient(openai, {
+  recordInputs: false,    // ⚠️ PII — see §2
+  recordOutputs: false,   // ⚠️ PII — see §2
+});
+
+// Use `client` (the wrapped one), not `openai`, for all calls.
+const { data, response } = await client.chat.completions
+  .create({ model, messages })
+  .withResponse();
 ```
 
-**Node.js (`@sentry/node`)**: same `openAIIntegration` name, different import path. Consult `@sentry/node` docs for the version-specific import.
+> Verified against Sentry's canonical Cloudflare/OpenAI integration docs (2026-05-29). The AI Agents module overview omits this wrap step; the per-runtime page is authoritative.
+> Sources:
+> - <https://docs.sentry.io/platforms/javascript/guides/cloudflare/configuration/integrations/openai/> (the wrap pattern — canonical for Workers)
+> - <https://docs.sentry.io/platforms/javascript/guides/cloudflare/tracing/instrumentation/ai-agents-module/> (AI Monitoring overview)
 
-**Supabase Edge (`@sentry/deno`)**: Sentry's Deno SDK exposes the same integration. Consult the `@sentry/deno` docs for the import path on your installed version.
+### Node.js — `openAIIntegration` in `Sentry.init` integrations array
 
-Once enabled, every `client.chat.completions.create()` call is auto-instrumented. Spans appear in Sentry under **Insights → AI Monitoring**. No per-call-site instrumentation needed.
+For projects on `@sentry/node` (or `@sentry/bun` / `@sentry/aws-serverless`), the auto-instrumentation hook IS available and the integration alone is sufficient:
 
-> Verified against Sentry docs: <https://docs.sentry.io/platforms/javascript/guides/cloudflare/tracing/instrumentation/ai-agents-module/> (2026-05-29).
+```typescript
+import * as Sentry from "@sentry/node";
+
+Sentry.init({
+  dsn: process.env.SENTRY_DSN,
+  integrations: [
+    Sentry.openAIIntegration({
+      recordInputs: false,   // ⚠️ PII — see §2
+      recordOutputs: false,  // ⚠️ PII — see §2
+    }),
+  ],
+});
+
+// No client-side wrap needed — the SDK monkey-patches OpenAI's prototype.
+const openai = new OpenAI({ apiKey: process.env.OPENROUTER_API_KEY, baseURL: "..." });
+```
+
+### Supabase Edge (`@sentry/deno`)
+
+Deno's runtime follows the same constraint as Cloudflare Workers (no require-hook). Use the `Sentry.instrumentOpenAiClient(openai, {...})` wrap pattern as shown for Cloudflare above; the function is exported from `@sentry/deno`.
+
+Once wired (wrap for Cloudflare/Deno; integration for Node), every `client.chat.completions.create()` call appears as a span in Sentry under **Insights → AI Monitoring**.
 
 ---
 

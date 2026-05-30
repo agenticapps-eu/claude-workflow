@@ -64,7 +64,7 @@ Following the workflow skill's 14 red flags:
 ## Verification check (from agentic-apps-workflow skill)
 
 ```bash
-# Commitment block present (this conversation's first response)
+# Commitment block present (this conversation's first response — note: NOT a runnable script, narrative-with-results)
 grep -rn "## Workflow commitment" .planning/phases/24-openrouter-integration/ 2>/dev/null
 # → no match in artifacts; commitment block was in the agent's conversation,
 #   not in the planning artifacts. Acceptable — the artifacts themselves
