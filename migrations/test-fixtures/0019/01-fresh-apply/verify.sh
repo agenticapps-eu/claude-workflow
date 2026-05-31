@@ -17,6 +17,9 @@ set -e
 # New production files copied.
 test -f "$ROOT/cron-monitor.ts"    || { echo "cron-monitor.ts not installed"; exit 1; }
 test -f "$ROOT/healthz-snippet.ts" || { echo "healthz-snippet.ts not installed"; exit 1; }
+# D-11 narrowed: queue-monitor.ts ships for cf-worker + cf-pages fresh applies
+# (supabase-edge excluded per codex H-6). Fixture 01 uses cf-worker shape.
+test -f "$ROOT/queue-monitor.ts"   || { echo "queue-monitor.ts not installed (D-11 regression: cf-worker fresh apply)"; exit 1; }
 
 # Test scaffolds are template-only — engine MUST NOT ship them into projects.
 test ! -e "$ROOT/cron-monitor.test.ts"    || { echo "cron-monitor.test.ts incorrectly installed (template-only)"; exit 1; }

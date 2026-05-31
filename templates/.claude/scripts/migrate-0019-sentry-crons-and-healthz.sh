@@ -696,7 +696,26 @@ emit_refuse_artifacts_for() {
     echo "#"
 
     case "$stack" in
-      ts-cloudflare-worker|ts-cloudflare-pages|ts-supabase-edge)
+      ts-cloudflare-worker|ts-cloudflare-pages)
+        if [ -f "$src/cron-monitor.ts" ]; then
+          echo ""
+          echo "# === would create: $dir/cron-monitor.ts ==="
+          cat "$src/cron-monitor.ts"
+        fi
+        if [ -f "$src/healthz-snippet.ts" ]; then
+          echo ""
+          echo "# === would create: $dir/healthz-snippet.ts ==="
+          cat "$src/healthz-snippet.ts"
+        fi
+        # D-11 narrowed: queue-monitor.ts ships for cf-worker + cf-pages only
+        if [ -f "$src/queue-monitor.ts" ]; then
+          echo ""
+          echo "# === would create: $dir/queue-monitor.ts ==="
+          cat "$src/queue-monitor.ts"
+        fi
+        ;;
+      ts-supabase-edge)
+        # Supabase Edge: cron-monitor + healthz only (no queue-monitor.ts per codex H-6)
         if [ -f "$src/cron-monitor.ts" ]; then
           echo ""
           echo "# === would create: $dir/cron-monitor.ts ==="
@@ -820,7 +839,29 @@ apply_root() {
   fi
 
   case "$stack" in
-    ts-cloudflare-worker|ts-cloudflare-pages|ts-supabase-edge)
+    ts-cloudflare-worker|ts-cloudflare-pages)
+      # D-11 narrowed scope (codex H-6): queue-monitor.ts ships ONLY to cf-worker
+      # and cf-pages stacks (Supabase Edge is Deno-runtime; no Cloudflare-Queue
+      # equivalent).
+      local cm="$src/cron-monitor.ts" hz="$src/healthz-snippet.ts" qm="$src/queue-monitor.ts"
+      if [ ! -f "$cm" ] || [ ! -f "$hz" ] || [ ! -f "$qm" ]; then
+        warn "  ERROR: template files missing for stack '$stack' ($cm or $hz or $qm)"
+        return 1
+      fi
+      if [ "$DRY_RUN" -eq 1 ]; then
+        info "  (dry-run) would copy: $cm -> $dir/cron-monitor.ts"
+        info "  (dry-run) would copy: $hz -> $dir/healthz-snippet.ts"
+        info "  (dry-run) would copy: $qm -> $dir/queue-monitor.ts"
+      else
+        cp "$cm" "$dir/cron-monitor.ts"    || return 1
+        cp "$hz" "$dir/healthz-snippet.ts" || return 1
+        cp "$qm" "$dir/queue-monitor.ts"   || return 1
+        info "  migrated: $dir  (stack: $stack) — added cron-monitor.ts + healthz-snippet.ts + queue-monitor.ts (Phase 25 D-11)"
+      fi
+      ;;
+    ts-supabase-edge)
+      # Supabase Edge: cron-monitor + healthz only. No queue-monitor.ts here
+      # (codex H-6 — no Cloudflare-Queue equivalent on Deno/Supabase).
       local cm="$src/cron-monitor.ts" hz="$src/healthz-snippet.ts"
       if [ ! -f "$cm" ] || [ ! -f "$hz" ]; then
         warn "  ERROR: template files missing for stack '$stack' ($cm or $hz)"
