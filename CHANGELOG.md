@@ -6,6 +6,32 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.20.0] — 2026-05-31
+
+### Added — Migration 0021: re-rev cron-monitor + ship queue-monitor for v1.19.0 projects (`add-observability` 0.8.0 → 0.9.0, Phase 25, ADR-0033)
+
+Delivers to projects already at v1.19.0 the Phase 25 template changes that Migration 0019 cannot retrigger on per its `from_version: 1.17.0` contract. Two deliverables ship together.
+
+- **Updated `cron-monitor.ts`** (all 3 TS stacks) — discriminated-union `CronMonitorSchedule` type (D-03) replacing the bare string; narrowed `withCronMonitor<E>` generic for cf-worker (D-05); exports `buildMonitorConfig` + `isConfigured` for queue-monitor consumer (D-19). cf-pages uses `<R>` return-type generic (codex H-3 verified). Fixes both cron-related Findings in issue #56.
+- **New `queue-monitor.ts`** (cf-worker + cf-pages ONLY — Supabase Edge has no Cloudflare-Queue equivalent, per codex H-6) — Guarded Shape A semantics (ADR-0029/ADR-0033): `handlerStarted` flag prevents double-ack on `batch.ackAll()`, per-message retry on handler error, Sentry crons heartbeat via `withMonitor`. Imports `buildMonitorConfig` + `isConfigured` from `./cron-monitor` (D-19 import contract). `withQueueMonitor<E, Body>` generic: `E` = env, `Body` = queue message body.
+- **Migration 0021 engine** (`templates/.claude/scripts/migrate-0021-with-cron-and-queue-updates.sh`) — re-rev with dirty detection. Mirrors Migration 0019's `canonicalize_awk` verbatim (Mirror-not-fork anti-pattern per `migrations/0019-sentry-crons-and-healthz.md:260`). Twofold idempotency marker (codex M-8): SKIP only when BOTH `queue-monitor.ts` present AND `cron-monitor.ts` canonical hash matches v1.20.0 baseline. Dirty detection (codex M-9): refuses on hand-modified `cron-monitor.ts`, emits `.observability-0021.patch` to project root.
+- **`migrations/0021-with-cron-and-queue-updates.md`** — migration spec with two-phase apply (discovery + canonicalisation gate + apply), twofold idempotency, recovery instructions (callbot drop-LOCAL-PATCH path), and re-rev rationale (codex H-7).
+- **`docs/decisions/0033-with-queue-monitor.md`** — ADR records Guarded Shape A queue-monitor architecture, re-rev rationale, dirty-detection contract, and explicit rejected alternatives.
+
+### Fixed (`add-observability` 0.8.0 → 0.9.0, Phase 25 D-03/D-05, issue #56)
+
+- **D-03 — `CronMonitorSchedule` discriminated union**: `{ type: "crontab"; value: string } | { type: "interval"; value: number; unit: string }` replaces the bare `type MonitorSchedule = { type: string; value?: ... }` shape that allowed invalid combinations at the type level. All three TS stacks updated.
+- **D-05 — `withCronMonitor<E>` generic narrowing** (cf-worker): env parameter now typed `E extends Record<string, string>` (strict CallbotEnv-style env with no index signature compiles without cast). cf-pages uses `<R>` return-type generic per H-3.
+- **Migration 0019 D-11 fix**: fresh applies of Migration 0019 now copy `queue-monitor.ts` to cf-worker + cf-pages wrappers (was omitted pre-Phase-25). Supabase Edge carve-out maintained (codex H-6).
+
+### Notes
+
+- Re-rev rationale (short): an additive-only Migration 0021 that shipped only `queue-monitor.ts` would leave v1.19.0 consumers' `cron-monitor.ts` at the pre-Phase-25 broken state — Findings 2 and 3 of issue #56 would not close. The re-rev ships BOTH fixes, which is what closes the findings end-to-end. See ADR-0033 §"Re-rev rationale".
+- Dirty detection: projects with hand-modified `cron-monitor.ts` are refused with a patch file. Callbot's LOCAL-PATCH cast (`:141-149`) is rendered unnecessary by D-03/D-05 — drop it before running Migration 0021.
+- `skill/SKILL.md` frontmatter `version: 1.19.0 → 1.20.0` (minor — new migration + template fixes).
+- `add-observability/SKILL.md` frontmatter `version: 0.8.0 → 0.9.0` (minor — new queue-monitor template + cron-monitor fixes).
+- Pre-execute multi-AI plan review (`gemini` + `codex` via `/gsd-review`) caught 7 HIGH + 6 MEDIUM issues that landed as CONTEXT rev 2/3 + PLAN rev 2/3 before code shipped. Notable HIGH fixes (H-1 through H-6): SC5 typecheck fixture local ambient decls (H-2); tsconfig paths mapping for `@sentry/cloudflare` in standalone tsc run (H-1); cf-pages `<R>` generic vs cf-worker `<E>` generic (H-3); frozen v1.19.0 baselines as literal files not generated from mutable templates (codex M-1); supabase-edge queue-monitor scope carve-out (H-6); dirty detection for hand-modified cron-monitor (H-7 / D-02b revised).
+
 ## [1.19.0] — 2026-05-29
 
 ### Added — OpenRouter integration kit (`add-observability` 0.7.0 → 0.8.0, Phase 24, ADR-0030)
