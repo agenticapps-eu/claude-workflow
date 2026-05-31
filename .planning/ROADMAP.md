@@ -38,10 +38,10 @@
   6. Test surface extended: regression fixtures for each of the four findings (engine fixture for finding 1, type-level test for finding 2, generic-narrowing fixture for finding 3, withQueueMonitor coverage for finding 4)
   7. Issue #56 closed with linkback comments per finding
 
-**Plans:** 5 plans
+**Plans:** 1/5 plans executed
 
 Plans:
-- [ ] 25-01-PLAN.md — Wave 0: ADRs 0031/0032/0033 + RED fixtures (08, 09, 10, 11, 0021/01) + RED queue-monitor.test.ts × 3 stacks
+- [x] 25-01-PLAN.md — Wave 0: ADRs 0031/0032/0033 + RED fixtures (08, 09, 10, 11, 0021/01) + RED queue-monitor.test.ts × 3 stacks
 - [ ] 25-02-PLAN.md — Wave 1: Engine D-01 fix (find + classify + resolve_anchor_files helper) — fixtures 08/09 partial-GREEN, 11 fully GREEN
 - [ ] 25-03-PLAN.md — Wave 2: cron-monitor.ts D-03 + D-05 across 4 sites (cf-worker, cf-pages, supabase-edge, openrouter-monitor bundled) + D-16 firewall in tests × 3 stacks
 - [ ] 25-04-PLAN.md — Wave 3: queue-monitor.ts × 3 TS stacks (D-07/D-08/D-09/D-10) + harness wiring; queue-monitor.test.ts × 3 GREEN; SC5 strict-Env fixture fully GREEN
@@ -58,5 +58,5 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 25. Fix 0019 engine + withCronMonitor | 0/5 | Not started | - |
+| 25. Fix 0019 engine + withCronMonitor | 1/5 | In Progress|  |
 | 26. worker-template hardening | 0/TBD | Not started | - |

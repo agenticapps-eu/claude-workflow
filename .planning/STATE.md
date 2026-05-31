@@ -4,8 +4,8 @@ milestone: v1.19.0
 milestone_name: migration
 status: executing
 stopped_at: Phase 25 CONTEXT.md + DISCUSSION-LOG.md written and committed on `feat/fix-0019-engine-and-cron-wrappers-v1.20.0`
-last_updated: "2026-05-31T17:31:51.966Z"
-last_activity: 2026-05-31 -- Phase 25 planning complete
+last_updated: "2026-05-31T18:24:21.048Z"
+last_activity: 2026-05-31 -- Phase 25 execution started
 progress:
   total_phases: 2
   completed_phases: 0
@@ -22,14 +22,14 @@ See: .planning/PROJECT.md (does not yet exist — full retroactive bootstrap def
 See: .planning/ROADMAP.md (single-row stub, 2026-05-31 — Phase 25 + Phase 26 placeholder only)
 
 **Core value:** Spec-first, migration-driven workflow scaffolder for AgenticApps projects.
-**Current focus:** Phase 25 — fix 0019 engine + withCronMonitor + withQueueMonitor (issue #56)
+**Current focus:** Phase 25 — fix-0019-engine-and-cron-wrappers
 
 ## Current Position
 
-Phase: 25 of 26 known (full roadmap not bootstrapped)
-Plan: 0 of TBD in current phase
-Status: Ready to execute
-Last activity: 2026-05-31 -- Phase 25 planning complete
+Phase: 25 (fix-0019-engine-and-cron-wrappers) — EXECUTING
+Plan: 1 of 5
+Status: Executing Phase 25
+Last activity: 2026-05-31 -- Phase 25 execution started
 
 Progress: stub — full progress bar pending roadmap bootstrap
 
