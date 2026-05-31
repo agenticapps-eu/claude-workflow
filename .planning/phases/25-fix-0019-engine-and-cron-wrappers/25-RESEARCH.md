@@ -966,41 +966,60 @@ Phase 25 touches the Sentry SDK boundary + observability wrapper code. `security
 
 **Empty mitigations are NOT acceptable** — every assumption above either has a verifying test or a documented trade-off.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **OQ-1 (CONTEXT-elevated): how do already-migrated projects (callbot at v1.19.0) pick up the engine fix + new `queue-monitor.{ts,go}`?**
+1. **RESOLVED:** **OQ-1 (CONTEXT-elevated): how do already-migrated projects (callbot at v1.19.0) pick up the engine fix + new `queue-monitor.{ts,go}`?**
    - What we know: Migration runner matches `from_version` exactly per `migrations/README.md:60-99`. Re-revving 0019 with `from_version: 1.17.0` won't trigger on v1.18.0+ projects. No `--force` flag exists today.
    - What's unclear: whether the planner ships a new migration 0021 (`from_version: 1.19.0`), or extends 0019's idempotency check, or documents manual recovery.
    - Recommendation: ship migration 0021 (additive, copies only `queue-monitor.{ts,go}`, idempotency = `queue-monitor.ts` presence). Pair with docs amendment for the case-(a) (pre-v1.18.0 projects). See Pitfall 2 option (d). **This is the single most important planner-level decision in Phase 25.**
+   - **Disposition (per CONTEXT.md D-02b + Plan 01 Task 1.3 + Plan 05):** Ship Migration 0021 (additive single-file copy, `from_version: 1.19.0` → `to_version: 1.20.0`, idempotency = `queue-monitor.ts` presence). Pair with D-02a 0019 docs amendment for the pre-v1.18.0 manual-recovery path. Engine implementation lands Plan 05; fixture 0021/01 lands Plan 01 Task 1.3 (RED).
 
-2. **OQ-2 (from CONTEXT): supabase-edge `queue-monitor.ts` parity — ship or skip?**
+2. **RESOLVED:** **OQ-2 (from CONTEXT): supabase-edge `queue-monitor.ts` parity — ship or skip?**
    - What we know: Supabase Edge has no Cloudflare Queue equivalent. CONTEXT default: ship for parity ("symmetry beats deletion").
    - What's unclear: whether shipping introduces a non-functional file that will be deleted in a future hygiene phase.
    - Recommendation: ship. Symmetry is cheap, and a non-Worker stack adopting Cloudflare Queues via the Workers ServiceBindings + Queue.send proxy pattern is plausible. The supabase-edge variant follows the `_setWithMonitorForTest` Deno seam pattern (matches existing `cron-monitor.ts`).
+   - **Disposition (per CONTEXT.md OQ-2 + Plan 04 Task 4.1):** Ship for parity. ts-supabase-edge/queue-monitor.ts uses `import * as Sentry from "npm:@sentry/deno@^8.0.0"` (see OQ-10 resolution below) and re-imports helpers from `./cron-monitor.ts` (OQ-9 option a).
 
-3. **OQ-3 (from CONTEXT): multi-queue explicit-slug enforcement shape — compile-time / runtime warn / silent?**
+3. **RESOLVED:** **OQ-3 (from CONTEXT): multi-queue explicit-slug enforcement shape — compile-time / runtime warn / silent?**
    - What we know: Phase 22 D11 (multi-cron) chose silent + docs. CONTEXT default: silent for symmetry.
    - What's unclear: whether the planner has a strong reason to deviate (e.g., runtime warn aids debugging in production).
    - Recommendation: silent + docs (mirror Phase 22 D11). Add a doc-comment in `queue-monitor.ts` noting that handlers dispatching on `batch.queue` MUST set `monitorSlug` explicitly.
+   - **Disposition (per CONTEXT.md D-10 + Plan 04 Task 4.1):** Silent + docs. Canonical doc-comment phrase `MUST pass explicit monitorSlug` lands in `queue-monitor.ts` jsdoc; enforced by D-10 regex in queue-monitor.test.ts (tightened post-revision to anchor on the canonical phrase, not on `batch.queue` organic match).
 
-4. **OQ-4 (from CONTEXT): ADR numbering — next available number.**
+4. **RESOLVED:** **OQ-4 (from CONTEXT): ADR numbering — next available number.**
    - What we know: latest existing ADR is `0030-openrouter-integration-sdk-first.md` ([VERIFIED:] `ls docs/decisions/`).
    - Recommendation: ADR-0031 (D-01), ADR-0032 (D-05), ADR-0033 (D-07). Match the format established by ADR-0029 + ADR-0030: H1 title, **Status** / **Date** / **Phase** header line, ## Context / ## Decision / ## Alternatives Rejected / ## Consequences sections.
+   - **Disposition (per CONTEXT.md OQ-4 + Plan 01 Task 1.1):** ADR-0031 (D-01 engine anchor), ADR-0032 (D-05 generic narrowing), ADR-0033 (D-07 withQueueMonitor + Migration 0021). All authored Wave 0 (Plan 01 Task 1.1) at Status: Accepted.
 
-5. **OQ-5 (from CONTEXT): does 0019 engine support `--force`?**
+5. **RESOLVED:** **OQ-5 (from CONTEXT): does 0019 engine support `--force`?**
    - What we know: ([VERIFIED:] grep) NO `--force` flag exists in `migrate-0019-…sh`. The only flags are `--templates-dir`, `--allow-partial`, `--dry-run`, `--project-dir`, `--pause-between-passes` (test-only).
    - What's unclear: whether the planner should add `--force` (likely meaning "ignore `cron-monitor.ts` presence and re-copy") OR document manual recovery.
    - Recommendation: do NOT add `--force` in Phase 25. The semantics are confusing (force overwrite vs force re-classify?) and the existing idempotency contract (delete files + downgrade SKILL.md + re-run) is honest. Document the recovery path in the new "Recovery" section of `0019-…md` (per CONTEXT D-02). Adding `--force` belongs in a future engine-hardening phase if a real need surfaces.
+   - **Disposition (per CONTEXT.md OQ-5):** No `--force` flag added. Manual recovery documented in D-02a 0019 "Recovery" subsection. D-02b Migration 0021 is the supported re-application path for v1.19.0 projects.
 
-6. **(NEW): does the openrouter-monitor bundled subtree get the D-03/D-05 fix this phase?**
+6. **RESOLVED:** **OQ-6 (NEW): does the openrouter-monitor bundled subtree get the D-03/D-05 fix this phase?**
    - What we know: CONTEXT D-09 says "openrouter-monitor NOT touched this phase".
    - What's unclear: whether NOT touching is intentional (Phase 24 surface is frozen) or oversight (the bundled subtree is a snapshot of `ts-cloudflare-worker`, which DOES get fixed).
    - Recommendation: include in scope. Same diff applied symmetrically. The "Phase 24 surface frozen" stance protects against API change, not internal fixes. Without this, openrouter-monitor scaffolded projects still ship the bug.
+   - **Disposition (per CONTEXT.md D-21 + Plan 03 Task 3.1):** Include in scope. Byte-symmetric edit at `add-observability/templates/openrouter-monitor/src/observability/cron-monitor.ts` — Plan 03 Task 3.1 verifies post-edit `diff` against ts-cloudflare-worker/cron-monitor.ts returns empty.
 
-7. **(NEW): how does Phase 25 verify SC5 (callbot acceptance) without running against the real callbot repo?**
+7. **RESOLVED:** **OQ-7 (NEW): how does Phase 25 verify SC5 (callbot acceptance) without running against the real callbot repo?**
    - What we know: SC5 says "callbot (or the equivalent fixture) can re-run 0019 cleanly via the engine and replace local workarounds with upstream wrappers".
    - What's unclear: whether VERIFICATION runs `tsc --noEmit` against a synthetic strict-Env fixture in this repo, OR against the real callbot working tree.
    - Recommendation: synthetic fixture in `migrations/test-fixtures/0019/10-strict-env-typecheck/` proving compile-time satisfaction of the four acceptance items in issue #56's "Acceptance check" section. The real callbot adoption is a separate downstream PR (Phase 26+ scope).
+   - **Disposition (per CONTEXT.md D-18 + Plan 01 Task 1.3):** Synthetic strict-Env typecheck fixture at `migrations/test-fixtures/0019/10-strict-env-typecheck/`. Lands RED in Plan 01 Task 1.3; flips partial-GREEN at Plan 03 Task 3.1 (withCronMonitor + CronMonitorSchedule); flips fully GREEN at Plan 04 Task 4.1 (withQueueMonitor).
+
+8. **RESOLVED:** **OQ-8 (planner-level): Migration 0021 engine shape — full canonicaliser vs additive-only single-file copy?**
+   - **Disposition (per Plan 01 Task 1.1 lock, lines 113-115):** Thinner additive-only single-file copy. No `canonicalize_awk`; idempotency by `queue-monitor.ts` presence only. Engine implementation lands Plan 05.
+
+9. **RESOLVED:** **OQ-9 (planner-level): queue-monitor.ts imports from ./cron-monitor (option a) vs duplicates helpers inline (option b)?**
+   - **Disposition (per Plan 01 Task 1.1 lock, lines 113-115 — option a):** queue-monitor.ts re-imports `CronMonitorConfig` (type), `buildMonitorConfig` (value), AND `isConfigured` (value) from `./cron-monitor` — single-line import, NO inline duplication. Both files always co-copy via migrations 0019 and 0021. Plan 03 Task 3.1 adds the `export` keyword to `buildMonitorConfig` + `isConfigured` in all 4 cron-monitor.ts sites; Plan 04 Task 4.1 consumes them.
+
+10. **RESOLVED:** **OQ-10 (planner-level): ts-supabase-edge queue-monitor.ts Deno specifier — `npm:@sentry/deno@^8.0.0` vs `@sentry/cloudflare`?**
+   - **Disposition (per Plan 01 Task 1.1 lock, lines 113-115):** `import * as Sentry from "npm:@sentry/deno@^8.0.0"` mirroring `ts-supabase-edge/cron-monitor.ts:28`. Verified by Plan 01 Task 1.4 automated grep `grep -qE 'npm:@sentry/deno|from "vitest"' …/ts-supabase-edge/queue-monitor.test.ts`.
+
+11. **RESOLVED:** **OQ-11 (planner-level): Migration 0021 docs structure — standalone spec vs cross-reference + delta-only?**
+   - **Disposition (per Plan 01 Task 1.1 lock, lines 113-115):** Standalone spec mirroring 0019.md section structure (Frontmatter / Inputs / Apply / Verify / Idempotency / Recovery), with delta-only content (single-file additive migration). Docs land Plan 05.
 
 ## Sources
 
