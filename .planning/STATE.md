@@ -4,7 +4,7 @@ milestone: v1.19.0
 milestone_name: migration
 status: executing
 stopped_at: Phase 25 CONTEXT.md + DISCUSSION-LOG.md written and committed on `feat/fix-0019-engine-and-cron-wrappers-v1.20.0`
-last_updated: "2026-05-31T16:33:26.875Z"
+last_updated: "2026-05-31T17:31:51.966Z"
 last_activity: 2026-05-31 -- Phase 25 planning complete
 progress:
   total_phases: 2
