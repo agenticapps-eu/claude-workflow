@@ -192,6 +192,46 @@ esac
 #   ts-react-vite            : lib-observability.ts  AND  ErrorBoundary.tsx (skipped per D10)
 #
 # Each ROOT is recorded as `<abs-dir>` (no | encoding — stack is re-derived later).
+
+# ─── pre-classify filter: index.ts needs a sibling co-anchor AND non-dist path ──
+# D-01 / Pitfall 1 / codex M-2 mitigation: `find . -name index.ts` matches every
+# index.ts in the project (build outputs, dist/, generated code). Without filtering,
+# those would route to classify_stack and emit SKIP_UNSUPPORTED noise OR (worse,
+# codex M-2) compiled bundles that happen to ship both index.ts AND middleware.ts
+# adjacent would be misclassified as wrappers. Two filters:
+#   (a) sibling co-anchor: index.ts kept only if parent dir contains middleware.ts
+#       (cf-worker shape) or _middleware.ts (cf-pages shape).
+#   (b) non-dist path: kept only if path does NOT contain /dist/, /build/, or /out/.
+# Supabase-edge `index.ts` is handled by the separate `_filter_supabase_edge_roots`
+# pass — those candidates come from the `-type d -name observability` find,
+# not this one.
+_filter_index_ts_requires_co_anchor() {
+  while IFS= read -r f; do
+    case "$f" in
+      */index.ts)
+        # (b) Reject build-output paths regardless of sibling anchors (codex M-2).
+        case "$f" in
+          */dist/*|*/build/*|*/out/*)
+            # Drop silently — build outputs that happen to contain index.ts +
+            # middleware.ts are not legitimate wrappers.
+            continue
+            ;;
+        esac
+        # (a) Sibling co-anchor requirement.
+        local parent="${f%/index.ts}"
+        if [ -f "$parent/middleware.ts" ] || [ -f "$parent/_middleware.ts" ]; then
+          printf '%s\n' "$f"
+        fi
+        # else: drop silently — operator never sees noise for unrelated index.ts
+        ;;
+      *)
+        # Non-index.ts files pass through unchanged.
+        printf '%s\n' "$f"
+        ;;
+    esac
+  done
+}
+
 ROOTS=()
 
 # Collect every plausible anchor file path under the project. Filter against
@@ -223,9 +263,11 @@ done < <(find . \
             -type f \( \
               -name lib-observability.ts -o \
               -name observability.go -o \
-              -name middleware.go \
+              -name middleware.go -o \
+              -name index.ts \
             \) \
             -print 2>/dev/null \
+          | _filter_index_ts_requires_co_anchor \
           | sort -u)
 
 # Also pick up supabase-edge roots: dir containing index.ts AND middleware.ts under */_shared/observability/.
@@ -309,16 +351,19 @@ classify_stack() {
   # Cf-pages canonical layout
   case "$dir" in
     */functions/_lib/observability)
-      if [ -f "$dir/lib-observability.ts" ] && [ -f "$dir/_middleware.ts" ]; then
+      if { [ -f "$dir/index.ts" ] || [ -f "$dir/lib-observability.ts" ]; } && [ -f "$dir/_middleware.ts" ]; then
         echo "ts-cloudflare-pages"; return
       fi
       ;;
   esac
-  # Cf-pages anchor file (_middleware.ts is Pages-specific)
-  if [ -f "$dir/_middleware.ts" ] && [ -f "$dir/lib-observability.ts" ]; then
+  # Cf-pages anchor file (_middleware.ts is Pages-specific). D-01: accept
+  # `index.ts` (canonical materialised filename per meta.yaml) OR
+  # `lib-observability.ts` (legacy/fixture filename) as the anchor.
+  if [ -f "$dir/_middleware.ts" ] && { [ -f "$dir/index.ts" ] || [ -f "$dir/lib-observability.ts" ]; }; then
     echo "ts-cloudflare-pages"; return
   fi
-  # React-vite: browser bundle markers
+  # React-vite: browser bundle markers (uses lib-observability.ts only;
+  # react-vite has no `index.ts` materialisation today — leave unchanged).
   if [ -f "$dir/lib-observability.ts" ] \
      && [ -f "$dir/ErrorBoundary.tsx" ]; then
     echo "ts-react-vite"; return
@@ -327,8 +372,9 @@ classify_stack() {
      && grep -qE '@sentry/react|@sentry/browser|import\.meta\.env' "$dir/lib-observability.ts" 2>/dev/null; then
     echo "ts-react-vite"; return
   fi
-  # Cf-worker (default TS server shape)
-  if [ -f "$dir/lib-observability.ts" ] && [ -f "$dir/middleware.ts" ]; then
+  # Cf-worker (default TS server shape). D-01: accept `index.ts` (canonical)
+  # OR `lib-observability.ts` (legacy/fixture).
+  if { [ -f "$dir/index.ts" ] || [ -f "$dir/lib-observability.ts" ]; } && [ -f "$dir/middleware.ts" ]; then
     echo "ts-cloudflare-worker"; return
   fi
   echo "unknown"
@@ -345,6 +391,77 @@ stack_fingerprint_files() {
     go-fly-http)          echo "observability.go middleware.go" ;;
     *) echo "" ;;
   esac
+}
+
+# ─── resolve_anchor_files: pick the actually-present anchor at fingerprint time
+# D-01: cf-worker and cf-pages materialise as `index.ts` per meta.yaml's
+# target.wrapper_path, but fixtures and legacy projects may use the source
+# filename `lib-observability.ts`. This helper picks `index.ts` when present
+# (canonical wins), else `lib-observability.ts`. Returns space-separated
+# filenames; non-zero exit if no anchor found.
+#
+# Stacks unaffected by D-01 (supabase-edge always materialises as index.ts;
+# go-fly-http uses observability.go) fall through to the static list.
+#
+# Used by:
+#   - is_known_clean_wrapper() — fingerprint match against template baseline
+#   - emit_refuse_artifacts_for() — refuse-path diff against project anchor (codex M-3)
+resolve_anchor_files() {
+  local dir="$1" stack="$2"
+  case "$stack" in
+    ts-cloudflare-worker)
+      local anchor=""
+      if [ -f "$dir/index.ts" ]; then
+        anchor="index.ts"
+      elif [ -f "$dir/lib-observability.ts" ]; then
+        anchor="lib-observability.ts"
+      else
+        return 1
+      fi
+      echo "$anchor middleware.ts"
+      ;;
+    ts-cloudflare-pages)
+      local anchor=""
+      if [ -f "$dir/index.ts" ]; then
+        anchor="index.ts"
+      elif [ -f "$dir/lib-observability.ts" ]; then
+        anchor="lib-observability.ts"
+      else
+        return 1
+      fi
+      echo "$anchor _middleware.ts"
+      ;;
+    ts-supabase-edge)
+      echo "index.ts middleware.ts"
+      ;;
+    ts-react-vite)
+      echo "lib-observability.ts ErrorBoundary.tsx"
+      ;;
+    go-fly-http)
+      echo "observability.go middleware.go"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+# Map a project-side anchor filename to the corresponding template-source filename.
+# When the project uses `index.ts` (canonical materialised name), the template
+# source baseline is still `lib-observability.ts`. Other filenames map to themselves.
+_template_name_for_anchor() {
+  local f="$1" stack="$2"
+  case "$f" in
+    index.ts)
+      case "$stack" in
+        ts-cloudflare-worker|ts-cloudflare-pages)
+          echo "lib-observability.ts"
+          return
+          ;;
+      esac
+      ;;
+  esac
+  echo "$f"
 }
 
 # Per-stack source dir under TEMPLATES_DIR (the v1.17.0 canonical bytes).
@@ -467,14 +584,18 @@ baseline_hash() {
 
 # is_known_clean_wrapper: every fingerprint file in $dir canonicalises to the
 # stack's baseline. Returns 0 (clean) or 1 (dirty).
+# Uses resolve_anchor_files() to pick the actually-present anchor (D-01):
+# a project with index.ts is compared against the template's lib-observability.ts
+# baseline (same content, same canonical hash).
 is_known_clean_wrapper() {
   local dir="$1" stack="$2"
-  local files; files=$(stack_fingerprint_files "$stack")
-  [ -z "$files" ] && return 1
-  local f want got
+  local files; files=$(resolve_anchor_files "$dir" "$stack") || return 1
+  local f template_name want got
   for f in $files; do
     if [ ! -f "$dir/$f" ]; then return 1; fi
-    want=$(baseline_hash "$stack" "$f")
+    # Map project-side anchor to template-side filename for baseline comparison.
+    template_name=$(_template_name_for_anchor "$f" "$stack")
+    want=$(baseline_hash "$stack" "$template_name")
     [ -z "$want" ] && return 1
     got=$(canonical_hash "$dir/$f")
     [ "$got" = "$want" ] || return 1
@@ -546,11 +667,22 @@ emit_refuse_artifacts_for() {
     return
   fi
 
+  # Resolve the actual anchor filename present in this project (D-01 / codex M-3).
+  local resolved_anchor_files
+  resolved_anchor_files=$(resolve_anchor_files "$dir" "$stack") || resolved_anchor_files=""
+  local anchor_note=""
+  case "$resolved_anchor_files" in
+    index.ts*)   anchor_note="index.ts (canonical materialised filename per meta.yaml)" ;;
+    lib-observability.ts*) anchor_note="lib-observability.ts (legacy fixture filename)" ;;
+    *)           anchor_note="$resolved_anchor_files" ;;
+  esac
+
   {
     echo "# .observability-0019.patch"
     echo "# Generated by migrate-0019-sentry-crons-and-healthz.sh"
     echo "# Stack: $stack"
     echo "# Wrapper root: $dir"
+    echo "# Anchor file: $anchor_note"
     echo "# Classification: $label"
     echo "#"
     echo "# This patch captures the FILES migration 0019 would have ADDED to"
@@ -608,14 +740,18 @@ emit_refuse_artifacts() {
     warn "    DIRTY: $dir  (stack: $stack)"
     emit_refuse_artifacts_for "$dir" "$stack" "DIRTY"
     # Per-fingerprint-file diff against baseline (excerpt, for the operator).
-    local files; files=$(stack_fingerprint_files "$stack")
-    local f src tmpl
+    # Uses resolve_anchor_files (D-01/codex M-3): resolves the project-side anchor
+    # (index.ts or lib-observability.ts) and maps to the template-side filename.
+    local files; files=$(resolve_anchor_files "$dir" "$stack") || files=$(stack_fingerprint_files "$stack")
+    local f template_name src project_file tmpl
     src=$(stack_template_dir "$stack")
     for f in $files; do
-      tmpl="$src/$f"
-      if [ -f "$tmpl" ] && [ -f "$dir/$f" ]; then
+      template_name=$(_template_name_for_anchor "$f" "$stack")
+      tmpl="$src/$template_name"
+      project_file="$dir/$f"
+      if [ -f "$tmpl" ] && [ -f "$project_file" ]; then
         warn "      diff $f (excerpt vs known v1.17.0 baseline):"
-        diff -u "$tmpl" "$dir/$f" 2>/dev/null | head -10 | sed 's/^/        /' >&2
+        diff -u "$tmpl" "$project_file" 2>/dev/null | head -10 | sed 's/^/        /' >&2
       fi
     done
     warn "      wrote recovery artefact: $dir/.observability-0019.patch"
