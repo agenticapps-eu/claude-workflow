@@ -17,10 +17,15 @@ import * as Sentry from "@sentry/cloudflare";
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
-export interface CronMonitorSchedule {
-  type: "crontab" | "interval";
-  value: string;
-}
+/**
+ * Discriminated-union schedule type — structurally compatible with
+ * Sentry's `MonitorSchedule` (see @sentry/core/types-hoist/checkin.d.ts).
+ * Phase 25 D-03 / ADR-0032 — replaces the prior interface that forced
+ * consumers to cast interval values from string to number.
+ */
+export type CronMonitorSchedule =
+  | { type: "crontab"; value: string }
+  | { type: "interval"; value: number; unit: "minute" | "hour" | "day" | "week" | "month" | "year" };
 
 export interface CronMonitorConfig {
   /** Explicit monitor slug — wins over env + auto-derive (D6 source 1). */
@@ -44,8 +49,10 @@ type ScheduledFn<E> = (
 
 const SLUG_ENV_PREFIX = "SENTRY_CRON_MONITOR_SLUG_";
 
-function isConfigured(env: Record<string, unknown>): boolean {
-  return typeof env.SENTRY_DSN === "string" && (env.SENTRY_DSN as string).length > 0;
+// Phase 25 D-19 (cf-worker + cf-pages export contract) + D-05 (narrowed generic)
+// — exported so Plan 04's queue-monitor.ts can re-import (D-07).
+export function isConfigured(env: { SENTRY_DSN?: string }): boolean {
+  return typeof env.SENTRY_DSN === "string" && env.SENTRY_DSN.length > 0;
 }
 
 /**
@@ -55,7 +62,7 @@ function isConfigured(env: Record<string, unknown>): boolean {
  * cannot disambiguate, and the auto-derived form will produce per-cron
  * slugs that the operator may not have provisioned in Sentry.
  */
-function resolveSlug<E extends Record<string, unknown>>(
+function resolveSlug<E extends { SENTRY_DSN?: string; SERVICE_NAME?: string }>(
   config: CronMonitorConfig | undefined,
   env: E,
   controller: ScheduledController,
@@ -66,7 +73,10 @@ function resolveSlug<E extends Record<string, unknown>>(
   // 2. Env var: SENTRY_CRON_MONITOR_SLUG_<HANDLER> (uppercased, hyphens → underscores).
   const handlerName = config?.handlerName ?? "scheduled";
   const envKey = SLUG_ENV_PREFIX + handlerName.toUpperCase().replace(/-/g, "_");
-  const fromEnv = env[envKey];
+  // Phase 25 D-05 / ADR-0032 — narrowed generic accepts strict-typed Env interfaces
+  // (no index signature required). Internal lookup casts to Record at the access
+  // site because env-key names are dynamic (not statically known in the generic).
+  const fromEnv = (env as unknown as Record<string, unknown>)[envKey];
   if (typeof fromEnv === "string" && fromEnv.length > 0) return fromEnv;
 
   // 3. Auto-derive — worker uses the runtime-provided cron expression.
@@ -83,7 +93,10 @@ function resolveSlug<E extends Record<string, unknown>>(
  * Sentry's field name is `maxRuntime`, not `maxRuntimeSeconds` — the wrapper
  * exposes the longer/clearer name and renames at the boundary.
  */
-function buildMonitorConfig(
+// Phase 25 D-19 (cf-worker + cf-pages export contract) — exported so Plan 04's
+// queue-monitor.ts can re-import (D-07). Body unchanged; only the `export`
+// keyword is added.
+export function buildMonitorConfig(
   config: CronMonitorConfig | undefined,
 ): { schedule?: CronMonitorSchedule; maxRuntime?: number } | undefined {
   if (!config) return undefined;
@@ -112,7 +125,7 @@ function buildMonitorConfig(
  *  - Post-callback errors (handler throw OR ok/error check-in transport) →
  *    propagate to outer wrapper (no longer swallowed; SENTRY_DEBUG removed).
  */
-export function withCronMonitor<E extends Record<string, unknown>>(
+export function withCronMonitor<E extends { SENTRY_DSN?: string; SERVICE_NAME?: string }>(
   handler: ScheduledFn<E>,
   config?: CronMonitorConfig,
 ): ScheduledFn<E> {

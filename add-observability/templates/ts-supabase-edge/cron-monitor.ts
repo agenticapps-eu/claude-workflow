@@ -32,10 +32,15 @@ const { captureCheckIn: sentryCaptureCheckIn } = Sentry as unknown as {
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
-export interface CronMonitorSchedule {
-  type: "crontab" | "interval";
-  value: string;
-}
+/**
+ * Discriminated-union schedule type — structurally compatible with
+ * Sentry's `MonitorSchedule` (see @sentry/core/types-hoist/checkin.d.ts).
+ * Phase 25 D-03 / ADR-0032 — replaces the prior interface that forced
+ * consumers to cast interval values from string to number.
+ */
+export type CronMonitorSchedule =
+  | { type: "crontab"; value: string }
+  | { type: "interval"; value: number; unit: "minute" | "hour" | "day" | "week" | "month" | "year" };
 
 export interface CronMonitorConfig {
   /** Explicit monitor slug — wins over env + auto-derive (D6 source 1). */

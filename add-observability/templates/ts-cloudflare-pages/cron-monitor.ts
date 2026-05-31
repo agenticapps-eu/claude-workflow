@@ -24,10 +24,15 @@ import * as Sentry from "@sentry/cloudflare";
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
-export interface CronMonitorSchedule {
-  type: "crontab" | "interval";
-  value: string;
-}
+/**
+ * Discriminated-union schedule type — structurally compatible with
+ * Sentry's `MonitorSchedule` (see @sentry/core/types-hoist/checkin.d.ts).
+ * Phase 25 D-03 / ADR-0032 — replaces the prior interface that forced
+ * consumers to cast interval values from string to number.
+ */
+export type CronMonitorSchedule =
+  | { type: "crontab"; value: string }
+  | { type: "interval"; value: number; unit: "minute" | "hour" | "day" | "week" | "month" | "year" };
 
 export interface CronMonitorConfig {
   /** Explicit monitor slug — wins over env + auto-derive (D6 source 1). */
@@ -46,7 +51,10 @@ export interface CronMonitorConfig {
 
 const SLUG_ENV_PREFIX = "SENTRY_CRON_MONITOR_SLUG_";
 
-function isConfigured(env: Record<string, unknown>): boolean {
+// Phase 25 D-19 (cf-worker + cf-pages export contract) — exported so Plan 04's
+// cf-pages queue-monitor.ts can re-import (D-07). Signature kept wide
+// (Record<string, unknown>) per cf-pages withCronMonitor shape (no D-05 narrowing here).
+export function isConfigured(env: Record<string, unknown>): boolean {
   return typeof env.SENTRY_DSN === "string" && (env.SENTRY_DSN as string).length > 0;
 }
 
@@ -81,7 +89,10 @@ function resolveSlug(
  * Sentry's field name is `maxRuntime`, not `maxRuntimeSeconds` — the wrapper
  * exposes the longer/clearer name and renames at the boundary.
  */
-function buildMonitorConfig(
+// Phase 25 D-19 (cf-worker + cf-pages export contract) — exported so Plan 04's
+// cf-pages queue-monitor.ts can re-import (D-07). Body unchanged; only the
+// `export` keyword is added.
+export function buildMonitorConfig(
   config: CronMonitorConfig | undefined,
 ): { schedule?: CronMonitorSchedule; maxRuntime?: number } | undefined {
   if (!config) return undefined;
