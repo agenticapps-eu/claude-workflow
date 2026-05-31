@@ -1,3 +1,19 @@
+---
+gsd_state_version: 1.0
+milestone: v1.19.0
+milestone_name: migration
+status: executing
+stopped_at: Phase 25 CONTEXT.md + DISCUSSION-LOG.md written and committed on `feat/fix-0019-engine-and-cron-wrappers-v1.20.0`
+last_updated: "2026-05-31T16:33:26.875Z"
+last_activity: 2026-05-31 -- Phase 25 planning complete
+progress:
+  total_phases: 2
+  completed_phases: 0
+  total_plans: 5
+  completed_plans: 0
+  percent: 0
+---
+
 # Project State
 
 ## Project Reference
@@ -12,8 +28,8 @@ See: .planning/ROADMAP.md (single-row stub, 2026-05-31 — Phase 25 + Phase 26 p
 
 Phase: 25 of 26 known (full roadmap not bootstrapped)
 Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-05-31 — Phase 25 context gathered (7 design decisions locked)
+Status: Ready to execute
+Last activity: 2026-05-31 -- Phase 25 planning complete
 
 Progress: stub — full progress bar pending roadmap bootstrap
 
