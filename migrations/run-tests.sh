@@ -2146,6 +2146,63 @@ test_migration_0019() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Migration 0021 — re-rev cron-monitor + add queue-monitor (v1.19.0→1.20.0)
+# ─────────────────────────────────────────────────────────────────────────────
+
+test_migration_0021() {
+  echo
+  echo "${YELLOW}━━━ Migration 0021 — re-rev cron-monitor + add queue-monitor (v1.19.0→1.20.0) ━━━${RESET}"
+
+  local fixtures="$REPO_ROOT/migrations/test-fixtures/0021"
+  if [ ! -d "$fixtures" ]; then
+    echo "${YELLOW}  SKIP — no fixtures dir${RESET}"
+    SKIP=$((SKIP + 1))
+    return
+  fi
+  local engine="$REPO_ROOT/templates/.claude/scripts/migrate-0021-with-cron-and-queue-updates.sh"
+  if [ ! -f "$engine" ]; then
+    echo "${YELLOW}  SKIP — no engine yet (RED — Plan 05 ships it)${RESET}"
+    SKIP=$((SKIP + 1))
+    return
+  fi
+  local migration_file="$REPO_ROOT/migrations/0021-with-cron-and-queue-updates.md"
+  if [ ! -f "$migration_file" ]; then
+    echo "${YELLOW}  SKIP — no migration doc yet (RED)${RESET}"
+    SKIP=$((SKIP + 1))
+    return
+  fi
+
+  run_0021_fixture() {
+    local fixname="$1"
+    local dir="$fixtures/$fixname"
+    [ -d "$dir" ] || { echo "  ${RED}MISSING fixture dir: $fixname${RESET}"; FAIL=$((FAIL+1)); return; }
+    local tmp; tmp="$(mktemp -d -t "migration-0021-${fixname}-XXXXXX")"
+    (
+      cd "$tmp"
+      FIXTURES_ROOT="$fixtures" REPO_ROOT="$REPO_ROOT" bash "$dir/setup.sh"
+      FIXTURES_ROOT="$fixtures" REPO_ROOT="$REPO_ROOT" bash "$dir/verify.sh"
+    )
+    local rc=$?
+    rm -rf "$tmp"
+    if [ "$rc" -eq 0 ]; then
+      echo "  ${GREEN}PASS${RESET} $fixname"
+      PASS=$((PASS + 1))
+    else
+      echo "  ${RED}FAIL${RESET} $fixname"
+      FAIL=$((FAIL + 1))
+    fi
+  }
+
+  for fixname in \
+      01-fresh-1.19.0-apply \
+      02-callbot-shape-dirty-refuse \
+      03-already-1.20.0-skip \
+      04-callbot-shape-strict-env-typecheck; do
+    run_0021_fixture "$fixname"
+  done
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # F4 — SKILL.md version drift test (D-06 / G4)
 # Asserts skill/SKILL.md version equals the highest-numbered migration's to_version.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2425,6 +2482,10 @@ fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "0019" ]; then
   test_migration_0019
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "0021" ]; then
+  test_migration_0021
 fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "preflight" ]; then

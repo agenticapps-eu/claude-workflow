@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "lib": ["ES2022"]
+  },
+  "include": ["./types.d.ts", "./env.ts", "./smoke.ts", "./wrapper/**/*.ts"],
+  "exclude": ["**/*.test.ts"]
+}
