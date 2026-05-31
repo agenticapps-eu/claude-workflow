@@ -1,7 +1,7 @@
 ---
 migration_id: "0021"
-from_version: "1.19.0"
-to_version: "1.20.0"
+from_version: 1.19.0
+to_version: 1.20.0
 type: "re-rev-with-dirty-detection"
 idempotency_marker: "queue-monitor.ts presence (cf-worker + cf-pages) AND cron-monitor.ts content-hash matches v1.20.0 baseline (twofold per codex M-8)"
 related: ["0019", "0028", "0029", "0031", "0032", "0033"]
