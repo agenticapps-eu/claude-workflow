@@ -26,6 +26,9 @@
 
 import { assert, assertEquals, assertRejects } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { withCronMonitor, _setCaptureCheckInForTest, _setWithMonitorForTest } from "./cron-monitor.ts";
+// D-16 type-level firewall (Pitfall 4): MonitorConfig from @sentry/deno for structural pin.
+import type { MonitorConfig as SentryMonitorConfig } from "npm:@sentry/deno@^8.0.0";
+import type { CronMonitorSchedule } from "./cron-monitor.ts";
 
 // ─── withMonitor mock helpers ─────────────────────────────────────────────────
 
@@ -295,4 +298,41 @@ Deno.test("F5.7 — D-08 guard: withMonitor throws AFTER callback ran → error 
 // cron-monitor.ts and must remain importable; verify it is still exported.
 Deno.test("_setCaptureCheckInForTest export still present (contract check)", () => {
   assert(typeof _legacyCaptureCheckInSeam === "function", "_setCaptureCheckInForTest must remain exported");
+});
+
+// ─── Phase 25 D-16 — type-level firewall (Pitfall 4 / ADR-0032) ─────────────
+// D-03 firewall only — D-05 NOT applied to supabase-edge (no generics; reads
+// Deno.env.get() directly, codex H-3 verified). No CallbotEnv strict-Env test.
+// Run: deno test -A --no-check cron-monitor.test.ts (runtime); deno check for types.
+
+Deno.test("CronMonitorSchedule D-16: crontab variant accepts { type: 'crontab', value: string } (regression)", () => {
+  const schedule: CronMonitorSchedule = { type: "crontab", value: "*/15 * * * *" };
+  assertEquals(schedule.type, "crontab");
+});
+
+Deno.test("CronMonitorSchedule D-16: interval variant requires value: number + unit (D-03 / ADR-0032)", () => {
+  const _interval: CronMonitorSchedule = { type: "interval", value: 5, unit: "minute" };
+  assertEquals(_interval.type, "interval");
+  assertEquals(_interval.value, 5);
+  // deno-lint-ignore no-explicit-any
+  assertEquals((_interval as any).unit, "minute");
+});
+
+Deno.test("CronMonitorSchedule D-16: interval variant REJECTS value: string at typecheck time (D-03 firewall)", () => {
+  // @ts-expect-error — interval requires value: number, not string. If this
+  // line ever stops erroring, D-03 has regressed (CronMonitorSchedule reverted
+  // to the broken interface shape). Verified active via deno check.
+  const bad: CronMonitorSchedule = { type: "interval", value: "5", unit: "minute" };
+  void bad;
+});
+
+Deno.test("CronMonitorSchedule D-16: structurally assignable to SentryMonitorConfig['schedule'] (Pitfall 4 pin)", () => {
+  // Explicit firewall against skipLibCheck blind spot.
+  // Value-level binding forces the structural type check even under --no-check.
+  const ourCrontab: CronMonitorSchedule = { type: "crontab", value: "*/15 * * * *" };
+  const ourInterval: CronMonitorSchedule = { type: "interval", value: 5, unit: "minute" };
+  const _checkCrontab: SentryMonitorConfig["schedule"] = ourCrontab;
+  const _checkInterval: SentryMonitorConfig["schedule"] = ourInterval;
+  void _checkCrontab;
+  void _checkInterval;
 });

@@ -21,8 +21,11 @@
  * test-time — only the invocation contract does.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { withCronMonitor } from "./cron-monitor";
+import { describe, it, expect, vi, beforeEach, afterEach, expectTypeOf } from "vitest";
+// MonitorConfig lives in @sentry/core (not re-exported from @sentry/cloudflare's public API).
+// Using @sentry/core directly for the Pitfall 4 type-pin firewall (D-16).
+import type { MonitorConfig as SentryMonitorConfig } from "@sentry/core";
+import { withCronMonitor, type CronMonitorSchedule } from "./cron-monitor";
 
 const withMonitor = vi.fn();
 vi.mock("@sentry/cloudflare", () => ({
@@ -182,5 +185,78 @@ describe("withCronMonitor — monitorConfig forwarding (D12 / ADR-0029)", () => 
     const wrapped = withCronMonitor(handler, { monitorSlug: "x" });
     await wrapped(fakeController, { SENTRY_DSN: "https://stub@sentry.io/1" }, fakeCtx);
     expect(withMonitor).toHaveBeenCalledWith("x", expect.any(Function), undefined);
+  });
+});
+
+// ─── Phase 25 D-16 — type-level firewall (Pitfall 4 / ADR-0032) ─────────────
+// The template test harness's tsconfig.json writes `skipLibCheck: true`,
+// which means Sentry-type compatibility (the WHOLE POINT of D-03) is NOT
+// asserted at typecheck time. These two assertions are the explicit firewall:
+//   (1) expectTypeOf checks against our own type literally
+//   (2) `const _: Sentry.MonitorConfig['schedule'] = ourSchedule` pins
+//       structural compatibility against the real Sentry type at module-load
+//       time (no skipLibCheck bypass because the value-level binding forces
+//       the type-check).
+
+describe("CronMonitorSchedule — D-16 type-level firewall (Pitfall 4)", () => {
+  it("crontab variant accepts { type: 'crontab', value: string } (regression)", () => {
+    const schedule: CronMonitorSchedule = { type: "crontab", value: "*/15 * * * *" };
+    expect(schedule.type).toBe("crontab");
+  });
+
+  it("interval variant requires value: number + unit (D-03 / ADR-0032)", () => {
+    type IntervalVariant = Extract<CronMonitorSchedule, { type: "interval" }>;
+    expectTypeOf<IntervalVariant>().toHaveProperty("value").toBeNumber();
+    expectTypeOf<IntervalVariant>().toHaveProperty("unit").toEqualTypeOf<
+      "minute" | "hour" | "day" | "week" | "month" | "year"
+    >();
+  });
+
+  it("interval variant REJECTS value: string at typecheck time (D-03 firewall)", () => {
+    // @ts-expect-error — interval requires value: number, not string. If this
+    // line ever stops erroring, D-03 has regressed (CronMonitorSchedule reverted
+    // to the broken interface shape).
+    const bad: CronMonitorSchedule = { type: "interval", value: "5", unit: "minute" };
+    void bad;
+  });
+
+  it("is structurally assignable to SentryMonitorConfig['schedule'] (Pitfall 4 pin)", () => {
+    // This is the explicit firewall against the harness's skipLibCheck blind spot.
+    // Uses @sentry/core MonitorConfig (where the type lives; not re-exported from @sentry/cloudflare).
+    const ourCrontab: CronMonitorSchedule = { type: "crontab", value: "*/15 * * * *" };
+    const ourInterval: CronMonitorSchedule = { type: "interval", value: 5, unit: "minute" };
+    const _checkCrontab: SentryMonitorConfig["schedule"] = ourCrontab;
+    const _checkInterval: SentryMonitorConfig["schedule"] = ourInterval;
+    void _checkCrontab;
+    void _checkInterval;
+  });
+});
+
+// ─── Phase 25 D-16 (D-05 strict-Env subset — cf-worker ONLY) ────────────────
+// Verifies that withCronMonitor accepts a strict-typed Env interface (no index
+// signature). Pre-D-05, the constraint `E extends Record<string, unknown>`
+// rejected such interfaces unless callers added `[key: string]: unknown` or
+// cast at every call site. After D-05 (narrowed scope: cf-worker only), this
+// compiles natively.
+
+interface CallbotEnv {
+  SENTRY_DSN: string;
+  SERVICE_NAME: string;
+  SUPABASE_URL: string;
+  // NO index signature.
+}
+
+describe("withCronMonitor — D-16 strict-Env generic narrowing (cf-worker only)", () => {
+  it("accepts a strict-typed Env interface without index signature", async () => {
+    const handler = vi.fn(async () => {});
+    // This call must compile against the narrowed generic (D-05). If the
+    // generic regresses to `Record<string, unknown>`, this line fails type-check.
+    const wrapped = withCronMonitor<CallbotEnv>(handler, { monitorSlug: "callbot:ingest" });
+    await wrapped(
+      fakeController,
+      { SENTRY_DSN: "https://stub@sentry.io/1", SERVICE_NAME: "callbot", SUPABASE_URL: "https://s.co" },
+      fakeCtx,
+    );
+    expect(handler).toHaveBeenCalledOnce();
   });
 });
