@@ -181,3 +181,36 @@ Deno.test("§10.3 traceparent: accepts a higher version (W3C forward-compat)", (
   assertEquals(fwd!.traceId, "4bf92f3577b34da6a3ce929d0e0e4736");
   assertEquals(fwd!.parentSpanId, "00f067aa0ba902b7");
 });
+
+// ────────────────────────────────────────────────────────────────────
+// D-02a: init() repeated-init determinism contract (Phase 26 / ADR-0034).
+// Supabase-edge variant — first-call-wins (init() has `if (initialized)
+// return`). Wave 0 RED stub — flips GREEN once Plan 02 / Wave 2 lands the
+// real assertion using the EXISTING `_resetForTest(env)` helper (codex
+// HIGH-3 review: that helper already takes an env parameter, so no new
+// test-only seam is required — Plan 02 must NOT add one).
+//
+// Tests observe singletons via the EXISTING logEvent → console.log
+// envelope chain — codex MED-4 decoupling: DEF-3 proof must not depend on
+// the Plan 02 buildSentryOptions helper.
+//
+// Test shape (Plan 02 GREEN):
+//   _resetForTest({SERVICE_NAME: 'svc-a', DEPLOY_ENV: 'env-a'})
+//   init()                                  // first call materializes singletons
+//   spy on console.log
+//   logEvent({event: 'probe-a'})            // captures envelope_a; assert service/env = a
+//   init()                                  // second call hits `if (initialized) return` — no-op
+//   logEvent({event: 'probe-b'})            // captures envelope_b; assert service/env STILL = a
+//   _resetForTest()                         // cleanup
+// See docs/decisions/0034-observability-init-singleton-invariant.md.
+// ────────────────────────────────────────────────────────────────────
+Deno.test("D-02a init() repeated-init determinism: init() called twice within isolate yields deterministic singleton state", () => {
+  // RED stub: real assertion lands in Plan 02. supabase-edge contract is
+  // first-call-wins via the `let initialized` guard. The Plan 02 GREEN
+  // assertion uses the EXISTING `_resetForTest(env)` helper (codex HIGH-3
+  // review: `_resetForTest` already takes env at supabase-edge/index.ts:145,
+  // so Plan 02 must NOT add any new test-only export), and observes
+  // singletons via the existing logEvent → console.log envelope chain.
+  // See docs/decisions/0034-observability-init-singleton-invariant.md.
+  throw new Error("D-02a stub — Wave 0 RED baseline; flips GREEN when Plan 02 lands the logEvent-envelope assertion via existing _resetForTest(env)");
+});
