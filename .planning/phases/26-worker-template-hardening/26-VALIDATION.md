@@ -1,8 +1,8 @@
 ---
 phase: 26
 slug: worker-template-hardening
-status: draft
-nyquist_compliant: false
+status: complete
+nyquist_compliant: true
 wave_0_complete: true
 created: 2026-06-01
 ---
@@ -45,39 +45,39 @@ created: 2026-06-01
 
 | Decision | Plan (anticipated) | Wave | Behavior to verify | Test Type | Automated Command | Wave 0 File Exists | Status |
 |----------|--------------------|------|--------------------|-----------|-------------------|--------------------|--------|
-| D-01 export | 02 | 2 | `buildSentryOptions(env)` exported in cf-worker | grep | `grep -q "export function buildSentryOptions" add-observability/templates/ts-cloudflare-worker/lib-observability.ts` | n/a | ⬜ pending |
-| D-01 cf-pages | 02 | 2 | helper present in cf-pages | grep | `grep -q "export function buildSentryOptions" add-observability/templates/ts-cloudflare-pages/lib-observability.ts` | n/a | ⬜ pending |
-| D-01 openrouter | 02 | 2 | helper present in openrouter-monitor | grep | `grep -q "export function buildSentryOptions" add-observability/templates/openrouter-monitor/src/observability/index.ts` | n/a | ⬜ pending |
-| D-01a env-additions | 02 | 2 | `## Sentry integration` subsection present in env-additions.md (cf-worker, cf-pages, openrouter) | grep | `grep -l "## Sentry integration" add-observability/templates/ts-cloudflare-worker/env-additions.md add-observability/templates/ts-cloudflare-pages/env-additions.md add-observability/templates/openrouter-monitor/env-additions.md \| wc -l` → 3 | n/a | ⬜ pending |
-| D-01c byte-symmetry | 02 (wave-final) | 2 | cf-worker ↔ openrouter byte-identical | diff | `diff -q add-observability/templates/ts-cloudflare-worker/lib-observability.ts add-observability/templates/openrouter-monitor/src/observability/index.ts` → exit 0, empty | n/a | ⬜ pending |
-| D-02 ADR | 01 | 0 | ADR-0034 present | file | `test -f docs/decisions/0034-observability-init-singleton-invariant.md` | ❌ W0 task | ⬜ pending |
-| D-02a idempotency (cf-worker) | 01 RED → 02 GREEN | 0 → 2 | new `describe("init() idempotency")` block PASS | vitest | `bash add-observability/templates/run-template-tests.sh ts-cloudflare-worker` exits 0 with "init() called twice within isolate yields deterministic singleton state" PASS | ❌ W0 stub | ⬜ pending |
-| D-02a idempotency (cf-pages) | 01 RED → 02 GREEN | 0 → 2 | same | vitest | `bash add-observability/templates/run-template-tests.sh ts-cloudflare-pages` | ❌ W0 stub | ⬜ pending |
-| D-02a idempotency (supabase-edge) | 01 RED → 02 GREEN | 0 → 2 | same | deno test | `bash add-observability/templates/run-template-tests.sh ts-supabase-edge` | ❌ W0 stub | ⬜ pending |
-| D-02a idempotency (openrouter) | 01 RED → 02 GREEN | 0 → 2 | same | vitest | `cd add-observability/templates/openrouter-monitor && npx vitest run` | ❌ W0 stub | ⬜ pending |
-| D-03 vitest pin (3 sites) | 03 | 3 | `~3.2.4` present in cf-worker + cf-pages + ts-react-vite heredocs | grep | `grep -c '"vitest": "~3.2.4"' add-observability/templates/run-template-tests.sh` → 3 | n/a | ⬜ pending |
-| D-03a sentry pin (2 sites) | 03 | 3 | `~8.55.0` in cf-worker + cf-pages heredocs | grep | `grep -c '"@sentry/cloudflare": "~8.55.0"' add-observability/templates/run-template-tests.sh` → 2 | n/a | ⬜ pending |
-| D-03b policy comment | 03 | 3 | "Harness pins — re-bump deliberately" comment at top of harness | grep | `grep -q "Harness pins" add-observability/templates/run-template-tests.sh` | n/a | ⬜ pending |
-| D-05 REDACTED_KEYS (5 stacks) | 02 | 2 | `authorization` present in 5 meta.yaml files | grep | `grep -l "authorization" add-observability/templates/*/meta.yaml \| wc -l` → 5 | n/a | ⬜ pending |
-| D-05 additive | 02 | 2 | existing `card_number`/`ssn`/`cvv` STILL present (no regression) | grep | `grep -c "card_number" add-observability/templates/ts-cloudflare-worker/meta.yaml` ≥ 1 | n/a | ⬜ pending |
-| D-05a Go substring | 02 | 2 | Go `redact` uses `strings.Contains` (verified pre-edit; ensure unchanged) | grep | `grep -q "strings.Contains" add-observability/templates/go-fly-http/observability.go` | n/a | ⬜ pending |
-| D-05b policy.md.template (5 stacks) | 02 | 2 | `authorization` present in 5 `policy.md.template` files | grep | `grep -l "authorization" add-observability/templates/*/policy.md.template \| wc -l` → 5 | n/a | ⬜ pending |
-| D-06 engine filter | 03 | 3 | content-marker regex injected into `_filter_index_ts_requires_co_anchor` | grep | `awk '/_filter_index_ts_requires_co_anchor/,/^_/' templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh \| grep -qE "observability\|withObservability\|sentry"` | n/a | ⬜ pending |
-| D-06a fixture 13 setup | 01 | 0 | fixture dir + setup.sh + verify.sh present | file | `test -d migrations/test-fixtures/0019/13-index-ts-without-observability-content && test -f migrations/test-fixtures/0019/13-index-ts-without-observability-content/verify.sh` | ❌ W0 task | ⬜ pending |
-| D-06a dispatcher entry | 01 | 0 | fixture 13 reachable from dispatcher | bash | `bash migrations/run-tests.sh 2>&1 \| grep -q "13-index-ts-without-observability-content"` | ❌ W0 task | ⬜ pending |
-| D-06a fixture 13 RED→GREEN | 01 RED → 03 GREEN | 0 → 3 | fixture 13 GREEN post-D-06 (was RED on Wave 0) | bash | `bash migrations/run-tests.sh` exits 0 with "✓ 13-index-ts-without-observability-content" | ❌ W0 RED, 03 GREEN | ⬜ pending |
-| D-06a no-patch assertion | 01 (verify.sh) | 0 | fixture verify asserts no `.observability-0019.patch` emitted | bash | within fixture verify.sh: `test ! -e "$WORKDIR/.observability-0019.patch"` | ❌ W0 task | ⬜ pending |
-| D-07a TS1038 removed | 03 | 3 | no `declare const console` inside `declare global` | grep | `grep -q "declare const console" migrations/test-fixtures/0021/04-callbot-shape-strict-env-typecheck/types.d.ts` → exit 1 | n/a | ⬜ pending |
-| D-07a canonical pattern | 03 | 3 | `interface Console` + `declare var console: Console` present | grep | `grep -q "interface Console" migrations/test-fixtures/0021/04-callbot-shape-strict-env-typecheck/types.d.ts && grep -q "declare var console: Console" migrations/test-fixtures/0021/04-callbot-shape-strict-env-typecheck/types.d.ts` | n/a | ⬜ pending |
-| D-07b exit-0 removed | 03 | 3 | no `exit 0` fallback in `0021/04/verify.sh` | grep | `grep -c "exit 0" migrations/test-fixtures/0021/04-callbot-shape-strict-env-typecheck/verify.sh` → 0 | n/a | ⬜ pending |
-| D-07b honest fail | 03 | 3 | npx-missing emits explicit error string | grep | `grep -q "fixture 0021/04 FAIL — npx required" migrations/test-fixtures/0021/04-callbot-shape-strict-env-typecheck/verify.sh` | n/a | ⬜ pending |
-| D-07 fixture green | 03 | 3 | full regression — fixture 04 still GREEN post-fix | bash | `bash migrations/run-tests.sh` exits 0 with "✓ 04-callbot-shape-strict-env-typecheck" | n/a | ⬜ pending |
-| D-08 .gitignore presence | 02 | 2 | new `.gitignore` files in 4 stacks (excluding openrouter-monitor which already has one) | find | `find add-observability/templates -maxdepth 2 -name .gitignore -not -path "*/openrouter-monitor/*" \| wc -l` ≥ 4 | n/a | ⬜ pending |
-| D-08a provenance header | 02 | 2 | each new `.gitignore` cites Phase 24 or Phase 26 | grep | `grep -l "Phase 2[46]" add-observability/templates/{ts-cloudflare-worker,ts-cloudflare-pages,ts-supabase-edge,ts-react-vite,go-fly-http}/.gitignore \| wc -l` ≥ 4 | n/a | ⬜ pending |
-| D-10 version (add-observability) | 03 | 3 | CHANGELOG has 0.10.0 entry (no-brackets format per existing 0.9.0 heading) | grep | `grep -cE "^## 0\.10\.0( —\| –\| -)" add-observability/CHANGELOG.md` ≥ 1 | n/a | ⬜ pending |
-| D-10a version (root) | 03 | 3 | root CHANGELOG has 1.20.1 entry | grep | `grep -c "^## \[1\.20\.1\]" CHANGELOG.md` ≥ 1 | n/a | ⬜ pending |
+| D-01 export | 02 | 2 | `buildSentryOptions(env)` exported in cf-worker | grep | `grep -q "export function buildSentryOptions" add-observability/templates/ts-cloudflare-worker/lib-observability.ts` | n/a | ✅ green |
+| D-01 cf-pages | 02 | 2 | helper present in cf-pages | grep | `grep -q "export function buildSentryOptions" add-observability/templates/ts-cloudflare-pages/lib-observability.ts` | n/a | ✅ green |
+| D-01 openrouter | 02 | 2 | helper present in openrouter-monitor | grep | `grep -q "export function buildSentryOptions" add-observability/templates/openrouter-monitor/src/observability/index.ts` | n/a | ✅ green |
+| D-01a env-additions | 02 | 2 | `## Sentry integration` subsection present in env-additions.md (cf-worker, cf-pages, openrouter) | grep | `grep -l "## Sentry integration" add-observability/templates/ts-cloudflare-worker/env-additions.md add-observability/templates/ts-cloudflare-pages/env-additions.md add-observability/templates/openrouter-monitor/env-additions.md \| wc -l` → 3 | n/a | ✅ green |
+| D-01c byte-symmetry | 02 (wave-final) | 2 | cf-worker ↔ openrouter TOKEN-SUBSTITUTED equivalent (Wave 2 Deviation 1 — literal `diff -q` is structurally impossible since cf-worker uses `{{TOKEN}}` placeholders) | diff | `diff <(sed 's/{{ENV_VAR_DSN}}/SENTRY_DSN/g; s/{{ENV_VAR_ENV}}/DEPLOY_ENV/g; s/{{ENV_VAR_SERVICE}}/SERVICE_NAME/g; s/{{SERVICE_NAME}}/openrouter-monitor/g; s/{{DESTINATION}}/sentry/g; s/{{DEBUG_SAMPLE_RATE}}/0.1/g; s/{{TRACE_SAMPLE_RATE}}/0.1/g; s/{{REDACTED_KEYS}}/"password","token","api_key","card_number","cvv","ssn","secret","client_secret","refresh_token","access_token","authorization","bearer","cookie","x-api-key"/g' add-observability/templates/ts-cloudflare-worker/lib-observability.ts) add-observability/templates/openrouter-monitor/src/observability/index.ts` → exit 0, empty (Plan 03 Deviation: openrouter REDACTED_KEYS expanded inline as Rule 2 — Plan 02 missed this byte-symmetry repair) | n/a | ✅ green |
+| D-02 ADR | 01 | 0 | ADR-0034 present | file | `test -f docs/decisions/0034-observability-init-singleton-invariant.md` | ❌ W0 task | ✅ green |
+| D-02a repeated-init determinism (cf-worker) | 01 RED → 02 GREEN | 0 → 2 | new `describe("init() repeated-init determinism")` block PASS | vitest | `bash add-observability/templates/run-template-tests.sh ts-cloudflare-worker` exits 0 with "init() called twice within isolate yields deterministic singleton state" PASS | ❌ W0 stub | ✅ green |
+| D-02a repeated-init determinism (cf-pages) | 01 RED → 02 GREEN | 0 → 2 | same | vitest | `bash add-observability/templates/run-template-tests.sh ts-cloudflare-pages` | ❌ W0 stub | ✅ green |
+| D-02a repeated-init determinism (supabase-edge) | 01 RED → 02 GREEN | 0 → 2 | same | deno test | `bash add-observability/templates/run-template-tests.sh ts-supabase-edge` | ❌ W0 stub | ✅ green |
+| D-02a repeated-init determinism (openrouter) | 01 RED → 02 GREEN | 0 → 2 | same | vitest | `cd add-observability/templates/openrouter-monitor && npx vitest run` | ❌ W0 stub | ✅ green |
+| D-03 vitest pin (3 sites) | 03 | 3 | EXACT `3.2.4` present in cf-worker + cf-pages + ts-react-vite heredocs (codex HIGH-4 — tilde permits 3.2.5+, the very drift event we're guarding against) | grep | `grep -c '"vitest": "3.2.4"' add-observability/templates/run-template-tests.sh` → 3 AND `grep -c '"vitest": "~3.2.4"' add-observability/templates/run-template-tests.sh` → 0 | n/a | ✅ green |
+| D-03a sentry pin (2 sites) | 03 | 3 | `~8.55.0` in cf-worker + cf-pages heredocs | grep | `grep -c '"@sentry/cloudflare": "~8.55.0"' add-observability/templates/run-template-tests.sh` → 2 | n/a | ✅ green |
+| D-03b policy comment | 03 | 3 | "Harness pins — re-bump deliberately" comment at top of harness | grep | `grep -q "Harness pins" add-observability/templates/run-template-tests.sh` | n/a | ✅ green |
+| D-05 REDACTED_KEYS (5 stacks) | 02 | 2 | `authorization` present in 5 meta.yaml files | grep | `grep -l "authorization" add-observability/templates/*/meta.yaml \| wc -l` → 5 | n/a | ✅ green |
+| D-05 additive | 02 | 2 | existing `card_number`/`ssn`/`cvv` STILL present (no regression) | grep | `grep -c "card_number" add-observability/templates/ts-cloudflare-worker/meta.yaml` ≥ 1 | n/a | ✅ green |
+| D-05a Go substring | 02 | 2 | Go `redact` uses `strings.Contains` (verified pre-edit; ensure unchanged) | grep | `grep -q "strings.Contains" add-observability/templates/go-fly-http/observability.go` | n/a | ✅ green |
+| D-05b policy.md.template (5 stacks) | 02 | 2 | `authorization` present in 5 `policy.md.template` files | grep | `grep -l "authorization" add-observability/templates/*/policy.md.template \| wc -l` → 5 | n/a | ✅ green |
+| D-06 engine filter | 03 | 3 | content-marker regex injected into `_filter_index_ts_requires_co_anchor` | grep | `awk '/_filter_index_ts_requires_co_anchor/,/^_/' templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh \| grep -qE "observability\|withObservability\|sentry"` | n/a | ✅ green |
+| D-06a fixture 13 setup | 01 | 0 | fixture dir + setup.sh + verify.sh present | file | `test -d migrations/test-fixtures/0019/13-index-ts-without-observability-content && test -f migrations/test-fixtures/0019/13-index-ts-without-observability-content/verify.sh` | ❌ W0 task | ✅ green |
+| D-06a dispatcher entry | 01 | 0 | fixture 13 reachable from dispatcher | bash | `bash migrations/run-tests.sh 2>&1 \| grep -q "13-index-ts-without-observability-content"` | ❌ W0 task | ✅ green |
+| D-06a fixture 13 RED→GREEN | 01 RED → 03 GREEN | 0 → 3 | fixture 13 GREEN post-D-06 (was RED on Wave 0) | bash | `bash migrations/run-tests.sh` exits 0 with "✓ 13-index-ts-without-observability-content" | ❌ W0 RED, 03 GREEN | ✅ green |
+| D-06a no-patch assertion | 01 (verify.sh) | 0 | fixture verify asserts no `.observability-0019.patch` emitted | bash | within fixture verify.sh: `test ! -e "$WORKDIR/.observability-0019.patch"` | ❌ W0 task | ✅ green |
+| D-07a TS1038 removed | 03 | 3 | no `declare const console` inside `declare global` | grep | `grep -q "declare const console" migrations/test-fixtures/0021/04-callbot-shape-strict-env-typecheck/types.d.ts` → exit 1 | n/a | ✅ green |
+| D-07a canonical pattern | 03 | 3 | `interface Console` + `declare var console: Console` present | grep | `grep -q "interface Console" migrations/test-fixtures/0021/04-callbot-shape-strict-env-typecheck/types.d.ts && grep -q "declare var console: Console" migrations/test-fixtures/0021/04-callbot-shape-strict-env-typecheck/types.d.ts` | n/a | ✅ green |
+| D-07b exit-0 removed | 03 | 3 | no `exit 0` STATEMENT in `0021/04/verify.sh` (Plan 03 Deviation: loose substring `exit 0` matches 2 comments; precise anchor-line form below is required) | grep | `grep -c "^[[:space:]]*exit 0$" migrations/test-fixtures/0021/04-callbot-shape-strict-env-typecheck/verify.sh` → 0 | n/a | ✅ green |
+| D-07b honest fail | 03 | 3 | npx-missing emits explicit error string | grep | `grep -q "fixture 0021/04 FAIL — npx required" migrations/test-fixtures/0021/04-callbot-shape-strict-env-typecheck/verify.sh` | n/a | ✅ green |
+| D-07 fixture green | 03 | 3 | full regression — fixture 04 still GREEN post-fix | bash | `bash migrations/run-tests.sh` exits 0 with "PASS 04-callbot-shape-strict-env-typecheck" (Plan 03 Deviation: 0021 dispatcher uses `PASS` prefix, not `✓` — only 0019 dispatcher uses `✓`) | n/a | ✅ green |
+| D-08 .gitignore presence | 02 | 2 | new `.gitignore` files in 4 stacks (excluding openrouter-monitor which already has one) | find | `find add-observability/templates -maxdepth 2 -name .gitignore -not -path "*/openrouter-monitor/*" \| wc -l` ≥ 4 | n/a | ✅ green |
+| D-08a provenance header | 02 | 2 | each new `.gitignore` cites Phase 24 or Phase 26 | grep | `grep -l "Phase 2[46]" add-observability/templates/{ts-cloudflare-worker,ts-cloudflare-pages,ts-supabase-edge,ts-react-vite,go-fly-http}/.gitignore \| wc -l` ≥ 4 | n/a | ✅ green |
+| D-10 version (add-observability) | 03 | 3 | CHANGELOG has 0.10.0 entry (no-brackets format per existing 0.9.0 heading) | grep | `grep -cE "^## 0\.10\.0( —\| –\| -)" add-observability/CHANGELOG.md` ≥ 1 | n/a | ✅ green |
+| D-10a version (root) | 03 | 3 | Plan 03 Deviation (Rule 4 — architectural): root CHANGELOG holds Phase 26 entry in `[Unreleased]`, NOT `[1.20.1]`. `skill/SKILL.md` STAYS at v1.20.0 to satisfy `test-skill-md-version-matches-latest-migration-to-version` (migration 0021 to_version v1.20.0 + Phase 26 ships no new migration per D-04 + user-memory rule "versioning-tracks-migrations"). | grep | `grep -qE "^## \[Unreleased\] — Phase 26" CHANGELOG.md` AND `grep -q "^version: 1.20.0" skill/SKILL.md` | n/a | ✅ green (deviated) |
 
-*Status legend: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
+*Status legend: ✅ green · ✅ green · ❌ red · ⚠️ flaky*
 
 ---
 
@@ -88,13 +88,13 @@ created: 2026-06-01
 - [ ] `migrations/test-fixtures/0019/13-index-ts-without-observability-content/verify.sh` — asserts SKIP_UNSUPPORTED + no `.observability-0019.patch` emitted
 - [ ] `migrations/test-fixtures/0019/13-index-ts-without-observability-content/expected-exit` — exit-code expectation file (per fixture convention)
 - [ ] Dispatcher entry in `migrations/run-tests.sh` for fixture 13 (verify auto-discovery first; add explicit entry only if needed)
-- [ ] `add-observability/templates/ts-cloudflare-worker/lib-observability.test.ts` — new `describe("D-02 singleton idempotency")` RED block
+- [ ] `add-observability/templates/ts-cloudflare-worker/lib-observability.test.ts` — new `describe("D-02 singleton repeated-init determinism")` RED block
 - [ ] `add-observability/templates/ts-cloudflare-pages/lib-observability.test.ts` — same RED block
 - [ ] `add-observability/templates/ts-supabase-edge/lib-observability.test.ts` (or `index.test.ts` — planner verifies) — RED block (Deno test shape)
 - [ ] `add-observability/templates/openrouter-monitor/src/observability/index.test.ts` — RED block (must stay byte-symmetric to cf-worker test once D-01c contract extends to test files — planner verifies whether the symmetry contract covers tests)
 
 **Wave 0 RED-verification:** Before Wave 2 starts, the following commands MUST report failures (RED state):
-- `bash add-observability/templates/run-template-tests.sh ts-cloudflare-worker` → idempotency test fails (no `buildSentryOptions` yet)
+- `bash add-observability/templates/run-template-tests.sh ts-cloudflare-worker` → repeated-init determinism test fails (no `buildSentryOptions` yet)
 - `bash migrations/run-tests.sh` → fixture 13 fails (engine filter not yet updated)
 
 ---
@@ -112,13 +112,13 @@ created: 2026-06-01
 
 ## Validation Sign-Off
 
-- [ ] All D-XX decisions have an automated grep / diff / test-runner verification in the table above
-- [ ] Wave 0 RED state confirmed before Wave 2 starts (idempotency tests + fixture 13 FAIL)
-- [ ] Wave 2 GREEN state for D-01 / D-02a / D-05 / D-05b / D-08
-- [ ] Wave 3 GREEN state for D-03 / D-06 / D-07 / D-10 / D-10a
-- [ ] Byte-symmetry diff returns empty after Wave 2 closes
-- [ ] Full suite green: `bash add-observability/templates/run-template-tests.sh all && bash migrations/run-tests.sh`
+- [x] All D-XX decisions have an automated grep / diff / test-runner verification in the table above
+- [x] Wave 0 RED state confirmed before Wave 2 starts (repeated-init determinism tests + fixture 13 FAIL — codex MED-3 terminology fix)
+- [x] Wave 2 GREEN state for D-01 / D-02a / D-05 / D-05b / D-08
+- [x] Wave 3 GREEN state for D-03 / D-06 / D-07 / D-10 / D-10a (D-10a deviated: see row note — `[Unreleased]` instead of `[1.20.1]` per drift-test invariant)
+- [x] Byte-symmetry diff returns empty after Wave 2 closes (TOKEN-SUBSTITUTED equivalence — Wave 2 Deviation 1 + Plan 03 openrouter REDACTED_KEYS repair)
+- [x] Full suite green: `bash add-observability/templates/run-template-tests.sh all && bash migrations/run-tests.sh` (per-stack /tmp/p26-final-*.log)
 - [ ] Manual review items signed off in PR
-- [ ] `nyquist_compliant: true` set in this file's frontmatter
+- [x] `nyquist_compliant: true` set in this file's frontmatter
 
-**Approval:** pending
+**Approval:** complete (Wave 3 closed; awaiting PR-time manual review sign-off)
