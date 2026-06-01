@@ -152,6 +152,19 @@ export interface SentryOptions {
  * docs/decisions/0034-observability-init-singleton-invariant.md.
  */
 export function buildSentryOptions(env: InitEnv): SentryOptions {
+  // NOTE on `release`: this helper uses the service name as the Sentry
+  // `release` identifier — a placeholder, NOT semantically correct for
+  // release-health tracking. Sentry's `release` is meant to be a stable
+  // deploy identifier (commit SHA, build number, semver tag) so it can
+  // collapse events by deploy and surface regressions. Operators who want
+  // accurate release-health should either:
+  //   (a) set the `SENTRY_RELEASE` env var — the Sentry SDK reads it
+  //       automatically and it overrides whatever this helper returns;
+  //   (b) extend `InitEnv` with a dedicated `SENTRY_RELEASE` field and
+  //       prefer it here: `env.SENTRY_RELEASE ?? env.SERVICE_NAME ?? SERVICE_DEFAULT`.
+  // Until then, every deploy of the same service collapses into one
+  // "release" bucket. This is acceptable for scaffold-out defaults but
+  // worth tightening in production. Tracked: PR #60 CodeRabbit finding.
   return {
     dsn: env.SENTRY_DSN,
     environment: env.DEPLOY_ENV ?? "dev",
