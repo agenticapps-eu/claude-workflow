@@ -13,8 +13,12 @@
 # Vendored dependencies (if `go mod vendor` is used).
 vendor/
 
-# Fly.io CLI local config (ASSUMED — Phase 26 RESEARCH A3).
-.fly/
+# Fly.io CLI: flyctl stores config in $HOME/.fly (user-level), NOT a repo-local
+# .fly/ — see https://community.fly.io/t/flyctl-should-follow-the-xdg-base-directory-specification/1743
+# and the flyctl config-init source. The original ASSUMED .fly/ entry from Phase 26
+# RESEARCH A3 was removed in this PR's CodeRabbit pass (PR #60) — no repo-local
+# .fly/ directory exists to ignore. Left as a header comment so operators aren't
+# surprised when their flyctl creds don't show up in this project.
 
 # Common Go build/temp.
 tmp/
