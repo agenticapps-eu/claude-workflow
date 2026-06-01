@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.19.0
 milestone_name: migration
-status: Phase 25 squash-merged to main as `8a838e8` on 2026-06-01; v1.20.0 + add-observability 0.9.0 live
+status: executing
 stopped_at: Phase 26 context gathered — DEF-1/2/3 + F-2 + CR-D/E + .gitignore + version bumps decided
-last_updated: "2026-06-01T10:31:48.626Z"
-last_activity: 2026-06-01
+last_updated: "2026-06-01T12:44:04.026Z"
+last_activity: 2026-06-01 -- Phase 26 execution started
 progress:
   total_phases: 2
   completed_phases: 1
-  total_plans: 5
+  total_plans: 8
   completed_plans: 5
-  percent: 100
+  percent: 63
 ---
 
 # Project State
@@ -22,14 +22,14 @@ See: .planning/PROJECT.md (does not yet exist — full retroactive bootstrap def
 See: .planning/ROADMAP.md (single-row stub, 2026-05-31 — Phase 25 + Phase 26 placeholder only)
 
 **Core value:** Spec-first, migration-driven workflow scaffolder for AgenticApps projects.
-**Current focus:** Phase 25 merged (`8a838e8`) → Phase 26 — worker-template hardening (next to discuss)
+**Current focus:** Phase 26 — worker-template-hardening
 
 ## Current Position
 
-Phase: 25 MERGED → 26 (next to discuss)
-Plan: 5/5 complete for Phase 25
-Status: Phase 25 squash-merged to main as `8a838e8` on 2026-06-01; v1.20.0 + add-observability 0.9.0 live
-Last activity: 2026-06-01
+Phase: 26 (worker-template-hardening) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 26
+Last activity: 2026-06-01 -- Phase 26 execution started
 
 Progress: Phase 25 complete + merged (5/5 plans); Phase 26 not yet discussed
 
