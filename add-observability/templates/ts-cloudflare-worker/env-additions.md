@@ -57,9 +57,12 @@ service name + environment to `@sentry/cloudflare`'s per-request
 `withSentry(optionsFactory, handler)` wrapper. Wire it at your entry file:
 
 ```typescript
+// Paths assume the scaffolded layout: wrapper lands at
+// `src/lib/observability/index.ts` (INIT.md §Phase 5 cf-worker). Adjust if
+// your entry file lives elsewhere relative to `src/lib/observability/`.
 import { withSentry } from "@sentry/cloudflare";
-import { withObservability } from "./middleware";
-import { buildSentryOptions } from "./lib-observability";
+import { withObservability } from "./lib/observability/middleware";
+import { buildSentryOptions } from "./lib/observability";
 
 const handler = { /* fetch, scheduled, queue, etc. */ };
 export default withSentry(env => buildSentryOptions(env), withObservability(handler));

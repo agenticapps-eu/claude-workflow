@@ -46,9 +46,16 @@ service name + environment to `@sentry/cloudflare`'s per-request
 `withSentry(optionsFactory, handler)` wrapper. Wire it at your entry file:
 
 ```typescript
+// Paths assume the scaffolded Pages layout: wrapper lands at
+// `functions/_lib/observability/index.ts` (INIT.md §Phase 5 cf-pages, line
+// ~533). Pages Functions usually wire observability via `_middleware.ts`
+// rather than an entry-file `withSentry` wrap — this snippet covers the
+// less common case where you want explicit `withSentry` per route. Adjust
+// the relative path to `./_lib/observability/...` if your route file lives
+// deeper in `functions/`.
 import { withSentry } from "@sentry/cloudflare";
-import { withObservability } from "./middleware";
-import { buildSentryOptions } from "./lib-observability";
+import { withObservability } from "./_lib/observability/middleware";
+import { buildSentryOptions } from "./_lib/observability";
 
 const handler = { /* fetch, scheduled, queue, etc. */ };
 export default withSentry(env => buildSentryOptions(env), withObservability(handler));
