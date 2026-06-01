@@ -15,7 +15,7 @@ Re-rev cron-monitor + new queue-monitor for v1.19.0 projects (Phase 25, ADR-0033
 ### Fixed
 
 - **`cron-monitor.ts` — discriminated-union `CronMonitorSchedule`** (D-03, all 3 TS stacks): `{ type: "crontab"; value: string } | { type: "interval"; value: number; unit: string }` replaces bare `{ type: string; value?: ... }`. Invalid combinations (e.g., `interval` without `unit`) now caught at compile time.
-- **`cron-monitor.ts` — `withCronMonitor<E>` generic narrowing** (D-05, cf-worker only): env parameter typed `E extends Record<string, string>` so strict CallbotEnv-style envs (no index signature) compile without a cast. cf-pages retains `<R>` return-type generic per H-3.
+- **`cron-monitor.ts` — `withCronMonitor<E>` generic narrowing** (D-05, cf-worker + openrouter-monitor): env parameter typed `E extends { SENTRY_DSN?: string; SERVICE_NAME?: string }` so strict CallbotEnv-style envs (no index signature) compile without a cast. cf-pages retains `<R>` return-type generic per H-3. supabase-edge has no generic.
 - **`cron-monitor.ts` — `buildMonitorConfig` + `isConfigured` exports** (D-19, cf-worker + cf-pages): queue-monitor.ts imports these at runtime; missing exports would be a runtime failure disguised as a TS error.
 
 ### Changed

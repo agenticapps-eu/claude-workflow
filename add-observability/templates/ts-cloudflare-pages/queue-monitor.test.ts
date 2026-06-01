@@ -1,5 +1,5 @@
 /**
- * queue-monitor.test.ts — withQueueMonitor contract suite (ts-cloudflare-worker).
+ * queue-monitor.test.ts — withQueueMonitor contract suite (ts-cloudflare-pages).
  *
  * Tests the Sentry Crons heartbeat wrapper contract for Cloudflare Queue
  * consumer handlers, mirroring withCronMonitor's Phase 22 + Phase 23 design:
