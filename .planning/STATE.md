@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.20.0
 milestone_name: worker-template-hardening-and-0019-engine
-status: awaiting-pr-merge
-stopped_at: Phase 25 fully audited (review + security + verification + validation) on `feat/fix-0019-engine-and-cron-wrappers-v1.20.0`; PR open against `main`
-last_updated: "2026-06-01T08:55:00.000Z"
+status: merged
+stopped_at: Phase 25 merged to main as `8a838e8 v1.20.0 fix(#56): 0019 engine + withCronMonitor/withQueueMonitor + Migration 0021 (#57)`. Ships claude-workflow v1.20.0 + add-observability 0.9.0.
+last_updated: "2026-06-01T09:50:00.000Z"
 last_activity: 2026-06-01
 progress:
   total_phases: 2
@@ -22,16 +22,16 @@ See: .planning/PROJECT.md (does not yet exist — full retroactive bootstrap def
 See: .planning/ROADMAP.md (single-row stub, 2026-05-31 — Phase 25 + Phase 26 placeholder only)
 
 **Core value:** Spec-first, migration-driven workflow scaffolder for AgenticApps projects.
-**Current focus:** Phase 25 shipped (PR open, awaiting merge) → Phase 26 — worker-template hardening
+**Current focus:** Phase 25 merged (`8a838e8`) → Phase 26 — worker-template hardening (next to discuss)
 
 ## Current Position
 
-Phase: 25 (awaiting PR merge) → 26 (next to discuss)
+Phase: 25 MERGED → 26 (next to discuss)
 Plan: 5/5 complete for Phase 25
-Status: Phase 25 PR open; review + security + verification + validation all audited
+Status: Phase 25 squash-merged to main as `8a838e8` on 2026-06-01; v1.20.0 + add-observability 0.9.0 live
 Last activity: 2026-06-01
 
-Progress: Phase 25 complete (5/5 plans · v1.20.0 + add-observability 0.9.0); Phase 26 not yet discussed
+Progress: Phase 25 complete + merged (5/5 plans); Phase 26 not yet discussed
 
 ## Performance Metrics
 
@@ -64,7 +64,7 @@ None tracked yet — todo system not initialized at project level.
 
 ## Session Continuity
 
-Last session: 2026-06-01 — Phase 25 execution + audit + ship sequence
-Stopped at: Phase 25 PR open against `main` on branch `feat/fix-0019-engine-and-cron-wrappers-v1.20.0`. All 5 plans complete; review (4 warn / 5 info, 0 critical), security (13/13 threats closed), verification (7/7 SC), validation (`nyquist_compliant: true`) all audited. v1.20.0 + add-observability 0.9.0 ready.
-Resume file: `.planning/phases/25-fix-0019-engine-and-cron-wrappers/25-VERIFICATION.md`
-Next action: Await PR merge, then `/gsd-discuss-phase 26` for worker-template hardening (DEF-1/2/3 + F-2 carry-forwards from PR #55 + upstream `vitest@3.2.5` / `vite-node@3.2.5` registry-drift pin fix flagged at `25-VALIDATION.md` audit-time caveat).
+Last session: 2026-06-01 — Phase 25 execution + audit + ship + merge
+Stopped at: Phase 25 merged to main as `8a838e8 v1.20.0 ... (#57)` after 2-round CodeRabbit cycle (5/18 actionable closed by `5226a22` + `efec4e2`, 13 remaining are markdown-lint nitpicks + 2 parked design-call items). Branch `feat/fix-0019-engine-and-cron-wrappers-v1.20.0` deleted locally. v1.20.0 + add-observability 0.9.0 live on main.
+Resume file: `.planning/STATE.md` (this file) — next action is `/gsd-discuss-phase 26`.
+Next action: `/gsd-discuss-phase 26` for worker-template hardening. Scope: DEF-1/2/3 + F-2 carry-forwards from PR #55 + upstream `vitest@3.2.5` / `vite-node@3.2.5` registry-drift pin (flagged at `25-VALIDATION.md` audit-time caveat) + `_filter_index_ts_requires_co_anchor` content-marker firewall (CodeRabbit finding D, `migrate-0019-...sh:233`) + `0021/04 verify.sh` exit-0-when-npx-missing mask + TS1038 console declaration in `types.d.ts:63` (CodeRabbit finding E).
