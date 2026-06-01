@@ -65,7 +65,7 @@ const TRACE_SAMPLE_RATE = 0.1;
 // names contain any of these substrings (case-insensitive) are scrubbed
 // before emission.
 const REDACTED_KEYS: ReadonlyArray<string> = [
-  "password","token","api_key","card_number","cvv","ssn","secret","client_secret","refresh_token","access_token"
+  "password","token","api_key","card_number","cvv","ssn","secret","client_secret","refresh_token","access_token","authorization","bearer","cookie","x-api-key"
 ];
 
 // ─── Module state ─────────────────────────────────────────────────────────
@@ -114,6 +114,64 @@ export function init(env: InitEnv, ctx: ExecutionContext): void {
   // when a DSN is configured; the sentry adapter gates its own calls on the
   // same DSN-present signal via isConfigured/init.
   registry = buildRegistry(resolveConfig(env), env, ctx);
+}
+
+// ─── Sentry options helper (D-01 Phase 26) ────────────────────────────────
+
+export interface SentryOptions {
+  dsn: string | undefined;
+  environment: string;
+  release: string;
+  tracesSampleRate: number;
+  sendDefaultPii: false;
+}
+
+/**
+ * Build the options object for `withSentry(optionsFactory, handler)`.
+ *
+ * ENV-PURE: reads ONLY from `env` plus the scaffold-time `TRACE_SAMPLE_RATE`
+ * constant. Reads ZERO module-scope singletons. This matters because the
+ * `withSentry` wrapper invokes its options factory per-request BEFORE the
+ * inner handler runs — and the inner handler is what calls `init(env, ctx)`
+ * (which sets the `serviceName` / `deployEnv` singletons). If this helper
+ * read from singletons, it would see default/stale values. Reading from
+ * `env` directly mirrors the env-derived pattern openrouter-monitor's own
+ * entry file uses manually (see openrouter-monitor/src/index.ts:47-57).
+ *
+ * Call at the entry-file site:
+ *   export default withSentry(env => buildSentryOptions(env), withObservability(handler));
+ *
+ * TRACE_SAMPLE_RATE (baked at scaffold time from meta.yaml) is the
+ * authoritative traces sample rate; this helper surfaces it to the
+ * Sentry SDK that `withSentry` initialises per-request. Phase 26 DEF-1.
+ *
+ * Runtime model: Cloudflare reuses Worker isolates across requests for
+ * performance; module state persists across requests within an isolate.
+ * The contract that makes this helper safe is its env-purity, NOT any
+ * assumption about init() running first. See
+ * docs/decisions/0034-observability-init-singleton-invariant.md.
+ */
+export function buildSentryOptions(env: InitEnv): SentryOptions {
+  // NOTE on `release`: this helper uses the service name as the Sentry
+  // `release` identifier — a placeholder, NOT semantically correct for
+  // release-health tracking. Sentry's `release` is meant to be a stable
+  // deploy identifier (commit SHA, build number, semver tag) so it can
+  // collapse events by deploy and surface regressions. Operators who want
+  // accurate release-health should either:
+  //   (a) set the `SENTRY_RELEASE` env var — the Sentry SDK reads it
+  //       automatically and it overrides whatever this helper returns;
+  //   (b) extend `InitEnv` with a dedicated `SENTRY_RELEASE` field and
+  //       prefer it here: `env.SENTRY_RELEASE ?? env.SERVICE_NAME ?? SERVICE_DEFAULT`.
+  // Until then, every deploy of the same service collapses into one
+  // "release" bucket. This is acceptable for scaffold-out defaults but
+  // worth tightening in production. Tracked: PR #60 CodeRabbit finding.
+  return {
+    dsn: env.SENTRY_DSN,
+    environment: env.DEPLOY_ENV ?? "dev",
+    release: env.SERVICE_NAME ?? SERVICE_DEFAULT,
+    tracesSampleRate: TRACE_SAMPLE_RATE,
+    sendDefaultPii: false,
+  };
 }
 
 // ─── traceparent helpers (W3C Trace Context Level 1) ──────────────────────

@@ -55,12 +55,15 @@ declare global {
   }
 
   // console — provided by ES2015+ lib but not included in strict ES2022-only
-  // (workers runtimes provide console; declare minimal surface for typecheck)
-  declare const console: {
+  // (workers runtimes provide console; declare minimal surface for typecheck).
+  // Canonical pattern: `interface Console` + `declare var console: Console`
+  // (Phase 26 D-07a / CR-E — `declare const` inside `declare global` is TS1038).
+  interface Console {
     log(...args: unknown[]): void;
     warn(...args: unknown[]): void;
     error(...args: unknown[]): void;
-  };
+  }
+  declare var console: Console;
 }
 
 export {};

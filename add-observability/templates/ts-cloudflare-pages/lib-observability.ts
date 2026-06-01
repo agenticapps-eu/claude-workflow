@@ -123,6 +123,64 @@ export function init(env: InitEnv, ctx: ExecutionContext): void {
   registry = buildRegistry(resolveConfig(env), env, ctx);
 }
 
+// ─── Sentry options helper (D-01 Phase 26) ────────────────────────────────
+
+export interface SentryOptions {
+  dsn: string | undefined;
+  environment: string;
+  release: string;
+  tracesSampleRate: number;
+  sendDefaultPii: false;
+}
+
+/**
+ * Build the options object for `withSentry(optionsFactory, handler)`.
+ *
+ * ENV-PURE: reads ONLY from `env` plus the scaffold-time `TRACE_SAMPLE_RATE`
+ * constant. Reads ZERO module-scope singletons. This matters because the
+ * `withSentry` wrapper invokes its options factory per-request BEFORE the
+ * inner handler runs — and the inner handler is what calls `init(env, ctx)`
+ * (which sets the `serviceName` / `deployEnv` singletons). If this helper
+ * read from singletons, it would see default/stale values. Reading from
+ * `env` directly mirrors the env-derived pattern openrouter-monitor's own
+ * entry file uses manually (see openrouter-monitor/src/index.ts:47-57).
+ *
+ * Call at the entry-file site:
+ *   export default withSentry(env => buildSentryOptions(env), withObservability(handler));
+ *
+ * TRACE_SAMPLE_RATE (baked at scaffold time from meta.yaml) is the
+ * authoritative traces sample rate; this helper surfaces it to the
+ * Sentry SDK that `withSentry` initialises per-request. Phase 26 DEF-1.
+ *
+ * Runtime model: Cloudflare reuses Worker isolates across requests for
+ * performance; module state persists across requests within an isolate.
+ * The contract that makes this helper safe is its env-purity, NOT any
+ * assumption about init() running first. See
+ * docs/decisions/0034-observability-init-singleton-invariant.md.
+ */
+export function buildSentryOptions(env: InitEnv): SentryOptions {
+  // NOTE on `release`: this helper uses the service name as the Sentry
+  // `release` identifier — a placeholder, NOT semantically correct for
+  // release-health tracking. Sentry's `release` is meant to be a stable
+  // deploy identifier (commit SHA, build number, semver tag) so it can
+  // collapse events by deploy and surface regressions. Operators who want
+  // accurate release-health should either:
+  //   (a) set the `SENTRY_RELEASE` env var — the Sentry SDK reads it
+  //       automatically and it overrides whatever this helper returns;
+  //   (b) extend `InitEnv` + meta.yaml with a dedicated `{{ENV_VAR_RELEASE}}`
+  //       token and prefer it here: `env.{{ENV_VAR_RELEASE}} ?? env.{{ENV_VAR_SERVICE}} ?? SERVICE_DEFAULT`.
+  // Until then, every deploy of the same service collapses into one
+  // "release" bucket. This is acceptable for scaffold-out defaults but
+  // worth tightening in production. Tracked: PR #60 CodeRabbit finding.
+  return {
+    dsn: env.{{ENV_VAR_DSN}},
+    environment: env.{{ENV_VAR_ENV}} ?? "dev",
+    release: env.{{ENV_VAR_SERVICE}} ?? SERVICE_DEFAULT,
+    tracesSampleRate: TRACE_SAMPLE_RATE,
+    sendDefaultPii: false,
+  };
+}
+
 // ─── traceparent helpers (W3C Trace Context Level 1) ──────────────────────
 
 const TRACEPARENT_RE = /^([0-9a-f]{2})-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$/i;

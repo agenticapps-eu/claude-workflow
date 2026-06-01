@@ -220,7 +220,16 @@ _filter_index_ts_requires_co_anchor() {
         # (a) Sibling co-anchor requirement.
         local parent="${f%/index.ts}"
         if [ -f "$parent/middleware.ts" ] || [ -f "$parent/_middleware.ts" ]; then
-          printf '%s\n' "$f"
+          # (c) Content-marker firewall (Phase 26 CR-D / D-06): index.ts must contain
+          # at least one observability marker to be classified as a wrapper.
+          # Hono/vanilla Worker apps with `src/index.ts + src/middleware.ts`
+          # would otherwise trigger unsolicited .observability-0019.patch files.
+          # Regression detector: migrations/test-fixtures/0019/13-index-ts-without-observability-content
+          # The broad `sentry` substring catches @sentry/cloudflare, withSentry,
+          # Sentry.init, SENTRY_DSN — all canonical usage patterns.
+          if grep -qiE "observability|lib-observability|withObservability|sentry|agenticapps:observability" "$f"; then
+            printf '%s\n' "$f"
+          fi
         fi
         # else: drop silently — operator never sees noise for unrelated index.ts
         ;;

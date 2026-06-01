@@ -27,6 +27,11 @@ they leave the browser.
 - client_secret
 - refresh_token
 - access_token
+<!-- Phase 26 D-05b: HTTP-header redaction (DEF-2) -->
+- authorization
+- bearer
+- cookie
+- x-api-key
 
 ## Destination roles
 

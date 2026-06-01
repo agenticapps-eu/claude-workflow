@@ -21,6 +21,32 @@
 
 set -euo pipefail
 
+# ─── Harness pins — re-bump deliberately ──────────────────────────────────────
+# These version pins are INTENTIONAL. The harness has no committed
+# package-lock.json (it materializes a temp dir per run), so unpinned semver
+# ranges resolve to whatever the npm registry serves at run time. Phase 25
+# audit-time: vitest@^3.0.0 resolved to vitest@3.2.5 which demanded
+# vite-node@3.2.5 — only 3.2.4 was published.
+#
+# DUAL strategy (Phase 26 D-03b — corrected per cross-AI review codex HIGH-4):
+#
+#   vitest:             EXACT pin "3.2.4" (no operator).
+#                       Goal: BLOCK the 3.2.5 drift event specifically.
+#                       npm tilde `~3.2.4` was insufficient — it allows
+#                       `>=3.2.4 <3.3.0`, which still resolves 3.2.5+.
+#                       Exact pin is the only way to lock out 3.2.5.
+#
+#   @sentry/cloudflare: TILDE pin "~8.55.0" (patch-level).
+#                       Goal: allow Sentry SDK patch releases (more stable
+#                       than vitest, lower drift risk). Tilde permits
+#                       `>=8.55.0 <8.56.0`.
+#
+# To upgrade either dep:
+#   - vitest: verify the new version locally, then update the EXACT pin
+#     to the new exact version (e.g., "3.2.4" -> "3.3.0").
+#   - @sentry/cloudflare: bump the tilde minor (e.g., "~8.55.0" -> "~8.56.0").
+# NEVER weaken vitest to `^` or `~` without revisiting the Phase 25 drift event.
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEMPLATES_DIR="$SCRIPT_DIR"
 
@@ -173,10 +199,10 @@ run_ts_cloudflare_worker() {
   "private": true,
   "type": "module",
   "devDependencies": {
-    "vitest": "^3.0.0"
+    "vitest": "3.2.4"
   },
   "dependencies": {
-    "@sentry/cloudflare": "^8.0.0"
+    "@sentry/cloudflare": "~8.55.0"
   }
 }
 PKGJSON
@@ -295,10 +321,10 @@ run_ts_cloudflare_pages() {
   "private": true,
   "type": "module",
   "devDependencies": {
-    "vitest": "^3.0.0"
+    "vitest": "3.2.4"
   },
   "dependencies": {
-    "@sentry/cloudflare": "^8.0.0"
+    "@sentry/cloudflare": "~8.55.0"
   }
 }
 PKGJSON
@@ -396,7 +422,7 @@ run_ts_react_vite() {
   "private": true,
   "type": "module",
   "devDependencies": {
-    "vitest": "^3.0.0",
+    "vitest": "3.2.4",
     "jsdom": "^25.0.0"
   },
   "dependencies": {

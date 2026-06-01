@@ -20,6 +20,8 @@ import {
   captureError,
   runWithContext,
   getActiveContext,
+  init,
+  _resetForTest,
 } from "./index.ts";
 
 // ─── §10.3 traceparent roundtrip ────────────────────────────────────────────
@@ -180,4 +182,67 @@ Deno.test("§10.3 traceparent: accepts a higher version (W3C forward-compat)", (
   assert(fwd !== null);
   assertEquals(fwd!.traceId, "4bf92f3577b34da6a3ce929d0e0e4736");
   assertEquals(fwd!.parentSpanId, "00f067aa0ba902b7");
+});
+
+// ────────────────────────────────────────────────────────────────────
+// D-02a: init() repeated-init determinism contract (Phase 26 / ADR-0034).
+// Supabase-edge variant — first-call-wins (init() has `if (initialized)
+// return`). Wave 0 RED stub — flips GREEN once Plan 02 / Wave 2 lands the
+// real assertion using the EXISTING `_resetForTest(env)` helper (codex
+// HIGH-3 review: that helper already takes an env parameter, so no new
+// test-only seam is required — Plan 02 must NOT add one).
+//
+// Tests observe singletons via the EXISTING logEvent → console.log
+// envelope chain — codex MED-4 decoupling: DEF-3 proof must not depend on
+// the Plan 02 buildSentryOptions helper.
+//
+// Test shape (Plan 02 GREEN):
+//   _resetForTest({SERVICE_NAME: 'svc-a', DEPLOY_ENV: 'env-a'})
+//   init()                                  // first call materializes singletons
+//   spy on console.log
+//   logEvent({event: 'probe-a'})            // captures envelope_a; assert service/env = a
+//   init()                                  // second call hits `if (initialized) return` — no-op
+//   logEvent({event: 'probe-b'})            // captures envelope_b; assert service/env STILL = a
+//   _resetForTest()                         // cleanup
+// See docs/decisions/0034-observability-init-singleton-invariant.md.
+// ────────────────────────────────────────────────────────────────────
+Deno.test("D-02a init() repeated-init determinism: init() called twice within isolate yields deterministic singleton state", () => {
+  // supabase-edge contract is first-call-wins via the `let initialized` guard.
+  // This test uses ONLY the EXISTING `_resetForTest(env)` helper at
+  // supabase-edge/index.ts:145 (codex HIGH-3: NO new test-only seam) and
+  // observes singletons via the existing logEvent → console.log envelope
+  // chain (codex MED-4: NO buildSentryOptions dependency).
+  // See docs/decisions/0034-observability-init-singleton-invariant.md.
+
+  _resetForTest({ SENTRY_DSN: "dsn-a", DEPLOY_ENV: "env-a", SERVICE_NAME: "svc-a" });
+  init();  // first call — singletons take env-a values
+
+  const captured: string[] = [];
+  const origLog = console.log;
+  console.log = (line: string) => { captured.push(line); };
+  try {
+    logEvent({ event: "probe-a", severity: "info" });
+
+    // Second init() — no _resetForTest call, so `initialized` is still true.
+    // The `if (initialized) return` guard fires and singletons stay at env-a.
+    init();
+
+    logEvent({ event: "probe-b", severity: "info" });
+  } finally {
+    console.log = origLog;
+  }
+
+  assertEquals(captured.length, 2, "expected 2 console.log envelopes");
+  const env_a = JSON.parse(captured[0]);
+  const env_b = JSON.parse(captured[1]);
+
+  // env_a envelope reflects first init's values.
+  assertEquals(env_a.service, "svc-a");
+  assertEquals(env_a.env, "env-a");
+
+  // env_b envelope MUST ALSO reflect env-a values — second init was a no-op.
+  assertEquals(env_b.service, "svc-a", "second init() must be a no-op — service stays at first-call value");
+  assertEquals(env_b.env, "env-a", "second init() must be a no-op — env stays at first-call value");
+
+  _resetForTest();  // cleanup
 });

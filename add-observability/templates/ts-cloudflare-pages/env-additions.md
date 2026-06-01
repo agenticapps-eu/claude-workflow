@@ -38,6 +38,36 @@ In the dashboard: **Workers & Pages → {{SERVICE_NAME}} → Settings →
 Environment variables → Production → Add variable** and tick
 "Encrypt".
 
+## Sentry integration
+
+`lib-observability.ts` exports `buildSentryOptions(env)` (Phase 26 DEF-1) — an
+ENV-PURE helper that surfaces `TRACE_SAMPLE_RATE` and the env-derived
+service name + environment to `@sentry/cloudflare`'s per-request
+`withSentry(optionsFactory, handler)` wrapper. Wire it at your entry file:
+
+```typescript
+// Paths assume the scaffolded Pages layout: wrapper lands at
+// `functions/_lib/observability/index.ts` (INIT.md §Phase 5 cf-pages, line
+// ~533). Pages Functions usually wire observability via `_middleware.ts`
+// rather than an entry-file `withSentry` wrap — this snippet covers the
+// less common case where you want explicit `withSentry` per route. Adjust
+// the relative path to `./_lib/observability/...` if your route file lives
+// deeper in `functions/`.
+import { withSentry } from "@sentry/cloudflare";
+import { withObservability } from "./_lib/observability/middleware";
+import { buildSentryOptions } from "./_lib/observability";
+
+const handler = { /* fetch, scheduled, queue, etc. */ };
+export default withSentry(env => buildSentryOptions(env), withObservability(handler));
+```
+
+The helper reads directly from `env` (does NOT depend on `init()` running
+first) — safe to invoke from `withSentry`'s options factory regardless of
+when the inner handler's `init(env, ctx)` runs. Requires
+`@sentry/cloudflare >= 8.0.0` (already declared in `package.json`).
+See `docs/decisions/0034-observability-init-singleton-invariant.md` for the
+runtime model (Cloudflare warm-isolate reuse) that motivates env-purity.
+
 ## `package.json`
 
 ```json

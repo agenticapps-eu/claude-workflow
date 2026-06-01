@@ -73,8 +73,8 @@ EOF
 
 # ── (4) Run tsc --noEmit; expect exit 0 ───────────────────────────────────
 if ! command -v npx >/dev/null 2>&1; then
-  echo "fixture 0021/04 SKIP — npx unavailable (cannot run tsc)"
-  exit 0
+  echo "fixture 0021/04 FAIL — npx required for tsc typecheck (install Node 18+ which bundles npx)"
+  exit 1
 fi
 
 set +e
