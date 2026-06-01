@@ -58,5 +58,5 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 25. Fix 0019 engine + withCronMonitor | 5/5 | Complete   | 2026-05-31 |
+| 25. Fix 0019 engine + withCronMonitor | 5/5 | Complete    | 2026-06-01 |
 | 26. worker-template hardening | 0/TBD | Not started | - |
