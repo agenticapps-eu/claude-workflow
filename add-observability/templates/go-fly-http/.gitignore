@@ -1,0 +1,24 @@
+# Go + Fly.io .gitignore — adapted from Go module + Fly.io CLI conventions
+# in Phase 26 (D-08). Template-only — operators may extend for project-specific
+# paths. Phase 24 openrouter-monitor precedent does NOT apply directly here
+# (different runtime); this file follows Go module conventions and Fly.io
+# local config conventions (ASSUMED — Phase 26 RESEARCH A3).
+
+# Compiled test binaries.
+*.test
+
+# Coverage output.
+*.out
+
+# Vendored dependencies (if `go mod vendor` is used).
+vendor/
+
+# Fly.io CLI local config (ASSUMED — Phase 26 RESEARCH A3).
+.fly/
+
+# Common Go build/temp.
+tmp/
+
+# Secrets — NEVER commit (some Go projects use these envvar shapes too).
+.env
+.env.local
