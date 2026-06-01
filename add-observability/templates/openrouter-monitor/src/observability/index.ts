@@ -65,7 +65,7 @@ const TRACE_SAMPLE_RATE = 0.1;
 // names contain any of these substrings (case-insensitive) are scrubbed
 // before emission.
 const REDACTED_KEYS: ReadonlyArray<string> = [
-  "password","token","api_key","card_number","cvv","ssn","secret","client_secret","refresh_token","access_token"
+  "password","token","api_key","card_number","cvv","ssn","secret","client_secret","refresh_token","access_token","authorization","bearer","cookie","x-api-key"
 ];
 
 // ─── Module state ─────────────────────────────────────────────────────────
