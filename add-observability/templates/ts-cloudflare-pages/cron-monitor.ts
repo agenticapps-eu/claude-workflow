@@ -54,6 +54,15 @@ const SLUG_ENV_PREFIX = "SENTRY_CRON_MONITOR_SLUG_";
 // Phase 25 D-19 (cf-worker + cf-pages export contract) — exported so Plan 04's
 // cf-pages queue-monitor.ts can re-import (D-07). Signature kept wide
 // (Record<string, unknown>) per cf-pages withCronMonitor shape (no D-05 narrowing here).
+//
+// WR-03 (Phase 25 code review) — signature ASYMMETRY with cf-worker is intentional:
+//   cf-worker isConfigured(env: { SENTRY_DSN?: string }) — D-05 narrowing applies (E generic over env)
+//   cf-pages isConfigured(env: Record<string, unknown>) — D-05 N/A (R generic is over return type)
+// Verified empirically: cf-pages queue-monitor.ts's narrowed `E extends { SENTRY_DSN?: string }`
+// IS assignable to this wide signature in strict TS — every property of a constrained generic
+// is trivially compatible with `unknown`. Narrowing here would BREAK withCronMonitor below
+// (its env is statically Record<string, unknown>, not assignable to `{ SENTRY_DSN?: string }`
+// in strict mode). Keep wide.
 export function isConfigured(env: Record<string, unknown>): boolean {
   return typeof env.SENTRY_DSN === "string" && (env.SENTRY_DSN as string).length > 0;
 }
