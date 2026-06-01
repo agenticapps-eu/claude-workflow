@@ -48,7 +48,7 @@ created: 2026-06-01
 | D-01 export | 02 | 2 | `buildSentryOptions(env)` exported in cf-worker | grep | `grep -q "export function buildSentryOptions" add-observability/templates/ts-cloudflare-worker/lib-observability.ts` | n/a | ⬜ pending |
 | D-01 cf-pages | 02 | 2 | helper present in cf-pages | grep | `grep -q "export function buildSentryOptions" add-observability/templates/ts-cloudflare-pages/lib-observability.ts` | n/a | ⬜ pending |
 | D-01 openrouter | 02 | 2 | helper present in openrouter-monitor | grep | `grep -q "export function buildSentryOptions" add-observability/templates/openrouter-monitor/src/observability/index.ts` | n/a | ⬜ pending |
-| D-01a env-additions | 02 | 2 | `## Sentry integration` subsection present in env-additions.md (cf-worker, cf-pages, openrouter) | grep | `grep -l "## Sentry integration" add-observability/templates/ts-cloudflare-worker/env-additions.md add-observability/templates/ts-cloudflare-pages/env-additions.md` → 2 hits | n/a | ⬜ pending |
+| D-01a env-additions | 02 | 2 | `## Sentry integration` subsection present in env-additions.md (cf-worker, cf-pages, openrouter) | grep | `grep -l "## Sentry integration" add-observability/templates/ts-cloudflare-worker/env-additions.md add-observability/templates/ts-cloudflare-pages/env-additions.md add-observability/templates/openrouter-monitor/env-additions.md \| wc -l` → 3 | n/a | ⬜ pending |
 | D-01c byte-symmetry | 02 (wave-final) | 2 | cf-worker ↔ openrouter byte-identical | diff | `diff -q add-observability/templates/ts-cloudflare-worker/lib-observability.ts add-observability/templates/openrouter-monitor/src/observability/index.ts` → exit 0, empty | n/a | ⬜ pending |
 | D-02 ADR | 01 | 0 | ADR-0034 present | file | `test -f docs/decisions/0034-observability-init-singleton-invariant.md` | ❌ W0 task | ⬜ pending |
 | D-02a idempotency (cf-worker) | 01 RED → 02 GREEN | 0 → 2 | new `describe("init() idempotency")` block PASS | vitest | `bash add-observability/templates/run-template-tests.sh ts-cloudflare-worker` exits 0 with "init() called twice within isolate yields deterministic singleton state" PASS | ❌ W0 stub | ⬜ pending |
@@ -74,7 +74,7 @@ created: 2026-06-01
 | D-07 fixture green | 03 | 3 | full regression — fixture 04 still GREEN post-fix | bash | `bash migrations/run-tests.sh` exits 0 with "✓ 04-callbot-shape-strict-env-typecheck" | n/a | ⬜ pending |
 | D-08 .gitignore presence | 02 | 2 | new `.gitignore` files in 4 stacks (excluding openrouter-monitor which already has one) | find | `find add-observability/templates -maxdepth 2 -name .gitignore -not -path "*/openrouter-monitor/*" \| wc -l` ≥ 4 | n/a | ⬜ pending |
 | D-08a provenance header | 02 | 2 | each new `.gitignore` cites Phase 24 or Phase 26 | grep | `grep -l "Phase 2[46]" add-observability/templates/{ts-cloudflare-worker,ts-cloudflare-pages,ts-supabase-edge,ts-react-vite,go-fly-http}/.gitignore \| wc -l` ≥ 4 | n/a | ⬜ pending |
-| D-10 version (add-observability) | 03 | 3 | CHANGELOG has 0.10.0 entry | grep | `grep -c "^## \[0\.10\.0\]" add-observability/CHANGELOG.md` ≥ 1 | n/a | ⬜ pending |
+| D-10 version (add-observability) | 03 | 3 | CHANGELOG has 0.10.0 entry (no-brackets format per existing 0.9.0 heading) | grep | `grep -cE "^## 0\.10\.0( —\| –\| -)" add-observability/CHANGELOG.md` ≥ 1 | n/a | ⬜ pending |
 | D-10a version (root) | 03 | 3 | root CHANGELOG has 1.20.1 entry | grep | `grep -c "^## \[1\.20\.1\]" CHANGELOG.md` ≥ 1 | n/a | ⬜ pending |
 
 *Status legend: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
