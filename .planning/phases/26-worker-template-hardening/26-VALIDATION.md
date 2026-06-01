@@ -3,7 +3,7 @@ phase: 26
 slug: worker-template-hardening
 status: draft
 nyquist_compliant: false
-wave_0_complete: false
+wave_0_complete: true
 created: 2026-06-01
 ---
 
