@@ -4,6 +4,31 @@ All notable changes to the `add-observability` skill. Format follows [Keep a Cha
 
 Versioning: this skill ships an independent SemVer track from `claude-workflow`. Minor bumps reflect observable downstream behaviour changes in scaffolded templates.
 
+## 0.10.0 — 2026-06-01
+
+Worker-template hardening: DEF-1 (TRACE_SAMPLE_RATE wiring via env-pure helper), DEF-2 (REDACTED_KEYS expansion), DEF-3 (singleton invariant + ADR-0034) — carry-forwards from Phase 24 review. Plus .gitignore extension to 5 stacks. Template-only changes — no engine port, no Migration 0022 (per D-04).
+
+### Added
+
+- **`buildSentryOptions(env)` ENV-PURE helper export** (Phase 26 D-01, cf-worker + cf-pages + openrouter-monitor) — closes DEF-1 (TRACE_SAMPLE_RATE was unwired). Operators wire it at their entry file: `withSentry(env => buildSentryOptions(env), withObservability(handler))`. The helper is **env-pure** (codex HIGH-2 cross-AI review correction): reads ONLY from `env` plus the scaffold-time `TRACE_SAMPLE_RATE` constant. Reads ZERO module-scope singletons. This matters because `withSentry`'s options factory runs per-request BEFORE `init()` runs inside the inner handler — so any helper that read singletons would see default/stale values. Returns `{ dsn, environment, release, tracesSampleRate, sendDefaultPii: false }`. supabase-edge + ts-react-vite already wire correctly (D-01b carve-out per codex H-3 principle); not touched. Byte-symmetry between `cf-worker/lib-observability.ts` and `openrouter-monitor/src/observability/index.ts` preserved per Phase 25 D-21 contract.
+- **`SentryOptions` interface export** (same scope as helper) — type contract for the helper's return value.
+- **`init()` repeated-init determinism tests × 4 stacks** (Phase 26 D-02a, cf-worker + cf-pages + supabase-edge + openrouter-monitor) — asserts the contract documented in ADR-0034. cf-worker/cf-pages/openrouter contract = last-call-wins (no `initialized` guard); supabase-edge contract = first-call-wins (via existing `if (initialized) return`). Tests observe singletons via the existing `logEvent` → `console.log` envelope chain (codex MED-4 decoupling — DEF-3 proof is independent of DEF-1's helper). Test name changed from "idempotency" (the prior framing — wrong because cf-worker MUTATES state on every call) to "repeated-init determinism" (codex MED-3 terminology fix).
+- **`docs/decisions/0034-observability-init-singleton-invariant.md`** — ADR documenting the Cloudflare-isolate-REUSED-across-requests runtime model (corrected per codex HIGH-1 cross-AI review — prior framing said "isolate reset per invocation" which was inconsistent with Cloudflare's documented isolate-reuse behaviour). DEF-3 contract: re-running init() with new env values yields a deterministic post-init state (last-call-wins for cf-worker/cf-pages/openrouter; first-call-wins for supabase-edge). Explicitly names supabase-edge's extra `let initialized` and `let _testEnv` state as covered (D-02b). Records rejected alternatives (AsyncLocalStorage refactor, per-request closure) as deferred to Phase 27+.
+- **`## Sentry integration` subsection in env-additions.md × 3 stacks** (Phase 26 D-01a, cf-worker + cf-pages + openrouter-monitor) — operator-facing wiring guidance with the runnable `withSentry(env => buildSentryOptions(env), ...)` snippet, explains why env-purity makes the factory safe.
+- **`.gitignore` × 5 template stacks** (Phase 26 D-08, D-08a) — mirrors the openrouter-monitor `.gitignore` shape (Phase 24 precedent) to cf-worker + cf-pages (Workers-runtime verbatim) + supabase-edge (Deno adaptation) + ts-react-vite (Vite SPA conventions) + go-fly-http (Go module + Fly.io conventions). Each ships a provenance header citing Phase 24 / Phase 26. Three stacks include `[ASSUMED]` entries flagged in-file.
+
+### Changed
+
+- **REDACTED_KEYS default — additive expansion** (Phase 26 D-05, all 4 TS stacks + go-fly-http) — adds `authorization`, `bearer`, `cookie`, `x-api-key` to the existing 10-entry default. Closes DEF-2. **Additive**: `card_number`, `cvv`, `ssn`, `client_secret`, `refresh_token`, `access_token`, `secret` remain in the default set (codex Risk 5 — never silently drop financial/PII redaction). ts-react-vite's existing `credit_card` entry also preserved.
+- **`policy.md.template` × 5 stacks** (Phase 26 D-05b) — "Redacted attributes" section mirrors the meta.yaml expansion.
+
+### Notes / UPGRADE NOTE
+
+- **UPGRADE NOTE — REDACTED_KEYS lag for existing projects (Phase 26 T1):** D-05's expansion only ships to FRESH `add-observability init` runs (consent gate 1). Existing projects with a previously-accepted `policy.md` continue with the narrower default set. Operators who care about Authorization / Bearer / Cookie / x-api-key header redaction should manually copy the new entries into their `policy.md` (`## Redacted attributes` section) and re-run `add-observability audit`. There is intentionally NO automated migration path — `policy.md` is operator-owned.
+- **DEF-3 — singleton invariant**: documented (ADR-0034) but NOT refactored. AsyncLocalStorage / per-request-closure refactors deferred to Phase 27+.
+- **Cross-AI review (codex) corrections incorporated:** HIGH-1 (ADR-0034 runtime model rewritten to acknowledge Cloudflare isolate reuse); HIGH-2 (buildSentryOptions redesigned as env-pure, not singleton-reading); HIGH-3 (no `_setTestEnv` added — supabase-edge test uses existing `_resetForTest(env)`); MED-3 (determinism terminology, not idempotency); MED-4 (DEF-3 tests use logEvent envelope, not buildSentryOptions).
+- **Skill version**: 0.9.0 → 0.10.0 (minor — additive helper export + REDACTED expansion + ADR-0034 + tests + .gitignore × 5; no breaking changes).
+
 ## 0.9.0 — 2026-05-31
 
 Re-rev cron-monitor + new queue-monitor for v1.19.0 projects (Phase 25, ADR-0033). Delivered via Migration 0021.

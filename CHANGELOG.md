@@ -4,7 +4,33 @@ All notable changes to the AgenticApps Claude Workflow scaffolder are
 documented here. The format follows [Keep a Changelog](https://keepachangelog.com/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [Unreleased] — Phase 26 engine + harness + fixture hardening (2026-06-01)
+
+> **Versioning note:** This `claude-workflow` track holds Phase 26's engine/harness/fixture
+> changes in `[Unreleased]` rather than bumping to 1.20.1. Rationale: the
+> `test-skill-md-version-matches-latest-migration-to-version` invariant (migrations/run-tests.sh
+> §F4) requires `skill/SKILL.md` to track the latest migration's `to_version`. Phase 26
+> ships NO new migration (D-04 decision — engine bugfix to existing migration 0019
+> is template-surface only); therefore `skill/SKILL.md` stays at 1.20.0 and the
+> version-bump in Plan 03 D-10a is deferred to the next phase that lands a migration.
+> The `add-observability` skill (independent SemVer track, no migration coupling)
+> still ships its 0.10.0 bump for the template-surface work — see
+> `add-observability/CHANGELOG.md`. Mirrors user-memory rule
+> "versioning-tracks-migrations: engine bugfixes to an existing migration get no version bump"
+> and codex HIGH-4 + cross-AI review corrections that prompted Phase 26.
+
+### Fixed (Phase 26 engine + harness + fixture hardening — pending version assignment)
+
+- **`_filter_index_ts_requires_co_anchor` content-marker firewall** (Phase 26 D-06 / CR-D) — `migrate-0019-sentry-crons-and-healthz.sh` now content-checks `index.ts` against `grep -qiE "observability|lib-observability|withObservability|sentry|agenticapps:observability"` before classifying as an alias wrapper anchor. Closes the CodeRabbit Phase 25 finding D false-positive class. Regression detector: `migrations/test-fixtures/0019/13-index-ts-without-observability-content/`. Engine-only fix.
+- **Harness pin hardening — DUAL strategy** (Phase 26 D-03, D-03a, D-03b, D-03c — corrected per cross-AI review codex HIGH-4) — `run-template-tests.sh` pins `vitest` to **EXACT `3.2.4`** (no operator) in 3 heredocs (cf-worker, cf-pages, ts-react-vite). The prior tilde-pin proposal (`~3.2.4`) was insufficient: npm tilde semantics permit `>=3.2.4 <3.3.0`, which still allows vitest@3.2.5 — exactly the drift event Phase 25 audit-time identified. Exact pin blocks it. Separately, `@sentry/cloudflare` pins to **TILDE `~8.55.0`** (patch drift acceptable; SDK is more stable than vitest). D-03b policy comment documents the DUAL strategy. ts-react-vite uses `@sentry/react` and is excluded from the cloudflare pin. supabase-edge runner block (negative-asserted per D-03c) contains zero pins — `deno test`, no npm install.
+- **Fixture `0021/04` TS1038 fix** (Phase 26 D-07a / CR-E) — replaces TS1038-illegal `declare const console` inside `declare global` with canonical `interface Console + declare var console: Console` ambient pattern.
+- **Fixture `0021/04` honest fail-fast** (Phase 26 D-07b / CR-E) — `verify.sh` no longer `exit 0`s when `npx` is unavailable. New: `exit 1` with `fixture 0021/04 FAIL — npx required for tsc typecheck (install Node 18+ which bundles npx)`.
+
+### Notes
+
+- All Phase 26 changes are template-surface / engine-binary / fixture-level — no migration 0022 (D-04).
+- `add-observability` ships 0.10.0 with template-surface changes; see `add-observability/CHANGELOG.md`. That track is decoupled from the migration chain.
+- **Cross-AI review (codex) corrections incorporated in engine/harness scope:** HIGH-4 (vitest exact pin, not tilde); MED-2 (fixture 13 verify.sh strengthens SC-5 evidence via sha + skip-classification grep); Mechanical-1 (single-capture suite runs across tasks).
 
 ## [1.20.0] — 2026-05-31
 
