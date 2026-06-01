@@ -49,6 +49,29 @@ secret because it identifies the destination project; while a leaked
 DSN is not catastrophic (Sentry will accept events from it), it lets
 attackers inflate your event quota.
 
+## Sentry integration
+
+`lib-observability.ts` exports `buildSentryOptions(env)` (Phase 26 DEF-1) — an
+ENV-PURE helper that surfaces `TRACE_SAMPLE_RATE` and the env-derived
+service name + environment to `@sentry/cloudflare`'s per-request
+`withSentry(optionsFactory, handler)` wrapper. Wire it at your entry file:
+
+```typescript
+import { withSentry } from "@sentry/cloudflare";
+import { withObservability } from "./middleware";
+import { buildSentryOptions } from "./lib-observability";
+
+const handler = { /* fetch, scheduled, queue, etc. */ };
+export default withSentry(env => buildSentryOptions(env), withObservability(handler));
+```
+
+The helper reads directly from `env` (does NOT depend on `init()` running
+first) — safe to invoke from `withSentry`'s options factory regardless of
+when the inner handler's `init(env, ctx)` runs. Requires
+`@sentry/cloudflare >= 8.0.0` (already declared in `package.json`).
+See `docs/decisions/0034-observability-init-singleton-invariant.md` for the
+runtime model (Cloudflare warm-isolate reuse) that motivates env-purity.
+
 ## `package.json`
 
 The skill adds the dependency:
