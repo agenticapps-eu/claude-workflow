@@ -22,8 +22,10 @@
  * test-time — only the invocation contract does.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { withCronMonitor } from "./cron-monitor";
+import { describe, it, expect, vi, beforeEach, expectTypeOf } from "vitest";
+// MonitorConfig lives in @sentry/core (not re-exported from @sentry/cloudflare's public API).
+import type { MonitorConfig as SentryMonitorConfig } from "@sentry/core";
+import { withCronMonitor, type CronMonitorSchedule } from "./cron-monitor";
 
 const withMonitor = vi.fn();
 vi.mock("@sentry/cloudflare", () => ({
@@ -178,5 +180,44 @@ describe("withCronMonitor — monitorConfig forwarding (D12 / ADR-0029)", () => 
     const wrapped = withCronMonitor(handler, { monitorSlug: "x" });
     await wrapped({ SENTRY_DSN: "https://stub@sentry.io/1" });
     expect(withMonitor).toHaveBeenCalledWith("x", expect.any(Function), undefined);
+  });
+});
+
+// ─── Phase 25 D-16 — type-level firewall (Pitfall 4 / ADR-0032) ─────────────
+// D-03 firewall only — D-05 is NOT applied to cf-pages (codex H-3: signature is
+// `<R>(handler: () => Promise<R>, ...): (env: Record<string, unknown>) => Promise<R>`;
+// `<R>` is return type, not env type). No CallbotEnv strict-Env test here.
+
+describe("CronMonitorSchedule — D-16 type-level firewall (Pitfall 4)", () => {
+  it("crontab variant accepts { type: 'crontab', value: string } (regression)", () => {
+    const schedule: CronMonitorSchedule = { type: "crontab", value: "*/15 * * * *" };
+    expect(schedule.type).toBe("crontab");
+  });
+
+  it("interval variant requires value: number + unit (D-03 / ADR-0032)", () => {
+    type IntervalVariant = Extract<CronMonitorSchedule, { type: "interval" }>;
+    expectTypeOf<IntervalVariant>().toHaveProperty("value").toBeNumber();
+    expectTypeOf<IntervalVariant>().toHaveProperty("unit").toEqualTypeOf<
+      "minute" | "hour" | "day" | "week" | "month" | "year"
+    >();
+  });
+
+  it("interval variant REJECTS value: string at typecheck time (D-03 firewall)", () => {
+    // @ts-expect-error — interval requires value: number, not string. If this
+    // line ever stops erroring, D-03 has regressed (CronMonitorSchedule reverted
+    // to the broken interface shape).
+    const bad: CronMonitorSchedule = { type: "interval", value: "5", unit: "minute" };
+    void bad;
+  });
+
+  it("is structurally assignable to SentryMonitorConfig['schedule'] (Pitfall 4 pin)", () => {
+    // Explicit firewall against the harness's skipLibCheck blind spot.
+    // Uses @sentry/core MonitorConfig (where the type lives).
+    const ourCrontab: CronMonitorSchedule = { type: "crontab", value: "*/15 * * * *" };
+    const ourInterval: CronMonitorSchedule = { type: "interval", value: 5, unit: "minute" };
+    const _checkCrontab: SentryMonitorConfig["schedule"] = ourCrontab;
+    const _checkInterval: SentryMonitorConfig["schedule"] = ourInterval;
+    void _checkCrontab;
+    void _checkInterval;
   });
 });

@@ -4,6 +4,29 @@ All notable changes to the `add-observability` skill. Format follows [Keep a Cha
 
 Versioning: this skill ships an independent SemVer track from `claude-workflow`. Minor bumps reflect observable downstream behaviour changes in scaffolded templates.
 
+## 0.9.0 — 2026-05-31
+
+Re-rev cron-monitor + new queue-monitor for v1.19.0 projects (Phase 25, ADR-0033). Delivered via Migration 0021.
+
+### Added
+
+- **`queue-monitor.ts`** in `ts-cloudflare-worker` and `ts-cloudflare-pages` — Guarded Shape A semantics (ADR-0029/ADR-0033). `withQueueMonitor<E, Body>(handler, opts)` wraps a Cloudflare Queue consumer: `handlerStarted` flag prevents double-ack on `batch.ackAll()`, per-message retry on handler error, Sentry crons heartbeat via `withMonitor`. Imports `buildMonitorConfig` + `isConfigured` from `./cron-monitor` (D-19 import contract). Skipped for `ts-supabase-edge` — Deno runtime has no Cloudflare-Queue equivalent (codex H-6).
+
+### Fixed
+
+- **`cron-monitor.ts` — discriminated-union `CronMonitorSchedule`** (D-03, all 3 TS stacks): `{ type: "crontab"; value: string } | { type: "interval"; value: number; unit: string }` replaces bare `{ type: string; value?: ... }`. Invalid combinations (e.g., `interval` without `unit`) now caught at compile time.
+- **`cron-monitor.ts` — `withCronMonitor<E>` generic narrowing** (D-05, cf-worker + openrouter-monitor): env parameter typed `E extends { SENTRY_DSN?: string; SERVICE_NAME?: string }` so strict CallbotEnv-style envs (no index signature) compile without a cast. cf-pages retains `<R>` return-type generic per H-3. supabase-edge has no generic.
+- **`cron-monitor.ts` — `buildMonitorConfig` + `isConfigured` exports** (D-19, cf-worker + cf-pages + openrouter-monitor): queue-monitor.ts imports these at runtime; missing exports would be a runtime failure disguised as a TS error. supabase-edge correctly omits the exports (no queue-monitor consumer there, per codex H-6).
+
+### Changed
+
+- Skill version 0.8.0 → 0.9.0 minor (new queue-monitor × 2 stacks + cron-monitor fixes × 3 stacks + Migration 0021 engine + ADR-0033).
+
+### Notes
+
+- Migration 0021 is the delivery vehicle: `migrate-0021-with-cron-and-queue-updates.sh` re-revs `cron-monitor.ts` and ships `queue-monitor.ts` to v1.19.0 projects. Dirty-detection refuses hand-modified `cron-monitor.ts` (emits `.observability-0021.patch`); twofold idempotency SKIP when both files already at v1.20.0 baseline.
+- Migration 0019 D-11 fix: fresh applies now copy `queue-monitor.ts` to cf-worker + cf-pages wrappers (was absent pre-Phase-25).
+
 ## 0.8.0 — 2026-05-29
 
 OpenRouter integration kit. Four SDK-first deliverables (ADR-0030):

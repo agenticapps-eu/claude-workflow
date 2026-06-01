@@ -25,6 +25,16 @@ optional_for:
   - projects without a materialised add-observability wrapper (pre-init)
 ---
 
+> **Re-rev 2026-05-31 (Phase 25):** This migration's apply engine was extended in Phase 25 to:
+> 1. Accept `index.ts` as the canonical materialised filename for cf-worker / cf-pages wrappers (was looking only for `lib-observability.ts` — the template SOURCE filename — see [ADR-0031](../docs/decisions/0031-0019-engine-index-ts-anchor.md)).
+> 2. Apply a pre-classify sibling-anchor + dist-path filter (codex M-2) so `index.ts` candidates lacking sibling `middleware.ts`/`_middleware.ts` OR sitting under `dist/`/`build/`/`out/` are discarded silently.
+> 3. Use `resolve_anchor_files()` for fingerprint AND refuse-path emission (codex M-3) so dirty `index.ts`-anchored projects get patches mentioning the actual project filename.
+> 4. Copy `queue-monitor.ts` alongside `cron-monitor.ts` and `healthz-snippet.ts` for fresh applies on v1.17.0 projects — **cf-worker and cf-pages stacks only** (D-11 narrowed per codex H-6; Supabase Edge has no Cloudflare-Queue equivalent — see [ADR-0033](../docs/decisions/0033-with-queue-monitor.md)).
+>
+> Already-migrated v1.18.0+ projects are unaffected by this re-rev (the migration runner uses exact `from_version` matching — see [migrations/README.md](README.md) §"Picking versions"). Such projects pick up the Phase 25 changes via [migration 0021](0021-with-cron-and-queue-updates.md) — the supported re-application path.
+>
+> The Frontmatter `from_version: 1.17.0` is unchanged.
+
 # Migration 0019 — Sentry Crons heartbeats + `/healthz` convention
 
 Brings projects from AgenticApps workflow `v1.17.0` to `v1.18.0` by **additively**
@@ -153,15 +163,15 @@ patch artefacts for every dirty root AND every clean root (so the operator
 has the full would-be context) and exits 2 with ZERO files copied.
 `--allow-partial` falls through to Pass 2 with the clean roots only.
 
-**Pass 2 — apply.** For each clean root, the engine copies the four new files
+**Pass 2 — apply.** For each clean root, the engine copies the new files
 from the scaffolder source into the wrapper directory:
 
 | Stack | Files copied |
 |---|---|
-| `ts-cloudflare-worker` | `cron-monitor.ts`, `healthz-snippet.ts` |
-| `ts-cloudflare-pages`  | `cron-monitor.ts`, `healthz-snippet.ts` |
-| `ts-supabase-edge`     | `cron-monitor.ts`, `healthz-snippet.ts` (CONTEXT D5b: same files as worker) |
-| `go-fly-http`          | `cron_monitor.go`, `healthz_snippet.go` |
+| `ts-cloudflare-worker` | `cron-monitor.ts` (Phase 22), `healthz-snippet.ts` (Phase 22), `queue-monitor.ts` (Phase 25 D-11 — Cloudflare Queue consumer wrapper, Guarded Shape A per ADR-0029 / ADR-0033) |
+| `ts-cloudflare-pages`  | `cron-monitor.ts` (Phase 22), `healthz-snippet.ts` (Phase 22), `queue-monitor.ts` (Phase 25 D-11) |
+| `ts-supabase-edge`     | `cron-monitor.ts` (Phase 22), `healthz-snippet.ts` (Phase 22) — **NO `queue-monitor.ts`**: Supabase Edge is Deno-runtime; no Cloudflare-Queue equivalent; codex H-6 / CONTEXT D-07 narrowed |
+| `go-fly-http`          | `cron_monitor.go` (Phase 22), `healthz_snippet.go` (Phase 22) — **NO `queue_monitor.go`**: out of scope per Phase 25 D-12 |
 
 The copy is **token-substituted** for `go-fly-http` only (Go package name
 must match the surrounding wrapper's `package` declaration). TS stacks copy
@@ -267,3 +277,23 @@ grep -q '^version: 1.18.0$' .claude/skills/agentic-apps-workflow/SKILL.md
   and `0.3.2` on `add-observability`. Cron-heartbeat behaviour is host
   discretion under §10.6 + §10.7; mandating it across all destinations is a
   separate future §10.x conversation (CONTEXT N1).
+
+## Recovery
+
+**Already on v1.18.0+ and need the Phase 25 fixes (engine index.ts widening + cron-monitor.ts D-03/D-05 + queue-monitor.ts)?**
+
+The migration runner uses exact `from_version` matching — re-revving this migration cannot retrigger on projects already at v1.18.0 or higher.
+
+**Supported path: run [Migration 0021](0021-with-cron-and-queue-updates.md).** It is a re-rev with dirty detection (mirrors 0019's `canonicalize_awk` content-hash + all-clean-gate pattern):
+
+- Bumps `from_version: 1.19.0 → to_version: 1.20.0`.
+- Copies the updated `cron-monitor.ts` (D-03 discriminated-union schedule type for all 3 TS stacks; D-05 narrowed generic for cf-worker only; D-19 helper exports for cf-worker + cf-pages).
+- Copies the new `queue-monitor.ts` (cf-worker + cf-pages only — codex H-6).
+- **Refuses on hand-modified `cron-monitor.ts`** and emits `.observability-0021.patch` listing the diff so operators can manually merge their LOCAL-PATCH on top of the new template.
+- **Twofold idempotency** (codex M-8 + gemini MEDIUM): SKIPs only when BOTH (a) `queue-monitor.ts` present (cf-worker + cf-pages) AND (b) `cron-monitor.ts` content-hash matches the v1.20.0 baseline. Prevents partial-state from incomplete prior runs.
+
+See [Migration 0021](0021-with-cron-and-queue-updates.md) for full apply / verify / idempotency / recovery semantics.
+
+**Informational manual path (only if Migration 0021 cannot apply, e.g., custom version pin):** Delete the wrapper's `cron-monitor.{ts,go}` and `healthz-snippet.{ts,go}` files; downgrade `.claude/skills/agentic-apps-workflow/SKILL.md` `version:` field to `1.17.0`; re-run the engine with the new claude-workflow 1.20.0 install. The engine will treat the wrapper as a fresh-apply target and ship all three files (including `queue-monitor.ts` for cf-worker + cf-pages). NOTE: this is INFORMATIONAL — it works but is friction-heavy. Use Migration 0021 unless you have a specific reason not to.
+
+There is no `--force` flag — adding one was considered and rejected per [ADR-0033](../docs/decisions/0033-with-queue-monitor.md) (semantically confusing; expands engine surface for one-off path).

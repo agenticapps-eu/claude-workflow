@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "lib": ["ES2022"],
+    "paths": {
+      "@sentry/cloudflare": ["./types.d.ts"]
+    }
+  },
+  "include": [
+    "./types.d.ts",
+    "./env.ts",
+    "./smoke.ts",
+    "./wrapper/cron-monitor.ts",
+    "./wrapper/queue-monitor.ts"
+  ],
+  "exclude": ["**/*.test.ts", "./wrapper/index.ts", "./wrapper/middleware.ts", "./wrapper/_middleware.ts", "./wrapper/healthz-snippet.ts"]
+}

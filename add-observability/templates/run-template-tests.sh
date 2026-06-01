@@ -149,6 +149,11 @@ run_ts_cloudflare_worker() {
   substitute_tokens "$SRC/llm-response-meta.test.ts" "$OBS_DIR/llm-response-meta.test.ts"
   substitute_tokens "$SRC/llm-response-meta.ts"      "$OBS_DIR/llm-response-meta.ts"
 
+  # Phase 25 — withQueueMonitor helper (D-07 / ADR-0033). cf-worker + cf-pages
+  # only (supabase-edge has no Cloudflare Queue equivalent — codex H-6).
+  substitute_tokens "$SRC/queue-monitor.ts"      "$OBS_DIR/queue-monitor.ts"
+  substitute_tokens "$SRC/queue-monitor.test.ts" "$OBS_DIR/queue-monitor.test.ts"
+
   # destinations/ sub-dir (role-based registry + adapters, phase 21).
   # Copy every .ts file (registry, adapters, and their tests) into the
   # materialized destinations/ dir so the registry tests run.
@@ -267,6 +272,11 @@ run_ts_cloudflare_pages() {
   # impl in GREEN. Byte-identical to worker stack.
   substitute_tokens "$SRC/llm-response-meta.test.ts" "$OBS_DIR/llm-response-meta.test.ts"
   substitute_tokens "$SRC/llm-response-meta.ts"      "$OBS_DIR/llm-response-meta.ts"
+
+  # Phase 25 — withQueueMonitor helper (D-07 / ADR-0033). cf-worker + cf-pages
+  # only (supabase-edge has no Cloudflare Queue equivalent — codex H-6).
+  substitute_tokens "$SRC/queue-monitor.ts"      "$OBS_DIR/queue-monitor.ts"
+  substitute_tokens "$SRC/queue-monitor.test.ts" "$OBS_DIR/queue-monitor.test.ts"
 
   # destinations/ sub-dir (role-based registry + adapters, phase 21).
   if [[ -d "$SRC/destinations" ]]; then
