@@ -20,13 +20,13 @@
  */
 
 import { describe, it, expect } from "vitest";
+import { init, logEvent } from "./index";
 
 // ────────────────────────────────────────────────────────────────────
 // D-02a: init() repeated-init determinism contract (Phase 26 / ADR-0034).
-// Wave 0 RED stub — flips GREEN once Plan 02 / Wave 2 lands the real
-// assertion (which observes singletons via the existing logEvent →
+// Wave 2 GREEN — observes singletons via the existing logEvent →
 // console.log envelope chain; NO buildSentryOptions dependency per
-// codex MED-4 review — DEF-3 proof is independent of DEF-1's helper).
+// codex MED-4 review (DEF-3 proof is independent of DEF-1's helper).
 //
 // Contract (per ADR-0034, post-codex-HIGH-1 correction):
 //   cf-worker/cf-pages/openrouter: last-call-wins (no initialized guard).
@@ -37,10 +37,32 @@ import { describe, it, expect } from "vitest";
 // ────────────────────────────────────────────────────────────────────
 describe("init() repeated-init determinism (D-02a)", () => {
   it("init() called twice within isolate yields deterministic singleton state", () => {
-    // RED stub: real assertion lands in Plan 02 / Wave 2. The Plan 02 GREEN
-    // implementation uses a console.log spy + logEvent to observe
-    // `serviceName` and `deployEnv` singletons via the JSON envelope chain.
-    // See docs/decisions/0034-observability-init-singleton-invariant.md.
-    expect.fail("D-02a stub — Wave 0 RED baseline; flips GREEN when Plan 02 lands the logEvent-envelope assertion");
+    const mockCtx = { waitUntil: () => {}, passThroughOnException: () => {} } as unknown as ExecutionContext;
+    const captured: string[] = [];
+    const origLog = console.log;
+    console.log = (line: string) => { captured.push(line); };
+    try {
+      // First init — singletons take env-a values.
+      init({ SENTRY_DSN: "dsn-a", DEPLOY_ENV: "env-a", SERVICE_NAME: "svc-a" }, mockCtx);
+      logEvent({ event: "probe-a", severity: "info" });
+
+      // Second init — cf-worker/openrouter contract = last-call-wins (NO initialized guard).
+      init({ SENTRY_DSN: "dsn-b", DEPLOY_ENV: "env-b", SERVICE_NAME: "svc-b" }, mockCtx);
+      logEvent({ event: "probe-b", severity: "info" });
+    } finally {
+      console.log = origLog;
+    }
+
+    expect(captured.length).toBe(2);
+    const env_a = JSON.parse(captured[0]);
+    const env_b = JSON.parse(captured[1]);
+
+    // env_a envelope reflects first init's values.
+    expect(env_a.service).toBe("svc-a");
+    expect(env_a.env).toBe("env-a");
+
+    // env_b envelope reflects second init's values (last-call-wins mutation).
+    expect(env_b.service).toBe("svc-b");
+    expect(env_b.env).toBe("env-b");
   });
 });
