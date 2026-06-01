@@ -74,16 +74,16 @@ Plans:
   9. Byte-symmetry: `diff -q cf-worker/lib-observability.ts openrouter-monitor/src/observability/index.ts` returns empty
   10. ASVS L1 security gate satisfied — zero HIGH threats across all 3 plans
 
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 - [x] 26-01-PLAN.md — Wave 0: ADR-0034 + RED fixture 13 + RED idempotency test stubs × 4 stacks (sets up Nyquist RED baseline)
 - [x] 26-02-PLAN.md — Wave 2: Template edits — `buildSentryOptions` helper × 3 stacks (D-01, byte-symmetric); env-additions.md × 3 (D-01a); REDACTED_KEYS additive expansion × 5 meta.yaml + 5 policy.md.template (D-05, D-05b); .gitignore × 5 new files (D-08, D-08a); GREEN-flip 4 idempotency tests (D-02a)
-- [ ] 26-03-PLAN.md — Wave 3: Harness pins × 5 + policy comment (D-03, D-03a, D-03b); engine content-marker firewall + fixture 13 GREEN-flip (D-06); fixture 0021/04 TS1038 + exit-0 fix (D-07a, D-07b); version bumps + CHANGELOGs (D-10, D-10a). **D-04a decision: SKIP migrations/0022-worker-template-hardening.md** — template-only changes don't fit the migration chain (RESEARCH §D-04a + CONTEXT D-04 rationale).
+- [x] 26-03-PLAN.md — Wave 3: Harness pins × 5 + policy comment (D-03, D-03a, D-03b); engine content-marker firewall + fixture 13 GREEN-flip (D-06); fixture 0021/04 TS1038 + exit-0 fix (D-07a, D-07b); version bumps + CHANGELOGs (D-10, D-10a). **D-04a decision: SKIP migrations/0022-worker-template-hardening.md** — template-only changes don't fit the migration chain (RESEARCH §D-04a + CONTEXT D-04 rationale).
 
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 25. Fix 0019 engine + withCronMonitor | 5/5 | Complete    | 2026-06-01 |
-| 26. worker-template hardening | 2/3 | In Progress|  |
+| 26. worker-template hardening | 3/3 | Complete   | 2026-06-01 |
