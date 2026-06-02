@@ -15,17 +15,20 @@ the three-repo split (SPLIT-01 / SPLIT-02) begins. This is the **workflow-side
 gate** of `SPLIT-00-PREREQUISITES.md`.
 
 **In scope:** WR-01..WR-04 (PR #60 deferred items), minimum-viable PROJECT.md,
-STATE.md + ROADMAP.md drift refresh, split-prep groundwork (gsd-tools boundary
-audit + annotations + ADR — **no code movement**), version bump 1.20.0 → 1.21.0.
+STATE.md + ROADMAP.md drift refresh, split-prep groundwork (boundary audit of
+`migrations/run-tests.sh` + annotations + ADR + SPLIT-01 correction — **no code
+movement**), **migration 0022** (`to_version: 1.21.0`, re-syncs hardened
+observability templates) + SKILL.md/CHANGELOG bump 1.20.0 → 1.21.0.
 
 **Explicitly OUT of scope (do not start here):**
 - The actual three-repo extraction (SPLIT-01 / SPLIT-02 — separate milestone).
-- Moving any code out of `bin/gsd-tools.cjs` (only annotate + document the boundary).
+- Moving/refactoring any framework code (split-prep is annotate + document only).
 - Milestone v1.19.0 archive + new "repo-split" milestone — those are GSD
   lifecycle ops that run AFTER 1.21.0 merges (D-03).
 - Downstream upgrades / 7-day cooling-off — tracked by SPLIT-00, not this phase.
-- New capabilities or migrations. NO new migration ships (keeps the migration
-  drift test green and avoids a SKILL.md version bump).
+- New product capabilities. (Per user decision A1, migration 0022 IS shipped to
+  legitimize the 1.21.0 skill-version bump — see D-07. This reverses the original
+  "no migration" framing.)
 
 </domain>
 
@@ -69,11 +72,18 @@ audit + annotations + ADR — **no code movement**), version bump 1.20.0 → 1.2
   - cf-worker: `lib-observability.test.ts` (helper exported from `lib-observability.ts`)
   - cf-pages: `lib-observability.test.ts` (helper exported from `lib-observability.ts`)
   - openrouter-monitor: `src/observability/index.test.ts` (helper at `src/observability/index.ts:154`)
-- **D-03a:** ~4 assertions each: (1) default `tracesSampleRate` when
-  `TRACE_SAMPLE_RATE` unset; (2) `TRACE_SAMPLE_RATE` override is parsed and
-  applied; (3) `environment` + `release` env-derivation (DEPLOY_ENV / SERVICE_NAME
-  defaults); (4) `sendDefaultPii: false`. Confirm exact default values against
-  each stack's helper during planning.
+- **D-03a (CORRECTED per RESEARCH Blocker C):** `TRACE_SAMPLE_RATE` is a
+  scaffold-time module **constant** (`const TRACE_SAMPLE_RATE = 0.1` /
+  `{{TRACE_SAMPLE_RATE}}`), NOT a runtime env override — the helper has no
+  env-parse behavior. Assertion set (5):
+  1. `tracesSampleRate === TRACE_SAMPLE_RATE` (baked constant; 0.1 for openrouter)
+  2. `environment === env.DEPLOY_ENV ?? "dev"` (test both set and unset)
+  3. `release === env.SERVICE_NAME ?? SERVICE_DEFAULT` (test both set and unset)
+  4. `sendDefaultPii === false`
+  5. `dsn === env.SENTRY_DSN`
+  Note: cf-worker/cf-pages helpers are token templates (`env.{{ENV_VAR_*}}`),
+  testable only AFTER the harness materializes them; openrouter is directly
+  testable. Confirm exact baked values during planning.
 - **D-03b (decoupling firewall):** openrouter's existing `index.test.ts` D-02a
   block is deliberately decoupled from `buildSentryOptions` (Phase 26 codex
   MED-4). The new WR-03 tests are a SEPARATE `describe`/test block that directly
@@ -113,39 +123,67 @@ audit + annotations + ADR — **no code movement**), version bump 1.20.0 → 1.2
   PROJECT.md links there, it does not reconstruct it. Clears the STATE.md
   "PROJECT.md does not yet exist" pointer.
 
-### Split-prep groundwork — audit + annotate ONLY
-- **D-06:** Audit every export in `bin/gsd-tools.cjs` and annotate each with an
-  inline `// SHARED` or `// WORKFLOW` marker. **No code movement, no behavior
-  change** — preserves the stable cooling-off baseline.
-  - `// SHARED` = migration-framework, anything SPLIT-01 Phase C extraction
-    would need: `verify schema-drift`, `verify key-links`, the drift test,
-    migration apply pipeline, fixture-runner helpers, logging/pass-fail utils.
-  - `// WORKFLOW` = GSD-specific, stays in claude-workflow: `phase-plan-index`,
-    `state begin-phase`, `phase complete`, `roadmap update-plan-progress`,
-    `init phase-op`, `init execute-phase`, `agent-skills`, the GSD `commit` wrapper.
-  - Boundary test (from SPLIT-01): "if agenticapps-observability would need to
-    call it to apply a migration → SHARED; if only useful for managing GSD
-    planning artifacts → WORKFLOW."
+### Split-prep groundwork — audit + annotate ONLY (RETARGETED per RESEARCH Blocker B → user chose B1)
+- **D-06 (RETARGETED):** `bin/gsd-tools.cjs` does NOT exist in this repo — it is the
+  GSD *framework* (`~/.claude/get-shit-done/bin/`), a separate install, NOT
+  claude-workflow's code. The repo's actual shared-able migration infra is
+  **`migrations/run-tests.sh`** (~2500 lines: dispatcher + drift test +
+  fixture-runner harness + inline fixtures). Audit `migrations/run-tests.sh`
+  (and the migration framework files) and annotate each logical section/helper
+  `# SHARED` or `# WORKFLOW`. **No code movement, no behavior change.**
+  - `# SHARED` = migration-framework SPLIT-01 would extract: the dispatcher,
+    `test_skill_md_version_matches_latest_migration_to_version` drift test, the
+    fixture-runner harness, logging/pass-fail helpers, generic apply/verify utils.
+  - `# WORKFLOW` = migration-content-specific logic that stays (per-migration
+    setup/verify bodies tied to specific 00NN migrations, GSD-planning-specific checks).
+  - Boundary test (from SPLIT-01): "if agenticapps-observability would need it to
+    apply a migration → SHARED; if only useful for THIS repo's specific migrations
+    or GSD planning → WORKFLOW."
+- **D-06b (SPLIT-01 correction):** Add a note to `SPLIT-01-agenticapps-shared.md`
+  correcting its premise: the extraction target is `migrations/run-tests.sh` +
+  migration content, NOT `bin/gsd-tools.cjs` (which is the GSD framework, not this
+  repo). The gsd-tools.cjs function list in SPLIT-01 (`phase-plan-index`,
+  `state begin-phase`, etc.) belongs to the framework and is out of scope for the
+  claude-workflow repo split.
 - **D-06a:** Write ADR `docs/decisions/00NN-shared-extraction-boundaries.md`
   (next free ADR number — verify; 0034 is highest known) recording the
   shared/workflow boundary as the canonical reference SPLIT-01 Phase C executes
   against. Status: Accepted. Link SPLIT-00/01.
 
-### Versioning
-- **D-07:** claude-workflow `1.20.0 → 1.21.0` (minor — additive test coverage,
-  docs, engine-adjacent groundwork; no breaking change). Update `VERSION` +
-  root CHANGELOG.
-- **D-07a:** **NO new migration.** The migration drift test
-  (`test-skill-md-version-matches-latest-migration-to-version`) enforces
-  `skill/SKILL.md.version == latest migration to_version`. Phase 27 ships no
-  migration → **NO SKILL.md version bump** (per `versioning-tracks-migrations`
-  user rule). Phase 26's `[Unreleased]` CHANGELOG entry promotes to the 1.21.0
-  section as part of this ship (verify during planning).
-- **D-07b:** add-observability stays **0.10.0** — WR-01..04 are bugfixes to the
-  existing 0.10.0 templates, not new features. **Confirm during planning**
-  whether add-observability warrants a 0.10.1 patch bump or rides under
-  claude-workflow's version only; default = no add-observability bump unless its
-  own CHANGELOG/VERSION convention requires one.
+### Versioning (RESOLVED per RESEARCH Blocker A → user chose A1)
+- **D-07 (A1 — ship migration 0022):** claude-workflow `1.20.0 → 1.21.0`, made
+  legitimate by a NEW migration `migrations/0022-*.md` with `to_version: 1.21.0`.
+  This lets `skill/SKILL.md version` bump to `1.21.0` while keeping the drift test
+  GREEN (`test_skill_md_version_matches_latest_migration_to_version` compares
+  SKILL.md to the HIGHEST migration's to_version — `migrations/run-tests.sh:2210`).
+  Downstreams then pin by skill version `1.21.0` (SPLIT-00 gate works as written —
+  no SPLIT-00 rewrite needed).
+- **D-07a (migration 0022 payload — GROUNDED in 0021 mechanics):** Migration 0022 is
+  a REAL "re-rev with dirty detection" migration mirroring `0021` (verified
+  mechanism: `cp add-observability/templates/<stack>/<file> <wrapper>/<file>` with
+  refuse-on-hand-modified via `.observability-0022.patch`). Consumer-facing payload:
+  re-rev `lib-observability.ts` (cf-worker + cf-pages) + supabase-edge `index.ts`
+  into consuming projects, delivering the Phase 26 **DEF-1** (`buildSentryOptions`
+  helper) and **DEF-2** (REDACTED_KEYS auth-header redaction — a real security
+  improvement) that Phase 26 D-04a deliberately kept OFF the migration chain.
+  Migration 0022 corrects that: consumers at 1.20.0 do NOT have these in their
+  wrapper; this delivers them. `from_version: 1.20.0`, `to_version: 1.21.0`,
+  `type: re-rev-with-dirty-detection`, fixtures in `migrations/test-fixtures/0022/`.
+  WR-01/02/03 stay claude-workflow-internal (not migrated). WR-04 (openrouter
+  worked-example) is a scaffold, not consumer-migrated.
+- **D-07a-COST (flagged for user):** This makes Phase 27 substantially larger than
+  "WR bugfixes + docs" — a re-rev migration with dirty-detection + fixtures is
+  ~Phase-25-sized work and reverses Phase 26 D-04a. This is the true cost of A1
+  (vs A2 tag-only). Surfaced to user 2026-06-02 after research grounded the
+  mechanism; user to confirm proceed-with-A1 vs downgrade-to-A2 before planning.
+- **D-07b (SKILL.md + CHANGELOG):** Bump `skill/SKILL.md` `version: 1.20.0 → 1.21.0`.
+  Promote BOTH Phase 26's `[Unreleased]` CHANGELOG entry AND Phase 27's changes
+  into a new `## [1.21.0]` section in root `CHANGELOG.md`. No root `VERSION` file
+  exists — SKILL.md is the version source of truth; do NOT create a VERSION file
+  unless the planner finds the convention requires it.
+- **D-07c:** add-observability stays **0.10.0** unless its own CHANGELOG/VERSION
+  convention requires a patch — confirm during planning (its template fixes ship
+  via migration 0022's re-sync, under claude-workflow's 1.21.0).
 
 ### STATE/ROADMAP drift refresh
 - **D-08:** Refresh `.planning/STATE.md`: `status: executing` Phase 26 →
