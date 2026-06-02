@@ -23,7 +23,7 @@ created: 2026-06-02
 | **Config file** | `migrations/run-tests.sh` in the NEW obs repo — **Wave 0 creates it** (source-and-keep shim, obs-specific SKILL.md path at repo root) |
 | **Quick run command** | `bash migrations/run-tests.sh 0019` / `0021` / `0022` (filter to migration under test) |
 | **Full suite command** | `bash migrations/run-tests.sh` (in `~/Sourcecode/agenticapps/agenticapps-observability`) |
-| **Estimated runtime** | ~60–120s full suite (17 existing fixtures + new 0022 + drift) |
+| **Estimated runtime** | ~60–120s full suite (40 moved fixtures: 0012=5, 0013=5, 0017=11 [7 pass/4 XFAIL], 0018=2, 0019=13, 0021=4 + new 0022 + consumer-axis drift via migrations/MIGRATIONS_VERSION) |
 
 ---
 

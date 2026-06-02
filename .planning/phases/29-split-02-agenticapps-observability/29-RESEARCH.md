@@ -334,13 +334,15 @@ source "$_SHARED_LIB/drift-test.sh"
 
 **Drift test wiring (obs-specific parameters):**
 ```bash
-# run_drift_test(skill_md_path, migrations_dir) — shared mechanism
-# Policy wrapper (stays in obs run-tests.sh):
-if run_drift_test "$REPO_ROOT/SKILL.md" "$REPO_ROOT/migrations"; then
-  echo "  ${GREEN}PASS${RESET}: test-skill-md-version-matches-latest-migration-to-version"
+# run_drift_test(version_marker_path, migrations_dir) — shared mechanism
+# CORRECTED (codex HIGH-1): compare the latest migration to_version against the CONSUMER-axis
+# marker migrations/MIGRATIONS_VERSION (contains `version: 1.21.0`), NOT the obs SKILL.md
+# product version (0.11.0). The two axes are decoupled — see 29-CONTEXT § "Version axes".
+if run_drift_test "$REPO_ROOT/migrations/MIGRATIONS_VERSION" "$REPO_ROOT/migrations"; then
+  echo "  ${GREEN}PASS${RESET}: test-migrations-version-marker-matches-latest-migration-to-version"
   PASS=$((PASS+1))
 else
-  echo "  ${RED}FAIL${RESET}: test-skill-md-version-matches-latest-migration-to-version"
+  echo "  ${RED}FAIL${RESET}: test-migrations-version-marker-matches-latest-migration-to-version"
   FAIL=$((FAIL+1))
 fi
 ```
@@ -483,10 +485,10 @@ Observability rename (from `add-observability` to `observability`) affects runti
 **How to avoid:** Always pair `--path <dir>` with the corresponding `--path-rename <dir>:<newdir>`. Test with `--dry-run` first (filter-repo supports it via `--refs HEAD --no-ff`).
 **Warning signs:** After push, `git log --follow migrations/scripts/migrate-0019.sh` shows no history (path wasn't renamed correctly).
 
-### Pitfall 2: drift test checks wrong SKILL.md path
-**What goes wrong:** The obs run-tests.sh calls `run_drift_test "$REPO_ROOT/skill/SKILL.md"` (copied verbatim from claude-workflow) instead of `"$REPO_ROOT/SKILL.md"` (obs repo root).
-**Why it happens:** claude-workflow stores SKILL.md at `skill/SKILL.md` (nested under `skill/` subdir, symlinked out). The obs repo stores it at root.
-**How to avoid:** Explicitly set `run_drift_test "$REPO_ROOT/SKILL.md"` in the obs run-tests.sh policy wrapper. The shared `run_drift_test` function takes an explicit path — do NOT rely on a default.
+### Pitfall 2: drift test compares the wrong version source
+**What goes wrong:** The obs run-tests.sh calls `run_drift_test` against a SKILL.md (the obs product version `0.11.0`) instead of the CONSUMER-axis marker `migrations/MIGRATIONS_VERSION` (`1.21.0`). Comparing 0.11.0 against the latest migration's `to_version: 1.21.0` always FAILS. (SUPERSEDES the original "wrong SKILL.md path" framing — post codex HIGH-1, drift does not read SKILL.md at all.)
+**Why it happens:** claude-workflow's drift policy assumed SKILL version == migration to_version (one axis). Post-split the obs product axis (0.x) and consumer migration axis (1.x) are distinct.
+**How to avoid:** Point the obs run-tests.sh policy wrapper at `run_drift_test "$REPO_ROOT/migrations/MIGRATIONS_VERSION" "$REPO_ROOT/migrations"` (consumer-axis marker), NOT the obs SKILL.md. See 29-CONTEXT § "Version axes".
 **Warning signs:** Drift test always FAILS with "skill_md not found" or always PASSES with wrong version.
 
 ### Pitfall 3: 0022 migration version mismatch
