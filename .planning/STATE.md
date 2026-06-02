@@ -28,10 +28,14 @@ See: .planning/ROADMAP.md (single-row stub, 2026-05-31 — Phase 25 + Phase 26 p
 
 Milestone: repo-split (cooling-off WAIVED 2026-06-02)
 Phase: SPLIT-01 — agenticapps-shared extraction
-Plan: SPLIT-01 Phase A DONE (repo `agenticapps-eu/agenticapps-shared` created private, skeleton pushed `d136c96`, tag `v1.0.0-pre.0`; `git-filter-repo` installed). Phase B BLOCKED on a plan-reconciliation decision (see below).
-Status: planning — Phase B/C plan needs reconciliation vs ADR-0035 before execution
+Plan: SPLIT-01 PLANNED — 3 plans (28-01/02/03) on branch `plan/28-split-01` (`034e685` plans + `docs(28)` CONTEXT/RESEARCH/STATE). gsd-plan-checker = VERIFICATION PASSED (all 11 dims, 8 SCs + D-28a..f covered, 2 info notes only). Phase A bootstrap already done (`agenticapps-shared` private, skeleton `d136c96`, tag `v1.0.0-pre.0`).
+Status: PLANNED + REVIEWED + RE-CHECKED — ready to execute. NEXT: /gsd-execute-phase 28.
+  - /gsd-review done: gemini LOW, codex HIGH (caught 4 structural blind-spots the same-LLM checker missed). All findings A1-A7 in 28-REVIEWS.md.
+  - Replanned with --reviews; gsd-plan-checker re-check = VERIFICATION PASSED (A1-A7 covered, no regression). Plans committed `d1e67ba`.
+  - A1 user-locked: setup_fixture demoted to claude-workflow wrapper; only extract_to shared (amends ADR-0035 9→8 SHARED).
+  - (Side fix: patched ~/.claude/get-shit-done/workflows/review.md — codex/claude/gemini invocations now `< /dev/null` + timeout; the stdin-hang that bit /gsd-review 3× across repos. Survives /gsd-update via gsd-local-patches. See memory codex-exec-stdin-hang.)
 
-**Phase B/C reconciliation finding (2026-06-02):** `run-tests.sh` is ONE 2579-line file with SHARED+WORKFLOW functions intermingled (9 SHARED / 20 WORKFLOW annotations). `git filter-repo` is whole-file granularity → it CANNOT carve out only the SHARED functions. Shared helpers must be refactored OUT of run-tests.sh into new `migrations/lib/*.sh` — a refactor, not a move. This contradicts SPLIT-01's acceptance criterion "every moved file's full log via `git log --follow`" (carved functions in new files lose `--follow` lineage). DECISION NEEDED: history-preservation approach (provenance-by-note vs filter-repo gymnastics vs hybrid) before Phase B.
+**Plan shape:** Wave 1 = 28-01 (carve 9 SHARED fns → `agenticapps-shared/migrations/lib/{helpers,fixture-runner,preflight,drift-test}.sh` incl. setup_fixture 4th-arg fix + drift mechanism/policy split) → 28-02 (standalone smoke suite + CHANGELOG provenance + tag v1.0.0). Wave 2 = 28-03 (claude-workflow submodule pin @v1.0.0 + run-tests.sh source-and-keep refactor + install.sh + PR; HARD GATE PASS=186 FAIL=4 exact; autonomous:false checkpoint). **Reconciliation resolved:** baseline is 186/4 (not 190+ green); NO filter-repo needed (all migrate-*.sh are obs-specific → SPLIT-02); every carved artifact is provenance-by-note (D-28b).
 Last activity: 2026-06-02
 
 Progress: v1.21.0 milestone shipped+merged (PR #62 `5aff1b1`, tag `v1.21.0`). Lightweight close (no heavy /gsd-complete-milestone ceremony — tag already exists, project uses stub-ROADMAP model, no REQUIREMENTS.md/milestones-archive). Sharing mechanism locked = git submodule. ADR-0035 + run-tests.sh SHARED/WORKFLOW annotations (9 SHARED / 20 WORKFLOW) confirm extraction target = `migrations/run-tests.sh` + framework + fixtures (NOT `bin/gsd-tools.cjs`, which is not in-repo).
@@ -81,6 +85,6 @@ None tracked yet — todo system not initialized at project level.
 ## Session Continuity
 
 Last session: 2026-06-02T13:02:21.000Z
-Stopped at: repo-split milestone opened; v1.21.0 lightweight-closed; SPLIT-01 Phase A pre-flight passed.
-Resume file: SPLIT-01-agenticapps-shared.md (read alongside ADR-0035 + SPLIT-00 gate=GREEN-by-waiver)
-Next action: SPLIT-01 Phase A — `gh repo create agenticapps-eu/agenticapps-shared --private` + initial skeleton/CHANGELOG/VERSION/README per SPLIT-01 §Phase A. Before Phase B: `brew install git-filter-repo`. Note: SPLIT-01's Phase C (split `bin/gsd-tools.cjs`) is MOOT per ADR-0035 — real target is `migrations/run-tests.sh` SHARED-annotated extraction; refresh the plan to drop the stale gsd-tools framing before the filter-repo surgery.
+Stopped at: SPLIT-01 planned, reviewed (codex+gemini), revised (--reviews), re-checked PASS. On branch `plan/28-split-01`, all artifacts committed through `d1e67ba`. Ready to execute.
+Resume file: .planning/phases/28-split-01-agenticapps-shared/ (28-CONTEXT, 28-RESEARCH, 28-REVIEWS, 28-0{1,2,3}-PLAN); ADR-0035 (amended by 28-01 T4 at execute time)
+Next action: `/gsd-execute-phase 28`. Execution acts on TWO repos: Wave 1 (28-01,28-02) autonomous on `~/Sourcecode/agenticapps/agenticapps-shared` — carve lib (helpers/fixture-runner[extract_to only]/preflight/drift-test), broadened standalone suite, ADR-0035 amendment, record release SHA, tag v1.0.0. Wave 2 (28-03) autonomous:false on claude-workflow feature branch `split-01-agenticapps-shared` — submodule pin by gitlink SHA, run-tests.sh source-and-keep refactor (setup_fixture rebuilt as wrapper), install.sh existing-clone fix, GSD before/after diff, PR; then human-verify checkpoint (fresh-clone test + /gsd-review on diff). HARD GATE: suite stays PASS=186 FAIL=4 exactly.

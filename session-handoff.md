@@ -1,69 +1,81 @@
-# Session Handoff — 2026-06-01 (Phase 26 EXECUTED — human_needed → approved)
+# Session Handoff — 2026-06-02 (SPLIT-01 PLANNED + REVIEWED + RE-CHECKED — next: /gsd-execute-phase 28)
 
 ## Accomplished
 
-- **Phase 26 executed end-to-end** via `/gsd-execute-phase 26`. 3 plans, 3 waves, 17 atomic commits + orchestrator metadata.
-- **All six carry-forwards closed:**
-  - **DEF-1** (TRACE_SAMPLE_RATE unwired) → `buildSentryOptions(env)` ENV-PURE helper × cf-worker + cf-pages + openrouter-monitor (per codex HIGH-2 redesign — factory runs before init(), reads env not singletons)
-  - **DEF-2** (REDACTED_KEYS missing HTTP-auth-header coverage) → additive `authorization`/`bearer`/`cookie`/`x-api-key` across 5 stacks
-  - **DEF-3** (module-level singletons) → ADR-0034 with corrected Cloudflare-isolate-REUSE runtime model (codex HIGH-1) + 4 RED→GREEN determinism tests via logEvent envelope chain (codex MED-4 decoupling)
-  - **F-2** (harness drift) → vitest EXACT `3.2.4` × 3 heredocs (codex HIGH-4 — tilde was insufficient against 3.2.5 drift) + @sentry/cloudflare TILDE `~8.55.0` × 2 + DUAL-strategy policy comment
-  - **CR-D** (engine false-positive on `src/index.ts + src/middleware.ts` non-observability apps) → `_filter_index_ts_requires_co_anchor` content-marker firewall in migrate-0019; GREEN-flips new RED fixture 13
-  - **CR-E** (TS1038 + silent exit-0 mask in fixture 0021/04) → canonical `interface Console + declare var` + honest fail-fast on npx absent
-- **`.gitignore` extended** to 5 new stacks (cf-worker, cf-pages, supabase-edge, react-vite, go-fly-http) with Phase 24/26 provenance headers
-- **add-observability 0.9.0 → 0.10.0** shipped in CHANGELOG (minor, additive)
-- **All quality gates passed:** Migration suite 190/190 PASS (was 189, +1 for fixture 13). Template harnesses 310/310 PASS across 5 stacks (cf-worker 90, cf-pages 75, supabase-edge 57, react-vite 43, go-fly 45). Drift test PASS. Schema drift none.
-- **Code review:** 0 critical / 4 warning / 7 info — `26-REVIEW.md` committed. Advisory only.
-- **Verification:** `status: human_needed`, score 10/10 must-haves (2 with documented overrides) — `26-HUMAN-UAT.md` persists 6 prose-review items. User **approved** → phase marked complete.
+- **repo-split milestone opened.** v1.21.0 lightweight-closed (NO heavy /gsd-complete-milestone
+  ceremony — `v1.21.0` tag already exists, project uses stub-ROADMAP model, no REQUIREMENTS.md /
+  milestones-archive). ROADMAP + STATE transitioned; Phases 28 (SPLIT-01), 29 (SPLIT-02),
+  30 (SPLIT-03) registered.
+- **Two decisions LOCKED (user):** D-28a sharing mechanism = **git submodule** at
+  `vendor/agenticapps-shared/`; D-28b history = **provenance-by-note** (carve into clean new
+  lib files + CHANGELOG/commit-SHA provenance; the original "git log --follow" acceptance
+  criterion is amended). Memory written: `split-sharing-mechanism.md`.
+- **SPLIT-01 Phase A DONE (bootstrap, outside plan cycle):** repo `agenticapps-eu/agenticapps-shared`
+  created **private**, skeleton committed `d136c96`, tag `v1.0.0-pre.0` pushed. `git-filter-repo`
+  installed (turns out NOT needed for SPLIT-01).
+- **SPLIT-01 fully planned through the GSD cycle:** 28-CONTEXT.md (authored directly — all decisions
+  already held) → 28-RESEARCH.md (gsd-phase-researcher, HIGH confidence) → 3 PLANs (gsd-planner) →
+  **gsd-plan-checker = VERIFICATION PASSED** (all 11 dims, 8 SCs + D-28a..f covered, 2 info notes only).
+- **Two corrections from research (applied to ROADMAP + CONTEXT):** (1) real baseline is
+  **PASS=186 FAIL=4**, not "190+ green" — the 4 are pre-existing test_migration_0017 / FIX-0017
+  scope, do NOT touch. (2) **NO git filter-repo** step in SPLIT-01 — all `migrate-*.sh` are
+  obs-specific (→ SPLIT-02), so every carved artifact is provenance-by-note.
 
 ## Decisions
 
-- **D-10a (claude-workflow 1.20.0 → 1.20.1 bump) DEFERRED to `[Unreleased]`** — the migration drift test `test-skill-md-version-matches-latest-migration-to-version` enforces `skill/SKILL.md` == latest migration's `to_version` (migration 0021's v1.20.0). Phase 26 ships no new migration (D-04). Per user-memory rule `versioning-tracks-migrations`, engine bugfixes get no version bump. Phase 26 entry parked under `## [Unreleased] — Phase 26` in root CHANGELOG.md. add-observability 0.10.0 ships normally (independent SemVer track).
-- **D-01c byte-symmetry interpretation: TOKEN-SUBSTITUTED** — literal `diff -q cf-worker/lib-observability.ts openrouter-monitor/src/observability/index.ts` is structurally impossible (cf-worker has `{{TOKEN}}` placeholders; openrouter resolved). Phase 25 D-21 contract is invariant *after* token substitution, not before. Plans 02 and 03 SUMMARYs document this; verifier accepted as override.
-- **WR-04 (openrouter `src/index.ts` does not use buildSentryOptions) and WR-03 (no direct buildSentryOptions tests)** flagged in HUMAN-UAT.md as decisions deferred to follow-up — not blockers for Phase 26 closure.
-- **HUMAN-UAT.md `status: partial`** — six prose-review items remain (ADR narrative, env-additions.md snippet quality, CHANGELOG UPGRADE NOTE clarity, .gitignore provenance phrasing, WR-04 decision, WR-03 decision). They will surface in `/gsd-progress` and `/gsd-audit-uat` until user runs `/gsd-verify-work 26` on them. User approved phase completion despite these — they're prose judgments deferred to PR-time review.
+- **Skipped the heavy milestone-completion ceremony** — it conflicts with the existing v1.21.0 tag
+  and this project's lightweight planning model. Did a lightweight close instead.
+- **Authored 28-CONTEXT.md directly instead of interactive /gsd-discuss-phase** — all design
+  decisions were already locked (SPLIT docs + ADR-0035 + D-28a/b). No redundant interview.
+- **ADR-0035 governs the carve:** extraction target is `migrations/run-tests.sh` (9 SHARED /
+  20 WORKFLOW annotations), NOT `bin/gsd-tools.cjs` (not in-repo). Drift test = MECHANISM shared,
+  POLICY stays (D-28d).
 
 ## Files modified (this session)
 
-- `.planning/STATE.md` — status `merged` → `executing` (begin-phase 26) → final after `phase complete`
-- `.planning/ROADMAP.md` — Phase 26 marked Complete; plan-progress rows for 26-01/02/03
-- `.planning/phases/26-worker-template-hardening/` — added 26-01-SUMMARY.md, 26-02-SUMMARY.md, 26-03-SUMMARY.md, 26-REVIEW.md, 26-VERIFICATION.md, 26-HUMAN-UAT.md
-- Engine: `templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh` — content-marker firewall
-- Templates (cf-worker, cf-pages, openrouter): `lib-observability.ts`, `lib-observability.test.ts`, `env-additions.md`, `meta.yaml`, `policy.md.template`
-- Templates (cf-worker, cf-pages, supabase-edge, react-vite, go-fly): new `.gitignore` files; updated `meta.yaml` + `policy.md.template`
-- Fixtures: new `migrations/test-fixtures/0019/13-index-ts-without-observability-content/` (setup.sh, verify.sh, expected-exit, src/index.ts, src/middleware.ts); updated `0021/04` (types.d.ts canonical pattern, verify.sh honest fail-fast)
-- `add-observability/CHANGELOG.md` — 0.10.0 release entry
-- `add-observability/SKILL.md` — version bump
-- `CHANGELOG.md` — Phase 26 `[Unreleased]` entry (deferred per D-10a)
-- `docs/decisions/0034-observability-init-singleton-invariant.md` — new ADR
-- `add-observability/templates/run-template-tests.sh` — EXACT vitest pin + DUAL-strategy policy comment
+- `.planning/ROADMAP.md` — v1.21.0 ✅, repo-split milestone + Phases 28-30, 186/4 corrections (committed `034e685` on `plan/28-split-01`).
+- `.planning/STATE.md` — milestone=repo-split, planning-complete status, next-gate=/gsd-review (committed `docs(28)`).
+- `.planning/phases/28-split-01-agenticapps-shared/` — 28-CONTEXT.md, 28-RESEARCH.md, 28-0{1,2,3}-PLAN.md (committed).
+- NEW repo `~/Sourcecode/agenticapps/agenticapps-shared` — skeleton `d136c96`, tag `v1.0.0-pre.0` (pushed to GitHub, private).
+- Memory: `split-sharing-mechanism.md` + MEMORY.md index line.
+
+## Reviews incorporated (this session)
+
+`/gsd-review 28` ran: **gemini LOW, codex HIGH** — codex caught 4 structural blind-spots the
+same-LLM plan-checker (which PASSED) missed. All 7 action items (A1–A7 in `28-REVIEWS.md`) were
+incorporated via `/gsd-plan-phase 28 --reviews` and **re-verified PASS**. Key change: **A1
+(user-locked)** — `setup_fixture` demoted to a claude-workflow wrapper; only `extract_to` is shared
+(amends ADR-0035, SHARED 9→8). Also A2 (tag gated on real extract_to/preflight tests), A3
+(install.sh existing-clone fix), A4 (pin by gitlink SHA not tag), A5 (set -u), A6 (real GSD diff),
+A7 (PR body). Plans committed through `d1e67ba`.
+
+**Side fix (cross-repo):** the codex stdin-hang that bit `/gsd-review` 3× was a missing `< /dev/null`
+in `~/.claude/get-shit-done/workflows/review.md` (global, used by every repo). Patched all three
+prompt-arg CLIs there (`< /dev/null` + `timeout`). Survives `/gsd-update` via GSD's
+`gsd-local-patches` hash-backup → run `/gsd-reapply-patches` after any update. See memory
+`codex-exec-stdin-hang`.
 
 ## Next session: start here
 
-**Milestone v1.19.0 is now 100% complete (2/2 phases, 8/8 plans).** Branch `feat/worker-template-hardening-v0.10.0` is ready for PR.
+**On branch `plan/28-split-01`. Run `/gsd-execute-phase 28`.** Plans are fully review-hardened +
+re-checked. **Execution spans TWO repos:** Wave 1 (28-01,28-02, autonomous) acts on
+`~/Sourcecode/agenticapps/agenticapps-shared` — carve lib (`helpers.sh`, `fixture-runner.sh` =
+**extract_to ONLY**, `preflight.sh`, `drift-test.sh`), broadened standalone suite, amend ADR-0035,
+record the release commit SHA, **tag v1.0.0** (must precede Wave 2). Wave 2 (28-03,
+**autonomous:false**) acts on claude-workflow feature branch `split-01-agenticapps-shared` — add
+submodule **pinned by gitlink SHA == 28-02's recorded SHA**, refactor `run-tests.sh` source-and-keep
+(rebuild `setup_fixture` as a wrapper over shared `extract_to`), install.sh existing-clone fix, GSD
+before/after diff, PR — then the human-verify checkpoint (fresh-clone `--recurse-submodules` test +
+`/gsd-review` on the diff). **HARD GATE: suite must stay PASS=186 FAIL=4 exactly** — do not "fix"
+the 0017 failures.
 
-Recommended next action:
-1. **Run `/ship` (or manual PR flow)** — bundle the 17+ Phase 26 commits into a single PR targeting main. Mention add-observability 0.10.0 in the release narrative; note `1.20.1` deferred to `[Unreleased]` pending a future migration.
-2. **Optionally first: address WR-03 / WR-04** from `26-HUMAN-UAT.md` if you want them in the same PR — adds direct `buildSentryOptions` unit tests + decides openrouter scaffold-vs-doc treatment.
-3. **After PR merge: `/gsd-new-milestone`** — start a new milestone cycle. Roadmap currently has no Phase 27 stub.
+## Open questions
 
-## Open questions / follow-ups
-
-- **`add-observability/templates/openrouter-monitor/package-lock.json` still untracked** — Phase 24 session noise. Phase 26 didn't sweep it (out of scope); commit it (recommended for harness self-containedness) or .gitignore it in a cleanup pass.
-- **Remote branch `feat/fix-0019-engine-and-cron-wrappers-v1.20.0`** from Phase 25 still exists on origin — `git push origin --delete` cleanup still deferred.
-- **Untracked session noise** (unchanged): `.claude/`, `AGENTS.md`, `CLAUDE.md` (gstack-prompted), `FIX-0017-ENGINE.md`, `add-observability/templates/{ts-cloudflare-{pages,worker}}/node_modules/`.
-- **WR-01 cosmetic bash bug** (`grep -c || echo "0"` emits "0\n0" in `run-template-tests.sh:633-634`) is low-impact but worth a one-line fix in a future cleanup.
-- **HUMAN-UAT.md still `status: partial`** — until `/gsd-verify-work 26` is run, the 6 items will surface in `/gsd-progress`. Either run it or accept the persistent reminder as a PR-time checklist.
-- **Full retroactive ROADMAP/STATE/PROJECT bootstrap still deferred** — `PROJECT.md` does not exist yet. Should land before next milestone.
-- **gstack 1.48 → 1.52 upgrade** still snoozed.
-
-## State snapshot for resumption
-
-- Branch: `feat/worker-template-hardening-v0.10.0` at `c3af194` (Phase 26 complete commit)
-- STATE.md: milestone v1.19.0, both phases complete (2/2, 8/8, 100%)
-- ROADMAP.md: Phase 25 + Phase 26 both marked Complete
-- HUMAN-UAT 26: `status: partial`, 6 pending items (will surface in `/gsd-progress`)
-- Phase 26 verifier verdict: `human_needed` (10/10 must-haves verified, 2 documented overrides), user approved
-- Versions on this branch: add-observability `0.10.0` (bumped); claude-workflow `1.20.0` (unchanged — Phase 26 entry under `[Unreleased]`)
-- Tests: migrations 190/190; template harnesses 310/310 across 5 stacks
-- Worktrees remaining (pre-existing, not from this session): `feat-programmatic-hooks-architecture-audit`, `feat-wire-go-impeccable-database-sentinel`
+- **agenticapps-shared go-public + LICENSE** — deferred to after SPLIT-01 verifies clean (repo is
+  private now; license intentionally not baked in at creation — org-policy call).
+- **claude-workflow version bump** — deferred to SPLIT-02 ship time (likely 2.0.0-rc.X).
+- **Branch hygiene** — plans live on `plan/28-split-01`; execution Wave 2 uses
+  `split-01-agenticapps-shared`. They converge in the phase PR; decide whether to consolidate.
+- **SPLIT-02 fold-ins** (Phase 29): cron-flush backport (`RESEARCH-cron-monitor-flush-fxsa.md`),
+  #61 buildMonitorConfig/fixture fix, queue-monitor.ts race audit; obs-specific migrate-0019/0021
+  + fixtures move here.
