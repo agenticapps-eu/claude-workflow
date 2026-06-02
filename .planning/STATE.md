@@ -4,7 +4,7 @@ milestone: v1.19.0
 milestone_name: migration
 status: executing
 stopped_at: Completed 27-04-PLAN.md
-last_updated: "2026-06-02T10:26:50.908Z"
+last_updated: "2026-06-02T10:29:03Z"
 last_activity: 2026-06-02
 progress:
   total_phases: 3
@@ -18,7 +18,7 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (does not yet exist — full retroactive bootstrap deferred)
+See: .planning/PROJECT.md
 See: .planning/ROADMAP.md (single-row stub, 2026-05-31 — Phase 25 + Phase 26 placeholder only)
 
 **Core value:** Spec-first, migration-driven workflow scaffolder for AgenticApps projects.
@@ -31,7 +31,7 @@ Plan: 4 of 6
 Status: Ready to execute
 Last activity: 2026-06-02
 
-Progress: Phase 25 complete + merged (5/5 plans); Phase 26 complete (3/3 plans) — PR #60 open, awaiting review
+Progress: Phase 25 complete + merged (5/5 plans); Phase 26 complete + merged — PR #60, commit `46bb394`
 
 ## Performance Metrics
 
@@ -75,4 +75,4 @@ None tracked yet — todo system not initialized at project level.
 Last session: 2026-06-02T10:26:50.905Z
 Stopped at: Completed 27-04-PLAN.md
 Resume file: None
-Next action: `/gsd-discuss-phase 26` for worker-template hardening. Scope: DEF-1/2/3 + F-2 carry-forwards from PR #55 + upstream `vitest@3.2.5` / `vite-node@3.2.5` registry-drift pin (flagged at `25-VALIDATION.md` audit-time caveat) + `_filter_index_ts_requires_co_anchor` content-marker firewall (CodeRabbit finding D, `migrate-0019-...sh:233`) + `0021/04 verify.sh` exit-0-when-npx-missing mask + TS1038 console declaration in `types.d.ts:63` (CodeRabbit finding E).
+Next action: Execute remaining Phase 27 plans (27-05, 27-06) — WR-04 openrouter entry uses buildSentryOptions(env) + byte-symmetry re-verify (27-05); CHANGELOG ## [1.21.0] + git tag v1.21.0 (27-06, autonomous: false).

@@ -12,7 +12,8 @@
 ## Milestones
 
 - ✅ **v0.x → v1.19.0** — Phases 01-24 (shipped, see `session-handoff.md` and git log; not enumerated here)
-- 🚧 **v1.20.x worker-template hardening + 0019 engine fixes** — Phases 25-26 (in progress)
+- ✅ **v1.20.x worker-template hardening + 0019 engine fixes** — Phases 25-26 (shipped 1.20.0; PR #60 merged `46bb394`)
+- 🚧 **v1.21.0 stable baseline (SPLIT-00 gate)** — Phase 27 (in progress; release/baseline tag `v1.21.0`; skill version stays 1.20.0 — tag-only, no migration)
 
 ## Phases
 
