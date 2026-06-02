@@ -230,6 +230,7 @@ Deno.test("D-02a init() repeated-init determinism: init() called twice within is
     logEvent({ event: "probe-b", severity: "info" });
   } finally {
     console.log = origLog;
+    _resetForTest();  // cleanup: reset initialized + singletons so state doesn't bleed (matches docstring line 206)
   }
 
   assertEquals(captured.length, 2, "expected 2 console.log envelopes");
@@ -243,6 +244,4 @@ Deno.test("D-02a init() repeated-init determinism: init() called twice within is
   // env_b envelope MUST ALSO reflect env-a values — second init was a no-op.
   assertEquals(env_b.service, "svc-a", "second init() must be a no-op — service stays at first-call value");
   assertEquals(env_b.env, "env-a", "second init() must be a no-op — env stays at first-call value");
-
-  _resetForTest();  // cleanup
 });
