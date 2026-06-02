@@ -139,6 +139,10 @@ alias deprecation window, `claude-workflow 2.0.0` ship, fix #58) is **Phase 30 (
   before B can push into it.
 - If any cross-AI review step shells `codex exec`, it must use `< /dev/null` to avoid the
   stdin-hang (memory: codex-exec-stdin-hash); the patched `review.md` already does this.
+- **obs-repo feature-branch policy** (global CLAUDE.md "never commit directly to main"): plans 01–02
+  bootstrap the fresh obs repo directly on `main` (no pre-existing branch to PR against — SPLIT-01
+  precedent); plans 03–05 do their substantive development on the obs-repo feature branch
+  `split-02-rename-and-0022`, and plan 05 opens a PR that is merged to `main` BEFORE the `v0.11.0` tag.
 </cross_repo_constraints>
 
 <canonical_refs>
