@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.19.0
 milestone_name: migration
 status: executing
-stopped_at: Phase 27 context gathered (auto from approved brainstorm)
-last_updated: "2026-06-02T08:37:14.338Z"
-last_activity: 2026-06-01
+stopped_at: Completed 27-01-PLAN.md
+last_updated: "2026-06-02T10:04:34.533Z"
+last_activity: 2026-06-02
 progress:
   total_phases: 3
   completed_phases: 2
-  total_plans: 8
-  completed_plans: 8
-  percent: 100
+  total_plans: 14
+  completed_plans: 9
+  percent: 64
 ---
 
 # Project State
@@ -22,14 +22,14 @@ See: .planning/PROJECT.md (does not yet exist — full retroactive bootstrap def
 See: .planning/ROADMAP.md (single-row stub, 2026-05-31 — Phase 25 + Phase 26 placeholder only)
 
 **Core value:** Spec-first, migration-driven workflow scaffolder for AgenticApps projects.
-**Current focus:** Phase 26 — worker-template-hardening
+**Current focus:** Phase 27 — 1-21-0-stable-baseline-split-00-gate-close-wr-01-04-minimum-
 
 ## Current Position
 
-Phase: 26
-Plan: Not started
-Status: Executing Phase 26
-Last activity: 2026-06-01
+Phase: 27 (1-21-0-stable-baseline-split-00-gate-close-wr-01-04-minimum-) — EXECUTING
+Plan: 2 of 6
+Status: Ready to execute
+Last activity: 2026-06-02
 
 Progress: Phase 25 complete + merged (5/5 plans); Phase 26 complete (3/3 plans) — PR #60 open, awaiting review
 
@@ -51,6 +51,7 @@ Recent decisions affecting current work:
 - **Phase 24 (shipped):** OpenRouter integration kit (PR #55, ADR-0030)
 - **Phase 23 / ADR-0029:** Guarded Shape A for Sentry-wrapped handlers
 - **Phase 22:** Sentry Crons heartbeats + healthz endpoint convention
+- [Phase 27]: WR-01: used '|| true' to suppress grep exit-1 without double-count; WR-02: _resetForTest() moved inside finally block
 
 ### Roadmap Evolution
 
@@ -68,7 +69,7 @@ None tracked yet — todo system not initialized at project level.
 
 ## Session Continuity
 
-Last session: 2026-06-02T08:37:14.332Z
-Stopped at: Phase 27 context gathered (auto from approved brainstorm)
-Resume file: .planning/phases/27-1-21-0-stable-baseline-split-00-gate-close-wr-01-04-minimum-/27-CONTEXT.md
+Last session: 2026-06-02T10:04:34.529Z
+Stopped at: Completed 27-01-PLAN.md
+Resume file: None
 Next action: `/gsd-discuss-phase 26` for worker-template hardening. Scope: DEF-1/2/3 + F-2 carry-forwards from PR #55 + upstream `vitest@3.2.5` / `vite-node@3.2.5` registry-drift pin (flagged at `25-VALIDATION.md` audit-time caveat) + `_filter_index_ts_requires_co_anchor` content-marker firewall (CodeRabbit finding D, `migrate-0019-...sh:233`) + `0021/04 verify.sh` exit-0-when-npx-missing mask + TS1038 console declaration in `types.d.ts:63` (CodeRabbit finding E).
