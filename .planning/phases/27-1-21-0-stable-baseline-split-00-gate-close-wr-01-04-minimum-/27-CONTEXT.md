@@ -14,21 +14,21 @@ downstream factiv repos (cparx, callbot, fx-signal-agent) upgrade to *before*
 the three-repo split (SPLIT-01 / SPLIT-02) begins. This is the **workflow-side
 gate** of `SPLIT-00-PREREQUISITES.md`.
 
-**In scope:** WR-01..WR-04 (PR #60 deferred items), minimum-viable PROJECT.md,
-STATE.md + ROADMAP.md drift refresh, split-prep groundwork (boundary audit of
-`migrations/run-tests.sh` + annotations + ADR + SPLIT-01 correction — **no code
-movement**), **migration 0022** (`to_version: 1.21.0`, re-syncs hardened
-observability templates) + SKILL.md/CHANGELOG bump 1.20.0 → 1.21.0.
+**In scope (A2 — tag-only):** WR-01..WR-04 (PR #60 deferred items), minimum-viable
+PROJECT.md, STATE.md + ROADMAP.md drift refresh, split-prep groundwork (boundary
+audit of `migrations/run-tests.sh` + annotations + ADR + SPLIT-01 correction —
+**no code movement**), SPLIT-00 gate doc fix (pin-by-tag), CHANGELOG `## [1.21.0]`
++ git tag `v1.21.0`. **SKILL.md stays 1.20.0** (no migration → drift test green).
 
 **Explicitly OUT of scope (do not start here):**
 - The actual three-repo extraction (SPLIT-01 / SPLIT-02 — separate milestone).
 - Moving/refactoring any framework code (split-prep is annotate + document only).
+- **Migration 0022 / any new migration** — user chose A2 (tag-only). SKILL.md is
+  NOT bumped. The DEF-1/DEF-2 consumer re-rev is DEFERRED (D-07d).
 - Milestone v1.19.0 archive + new "repo-split" milestone — those are GSD
   lifecycle ops that run AFTER 1.21.0 merges (D-03).
 - Downstream upgrades / 7-day cooling-off — tracked by SPLIT-00, not this phase.
-- New product capabilities. (Per user decision A1, migration 0022 IS shipped to
-  legitimize the 1.21.0 skill-version bump — see D-07. This reverses the original
-  "no migration" framing.)
+- New product capabilities or migrations. (A2: no migration; SKILL.md unchanged.)
 
 </domain>
 
@@ -150,40 +150,36 @@ observability templates) + SKILL.md/CHANGELOG bump 1.20.0 → 1.21.0.
   shared/workflow boundary as the canonical reference SPLIT-01 Phase C executes
   against. Status: Accepted. Link SPLIT-00/01.
 
-### Versioning (RESOLVED per RESEARCH Blocker A → user chose A1)
-- **D-07 (A1 — ship migration 0022):** claude-workflow `1.20.0 → 1.21.0`, made
-  legitimate by a NEW migration `migrations/0022-*.md` with `to_version: 1.21.0`.
-  This lets `skill/SKILL.md version` bump to `1.21.0` while keeping the drift test
-  GREEN (`test_skill_md_version_matches_latest_migration_to_version` compares
-  SKILL.md to the HIGHEST migration's to_version — `migrations/run-tests.sh:2210`).
-  Downstreams then pin by skill version `1.21.0` (SPLIT-00 gate works as written —
-  no SPLIT-00 rewrite needed).
-- **D-07a (migration 0022 payload — GROUNDED in 0021 mechanics):** Migration 0022 is
-  a REAL "re-rev with dirty detection" migration mirroring `0021` (verified
-  mechanism: `cp add-observability/templates/<stack>/<file> <wrapper>/<file>` with
-  refuse-on-hand-modified via `.observability-0022.patch`). Consumer-facing payload:
-  re-rev `lib-observability.ts` (cf-worker + cf-pages) + supabase-edge `index.ts`
-  into consuming projects, delivering the Phase 26 **DEF-1** (`buildSentryOptions`
-  helper) and **DEF-2** (REDACTED_KEYS auth-header redaction — a real security
-  improvement) that Phase 26 D-04a deliberately kept OFF the migration chain.
-  Migration 0022 corrects that: consumers at 1.20.0 do NOT have these in their
-  wrapper; this delivers them. `from_version: 1.20.0`, `to_version: 1.21.0`,
-  `type: re-rev-with-dirty-detection`, fixtures in `migrations/test-fixtures/0022/`.
-  WR-01/02/03 stay claude-workflow-internal (not migrated). WR-04 (openrouter
-  worked-example) is a scaffold, not consumer-migrated.
-- **D-07a-COST (flagged for user):** This makes Phase 27 substantially larger than
-  "WR bugfixes + docs" — a re-rev migration with dirty-detection + fixtures is
-  ~Phase-25-sized work and reverses Phase 26 D-04a. This is the true cost of A1
-  (vs A2 tag-only). Surfaced to user 2026-06-02 after research grounded the
-  mechanism; user to confirm proceed-with-A1 vs downgrade-to-A2 before planning.
-- **D-07b (SKILL.md + CHANGELOG):** Bump `skill/SKILL.md` `version: 1.20.0 → 1.21.0`.
-  Promote BOTH Phase 26's `[Unreleased]` CHANGELOG entry AND Phase 27's changes
-  into a new `## [1.21.0]` section in root `CHANGELOG.md`. No root `VERSION` file
-  exists — SKILL.md is the version source of truth; do NOT create a VERSION file
-  unless the planner finds the convention requires it.
-- **D-07c:** add-observability stays **0.10.0** unless its own CHANGELOG/VERSION
-  convention requires a patch — confirm during planning (its template fixes ship
-  via migration 0022's re-sync, under claude-workflow's 1.21.0).
+### Versioning (RESOLVED per RESEARCH Blocker A → user chose A1, then DOWNGRADED to A2 after cost surfaced)
+- **D-07 (A2 — tag-only, NO migration):** Phase 27 ships **NO migration**.
+  `skill/SKILL.md` version **STAYS `1.20.0`** so the drift test
+  (`test_skill_md_version_matches_latest_migration_to_version`,
+  `migrations/run-tests.sh:2210`) stays GREEN (highest migration 0021 to_version =
+  1.20.0). "1.21.0" is a **git tag + release marker only**, not the skill version.
+  This honors `versioning-tracks-migrations` strictly + the Phase-26 `[Unreleased]`
+  precedent. The user accepted A2's true cost tradeoff: Phase 27 stays minimal; the
+  DEF-1/DEF-2 consumer re-rev is deferred (see D-07d).
+- **D-07a (CHANGELOG):** Promote Phase 26's `[Unreleased]` entry AND add Phase 27's
+  changes into a new `## [1.21.0]` section in root `CHANGELOG.md` (the repo RELEASE
+  version). Make the SKILL.md-vs-release-tag distinction explicit in the CHANGELOG
+  note: the release is tagged v1.21.0 while the skill version trails at 1.20.0 until
+  the next migration catches it up (this is the documented migration-locked-version
+  behavior — handoff open-question #70).
+- **D-07b (release tag):** Tag the merge commit `v1.21.0` (git tag, matching the repo's
+  release convention). No `VERSION` file exists or is created.
+- **D-07c (SPLIT-00 gate fix — REQUIRED):** Update `SPLIT-00-PREREQUISITES.md`
+  downstream gate condition from "Workflow installed marker matches:
+  `.claude/skills/agentic-apps-workflow/SKILL.md version: 1.21.0`" to **pin-by-tag**
+  (git tag `v1.21.0` / commit SHA), because under A2 the SKILL.md version stays
+  1.20.0. Without this fix the SPLIT-00 checklist is unsatisfiable.
+- **D-07d (DEFERRED — DEF-1/DEF-2 consumer delivery):** Phase 26's DEF-1
+  (`buildSentryOptions`) and **DEF-2 (REDACTED_KEYS auth-header redaction — a real
+  security fix)** remain UNDELIVERED to existing consumers at 1.20.0 (D-04a kept them
+  off the migration chain; A2 keeps it that way). Capture a tracked backlog item /
+  todo: "ship DEF-1/DEF-2 re-rev migration to consumers" — candidate for the next
+  real migration or the observability split (SPLIT-02). This is the accepted cost of A2.
+- **D-07e:** add-observability stays **0.10.0** (no version change; its template
+  fixes are internal until the deferred re-rev migration).
 
 ### STATE/ROADMAP drift refresh
 - **D-08:** Refresh `.planning/STATE.md`: `status: executing` Phase 26 →
@@ -247,9 +243,9 @@ observability templates) + SKILL.md/CHANGELOG bump 1.20.0 → 1.21.0.
 - `// SHARED`/`// WORKFLOW` boundary mirrors SPLIT-01's "boundary test" — annotation only, extraction deferred.
 
 ### Integration Points
-- `bin/gsd-tools.cjs` — the monolith whose exports get annotated (D-06); consumed by every gsd-* skill, so zero-behavior-change is mandatory.
-- `add-observability/templates/run-template-tests.sh` — the harness; WR-01 fix affects only go-test reporting.
-- Root `VERSION` + `CHANGELOG.md`; `skill/SKILL.md` version field (NOT bumped, D-07a).
+- `migrations/run-tests.sh` (~2500 lines) — the migration dispatcher + drift test + fixture-runner harness; the REAL split-prep annotation target (D-06, B1). Annotation-only; zero behavior change. (`bin/gsd-tools.cjs` is the GSD framework, NOT in this repo — see D-06.)
+- `add-observability/templates/run-template-tests.sh` — the template harness; WR-01 fix affects only go-test reporting.
+- `CHANGELOG.md` (root) — add `## [1.21.0]`; `skill/SKILL.md` version field STAYS 1.20.0 (A2, D-07). No `VERSION` file exists. Release marked by git tag `v1.21.0`.
 
 </code_context>
 
@@ -266,7 +262,11 @@ observability templates) + SKILL.md/CHANGELOG bump 1.20.0 → 1.21.0.
 <deferred>
 ## Deferred Ideas
 
-- **Actual gsd-tools extraction** → SPLIT-01 Phase C (next milestone).
+- **DEF-1/DEF-2 consumer re-rev migration** (D-07d) → deliver Phase 26's
+  `buildSentryOptions` wiring + **REDACTED_KEYS auth-header redaction (security fix)**
+  to existing 1.20.0 consumers via a re-rev-with-dirty-detection migration mirroring
+  0021. Deferred under A2 (tag-only). Candidate: next real migration or SPLIT-02. **Should be a tracked backlog item.**
+- **Actual migration-framework extraction** (`migrations/run-tests.sh` shared parts) → SPLIT-01 (next milestone). NOTE: NOT `bin/gsd-tools.cjs` (that's the GSD framework, not this repo — SPLIT-01 to be corrected per D-06b).
 - **Milestone v1.19.0 archive + new "repo-split" milestone** → after 1.21.0 merges (D-03).
 - **`{{ENV_VAR_RELEASE}}` design** (CodeRabbit PR #60 follow-up) → future obs phase / SPLIT-02 Phase D.
 - **`FIX-0017-ENGINE.md`** working-dir prompt → its own phase (migration 0017, separate scope).
