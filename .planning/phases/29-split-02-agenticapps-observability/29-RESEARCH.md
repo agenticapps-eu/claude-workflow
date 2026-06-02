@@ -290,7 +290,7 @@ git filter-repo \
 
 # 3. Push filtered history into new repo
 git remote set-url origin https://github.com/agenticapps-eu/agenticapps-observability
-git push origin main --force  # first push into empty repo — force is safe
+git push origin main  # plain additive push — NO --force (obs main already holds the 29-01 skeleton; never force)
 ```
 
 **Idempotency:** Re-running filter-repo against a FRESH scratch clone is idempotent. Do NOT re-run on the same scratch clone after a push (history has been rewritten; a second run produces different SHAs). If Phase B fails, discard scratch clone and restart from a new `git clone`.
@@ -404,13 +404,16 @@ Sub-skill routing:
 **Frontmatter:**
 ```yaml
 ---
-# NOTE: to_version is the OBS version 0.11.0 (Pitfall 3 Option B — see Open Questions Q1 RESOLVED).
-# Only the LATEST migration's to_version drives the shared run_drift_test vs obs SKILL.md version.
+# CORRECTED (cross-AI review, codex HIGH-1): to_version is the CONSUMER-PROJECT axis (1.x),
+# continuing 0021's 1.20.0 → 1.21.0. It is NOT the obs product version (0.11.0). Writing 0.11.0
+# here would downgrade a consumer at 1.20.0. Drift is decoupled — see 29-CONTEXT § "Version axes":
+# the obs run-tests.sh drift wrapper compares the latest migration to_version against a
+# migrations/MIGRATIONS_VERSION marker (1.21.0), NOT against the obs SKILL.md version (0.11.0).
 migration_id: "0022"
 from_version: 1.20.0
-to_version: 0.11.0
+to_version: 1.21.0
 type: "re-rev-with-dirty-detection"
-idempotency_marker: "cron-monitor.ts content-hash matches obs-0.11.0 explicit-flush baseline (twofold: includes monitorConfig-on-every-checkin shape)"
+idempotency_marker: "cron-monitor.ts content-hash matches the 1.21.0 explicit-flush baseline (twofold: includes monitorConfig-on-every-checkin shape)"
 related: ["0021", "FXSA-WORKERS-6", "ADR-0033", "ADR-0035-obs"]
 ---
 ```
@@ -492,9 +495,21 @@ Observability rename (from `add-observability` to `observability`) affects runti
 **How to avoid:** Keep the migration frontmatter's `from_version`/`to_version` tracking the claude-workflow SKILL.md version (1.20.0 → 1.21.0). The obs SKILL.md version is separate (`0.11.0`). The drift test in the obs repo must be adapted — it should check that the obs SKILL.md version (`0.11.0`) matches a SEPARATE obs-specific version field, OR the drift policy must be rewritten to track obs versioning separately.
 **Warning signs:** Drift test fails because `skill_version=0.11.0` != `migration_to_version=1.21.0`.
 
-**Resolution for Pitfall 3:** The obs repo needs a NEW drift test policy:
-- Option A: Have migration 0022's `to_version` track the obs skill version (`0.11.0`). Keep all obs migration `from_version`/`to_version` as obs versions (0.x.y). This requires renumbering the existing migration frontmatter when they move. HIGH effort.
-- **Option B (recommended):** For Phase 29, the obs repo's `run-tests.sh` skips the drift test OR uses a custom drift check that compares obs SKILL.md `version: 0.11.0` against the obs-specific latest migration marker. The shared `run_drift_test` is generic enough to work if the latest migration in the obs `migrations/` dir has `to_version: 0.11.0`. This means migration 0022's frontmatter should use `to_version: 0.11.0` (obs version), not `to_version: 1.21.0` (cw version). The `from_version`/`to_version` in the obs migrations track obs skill versions going forward. For the moved migrations (0012–0021), their frontmatter tracks `agentic-apps-workflow` versions — the drift test checks only the LATEST migration's `to_version`, so only 0022's `to_version: 0.11.0` matters.
+**Resolution for Pitfall 3 (CORRECTED per cross-AI review — codex HIGH-1; the prior "Option B / to_version: 0.11.0" recommendation is OVERRULED):**
+
+Overloading `0022.to_version` with the obs product version (`0.11.0`) was wrong: `to_version` is the
+CONSUMER-PROJECT axis the update flow writes into a consuming project (migrations/README.md), so
+`1.20.0 → 0.11.0` would DOWNGRADE/corrupt a consumer at 1.20.0. The two axes are genuinely distinct:
+
+- **Migration consumer axis (1.x):** what migrations write into consuming projects. Released
+  0012–0021 are immutable and keep their `1.x` to_versions; `0022` continues to `to_version: 1.21.0`.
+- **Obs product axis (0.x):** the obs SKILL.md `version: 0.11.0` — a separate concern.
+
+Because `run_drift_test`'s POLICY is consumer-owned (see `../agenticapps-shared/migrations/lib/drift-test.sh`),
+the obs repo defines its own: the obs `run-tests.sh` drift wrapper compares the latest migration's
+`to_version` against a dedicated **`migrations/MIGRATIONS_VERSION`** marker (created at `1.20.0`, bumped
+to `1.21.0` by 0022) — i.e. `run_drift_test "$REPO_ROOT/migrations/MIGRATIONS_VERSION" "$REPO_ROOT/migrations"`.
+It does NOT compare against the obs SKILL.md `0.11.0`. See **29-CONTEXT.md § "Version axes"** (locked decision).
 
 ### Pitfall 4: Strict-Env generic regression in deferred-fix migration
 **What goes wrong:** The cron-flush backport copies fxsa's `E extends Record<string, unknown>` form, which REGRESSES the D-05 ADR-0032 SC5 strict-Env narrowing.
@@ -644,8 +659,11 @@ declare module "@sentry/cloudflare" {
 > All three resolved by the planner 2026-06-02 and locked in ROADMAP.md (planner decisions)
 > + 29-04-PLAN.md (DECISIONS LOCKED block). Resolutions annotated inline below.
 
-**RESOLVED Q1:** `to_version: 0.11.0` (obs version, Pitfall 3 Option B). Only the latest migration's
-`to_version` drives the shared `run_drift_test` vs obs SKILL.md `version: 0.11.0`.
+**RESOLVED Q1 (CORRECTED — cross-AI review codex HIGH-1):** `0022.to_version: 1.21.0` on the
+CONSUMER-PROJECT axis (continues 0021's 1.20.0). NOT `0.11.0` — that would downgrade consumers.
+The obs product version (0.11.0) is decoupled; drift compares the latest migration to_version against
+a `migrations/MIGRATIONS_VERSION` marker (1.21.0), not the obs SKILL.md. See 29-CONTEXT § "Version axes".
+(The earlier "Option B / 0.11.0" recommendation in this doc is overruled.)
 **RESOLVED Q2:** Flush fix applies to cron-monitor on cf-worker + cf-pages + supabase-edge; queue-monitor
 on cf-worker + cf-pages only (supabase-edge has no queue-monitor — verified). fxsa `CronMonitorConfigInput`
 function-form left out (separable).
@@ -656,7 +674,7 @@ re-run yields SKIP_ALREADY).
 1. **Migration 0022 version numbering: obs-version vs cw-version?**
    - What we know: obs SKILL.md version is `0.11.0`; the moved migrations (0012–0021) use `agentic-apps-workflow` SKILL.md versions (1.x.y) in their frontmatter.
    - What's unclear: Should migration 0022's `to_version` track obs versioning (`0.11.0`) or the cw version it would have been (`1.21.0`)?
-   - Recommendation: Use `to_version: 0.11.0` in 0022 (obs version). The shared `run_drift_test` compares obs SKILL.md `version: 0.11.0` against the latest migration's `to_version` — if 0022 uses `0.11.0` this passes. For the moved migrations (0012–0021) with `to_version: 1.20.0`, the drift test only checks the LATEST (0022), so this works. [ASSUMED — planner should validate this interpretation of run_drift_test behavior]
+   - ~~Recommendation: Use `to_version: 0.11.0`~~ **OVERRULED (codex HIGH-1) — see RESOLVED Q1 above + 29-CONTEXT § "Version axes".** Correct answer: `0022.to_version: 1.21.0` on the consumer axis (continues 0021); the obs drift wrapper compares against a `migrations/MIGRATIONS_VERSION` marker (1.21.0), NOT the obs SKILL.md `0.11.0`. Setting `to_version: 0.11.0` would downgrade consumers at 1.20.0.
 
 2. **Template stack scope for the flush fix (which stacks get the explicit-flush body in migration 0022)?**
    - What we know: `RESEARCH-cron-monitor-flush-fxsa.md` confirms the race in cf-worker. The same `Sentry.withMonitor` pattern is in cf-pages (`cron-monitor.ts` confirmed present). `ts-supabase-edge` has `cron-monitor.ts` but no queue-monitor.
