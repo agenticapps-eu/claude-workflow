@@ -3,11 +3,11 @@ gsd_state_version: 1.0
 milestone: v1.19.0
 milestone_name: migration
 status: executing
-stopped_at: Phase 26 context gathered — DEF-1/2/3 + F-2 + CR-D/E + .gitignore + version bumps decided
-last_updated: "2026-06-01T14:18:37.678Z"
+stopped_at: Phase 27 context gathered (auto from approved brainstorm)
+last_updated: "2026-06-02T08:37:14.338Z"
 last_activity: 2026-06-01
 progress:
-  total_phases: 2
+  total_phases: 3
   completed_phases: 2
   total_plans: 8
   completed_plans: 8
@@ -52,6 +52,10 @@ Recent decisions affecting current work:
 - **Phase 23 / ADR-0029:** Guarded Shape A for Sentry-wrapped handlers
 - **Phase 22:** Sentry Crons heartbeats + healthz endpoint convention
 
+### Roadmap Evolution
+
+- Phase 27 added (2026-06-02): 1.21.0 stable baseline (SPLIT-00 gate) — final phase of current milestone; WR-01..04, minimum-viable PROJECT.md, STATE/ROADMAP drift refresh, gsd-tools boundary audit + ADR (no extraction), bump 1.20.0 → 1.21.0.
+
 ### Pending Todos
 
 None tracked yet — todo system not initialized at project level.
@@ -64,7 +68,7 @@ None tracked yet — todo system not initialized at project level.
 
 ## Session Continuity
 
-Last session: 2026-06-01T10:31:48.623Z
-Stopped at: Phase 26 context gathered — DEF-1/2/3 + F-2 + CR-D/E + .gitignore + version bumps decided
-Resume file: .planning/phases/26-worker-template-hardening/26-CONTEXT.md
+Last session: 2026-06-02T08:37:14.332Z
+Stopped at: Phase 27 context gathered (auto from approved brainstorm)
+Resume file: .planning/phases/27-1-21-0-stable-baseline-split-00-gate-close-wr-01-04-minimum-/27-CONTEXT.md
 Next action: `/gsd-discuss-phase 26` for worker-template hardening. Scope: DEF-1/2/3 + F-2 carry-forwards from PR #55 + upstream `vitest@3.2.5` / `vite-node@3.2.5` registry-drift pin (flagged at `25-VALIDATION.md` audit-time caveat) + `_filter_index_ts_requires_co_anchor` content-marker firewall (CodeRabbit finding D, `migrate-0019-...sh:233`) + `0021/04 verify.sh` exit-0-when-npx-missing mask + TS1038 console declaration in `types.d.ts:63` (CodeRabbit finding E).
