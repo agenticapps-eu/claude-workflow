@@ -4,7 +4,7 @@ milestone: v1.21.0
 milestone_name: stable baseline (SPLIT-00 gate)
 status: verifying
 stopped_at: Completed 27-06-PLAN.md (Task 1 done; Task 2 git tag deferred to ship time)
-last_updated: "2026-06-02T10:48:36.858Z"
+last_updated: "2026-06-02T11:03:40.435Z"
 last_activity: 2026-06-02
 progress:
   total_phases: 3
@@ -26,8 +26,8 @@ See: .planning/ROADMAP.md (single-row stub, 2026-05-31 — Phase 25 + Phase 26 p
 
 ## Current Position
 
-Phase: 27 (1-21-0-stable-baseline-split-00-gate-close-wr-01-04-minimum-) — EXECUTING
-Plan: 6 of 6
+Phase: 27
+Plan: Not started
 Status: Phase complete — ready for verification
 Last activity: 2026-06-02
 
