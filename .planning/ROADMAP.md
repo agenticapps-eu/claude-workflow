@@ -93,17 +93,31 @@ Plans:
 - WR-04: `add-observability/templates/openrouter-monitor/src/index.ts` vs `src/observability/index.ts:154` (`buildSentryOptions` export unused by the entry point)
 - Byte-symmetry contract: Phase 25 D-21 / Phase 26 SC-9 (`cf-worker/lib-observability.ts ↔ openrouter-monitor/src/observability/index.ts`)
 
-**Success Criteria** (what must be TRUE): TBD — run `/gsd-discuss-phase 27` then `/gsd-plan-phase 27`
+**Success Criteria** (what must be TRUE):
+  1. WR-01 closed — go-test counter double-count fixed (run-template-tests.sh:633-634); firewall lines 128/130/558/559 unchanged
+  2. WR-02 closed — supabase-edge D-02a test calls _resetForTest() in finally; suite GREEN
+  3. WR-03 closed — direct buildSentryOptions unit tests × 3 stacks (RED→GREEN), assertions per RESEARCH Blocker-C (TRACE_SAMPLE_RATE is a baked constant)
+  4. WR-04 closed — openrouter entry routes options through buildSentryOptions(env); no hardcoded tracesSampleRate: 0.1; byte-symmetry state unchanged
+  5. Canonical minimum-viable .planning/PROJECT.md created (D-05)
+  6. STATE.md + ROADMAP.md drift refreshed (Phase 26 merged; stale Next action fixed) (D-08)
+  7. Split-prep: migrations/run-tests.sh annotated # SHARED / # WORKFLOW (audit-only, suite GREEN); ADR-0035 written; SPLIT-01 gsd-tools.cjs premise corrected (B1)
+  8. SPLIT-00 gate changed to pin-by-tag (D-07c) — satisfiable under A2
+  9. CHANGELOG ## [1.21.0] section added; skill/SKILL.md STAYS 1.20.0; drift test GREEN (A2 tag-only); git tag v1.21.0 created manually at ship
 
-**Plans:** 0 plans (not planned yet)
+**Plans:** 6 plans in 2 waves
 
 Plans:
-- [ ] TBD (run /gsd-discuss-phase 27 → /gsd-plan-phase 27 to break down)
+- [ ] 27-01-PLAN.md — Wave 1: WR-01 (go-test counter) + WR-02 (supabase-edge _resetForTest cleanup)
+- [ ] 27-02-PLAN.md — Wave 1 (tdd): WR-03 buildSentryOptions direct unit tests × 3 stacks (RED→GREEN)
+- [ ] 27-03-PLAN.md — Wave 1: canonical PROJECT.md (D-05) + STATE/ROADMAP drift refresh (D-08)
+- [ ] 27-04-PLAN.md — Wave 1: run-tests.sh SHARED/WORKFLOW annotations + ADR-0035 + SPLIT-01 correction + SPLIT-00 pin-by-tag fix (B1, D-06/D-07c)
+- [ ] 27-05-PLAN.md — Wave 2 (depends 02): WR-04 openrouter entry uses buildSentryOptions(env); byte-symmetry re-verify
+- [ ] 27-06-PLAN.md — Wave 2 (depends 01-05, manual tag): CHANGELOG ## [1.21.0] + git tag v1.21.0 (autonomous: false)
 
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 25. Fix 0019 engine + withCronMonitor | 5/5 | Complete    | 2026-06-01 |
-| 26. worker-template hardening | 3/3 | Complete    | 2026-06-01 |
-| 27. 1.21.0 stable baseline (SPLIT-00 gate) | 0/? | Not planned | — |
+| 26. worker-template hardening | 3/3 | Complete (merged PR #60, 46bb394) | 2026-06-01 |
+| 27. 1.21.0 stable baseline (SPLIT-00 gate) | 0/6 | Planned (2 waves) | — |
