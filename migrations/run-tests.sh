@@ -29,14 +29,36 @@ set -uo pipefail
 # ─── Resolve shared lib (D-28e source-and-keep) ──────────────────────────────
 # BASH_SOURCE[0] is this script's path; dirname gives migrations/; go up one
 # level to the repo root, then descend into vendor/agenticapps-shared.
-_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Canonicalize through any symlink (review finding 3): resolve BASH_SOURCE so an
+# invocation via a symlinked path/dir still anchors _SHARED_LIB at the real repo.
+# Portable on macOS/BSD (no `readlink -f`).
+_src="${BASH_SOURCE[0]}"
+while [ -h "$_src" ]; do
+  _dir="$(cd -P "$(dirname "$_src")" && pwd)"
+  _src="$(readlink "$_src")"
+  case "$_src" in /*) ;; *) _src="$_dir/$_src" ;; esac
+done
+_SCRIPT_DIR="$(cd -P "$(dirname "$_src")" && pwd)"
+unset _src _dir
 _SHARED_LIB="$_SCRIPT_DIR/../vendor/agenticapps-shared/migrations/lib"
 
+# Fail closed on a partial/stale submodule (review finding 1): a present dir with
+# a missing lib file would otherwise fail-open under `set -uo pipefail` (a failed
+# `source` does not abort without `set -e`) and run with wrong/stale helpers while
+# still printing a PASS/FAIL total. Verify the dir AND all four required libs.
 if [ ! -d "$_SHARED_LIB" ]; then
   echo "ERROR: agenticapps-shared submodule not initialized." >&2
   echo "Fix: git submodule update --init --recursive" >&2
   exit 1
 fi
+for _lib in helpers.sh fixture-runner.sh preflight.sh drift-test.sh; do
+  if [ ! -f "$_SHARED_LIB/$_lib" ]; then
+    echo "ERROR: agenticapps-shared submodule incomplete — missing $_lib." >&2
+    echo "Fix: git submodule update --init --recursive" >&2
+    exit 1
+  fi
+done
+unset _lib
 
 source "$_SHARED_LIB/helpers.sh"
 source "$_SHARED_LIB/fixture-runner.sh"
