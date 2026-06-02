@@ -72,6 +72,7 @@ done
 # Mirrors the split-trap shape in migrate-0019-sentry-crons-and-healthz.sh.
 # EXIT is silent (no cleanup output on normal harness exit).
 # INT → exit 130; TERM → exit 143.
+# SHARED — generic harness signal trap; any repo using this runner needs clean signal handling
 _runtests_cleanup_fired=0
 _runtests_do_cleanup() {
   [ "$_runtests_cleanup_fired" -eq 1 ] && return 0
@@ -85,10 +86,13 @@ trap '_runtests_do_cleanup; exit 143' TERM
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
+# SHARED — all helpers in this section are generic fixture-runner infrastructure;
+#   agenticapps-observability needs these to apply its own migrations.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Extract a file from a git ref into a temp path.
 # Usage: extract_to <ref> <path-in-repo> <output-path>
+# SHARED — generic git-ref extraction utility; repo-agnostic fixture setup
 extract_to() {
   local ref="$1" path="$2" out="$3"
   mkdir -p "$(dirname "$out")"
@@ -102,6 +106,7 @@ extract_to() {
 # Setup a fixture project at $1=tmpdir from git ref $2.
 # The fixture mimics a project's on-disk shape: maps scaffolder template
 # paths to project paths.
+# SHARED — generic fixture-runner harness; agenticapps-observability needs this to stand up test fixtures for its migrations
 setup_fixture() {
   local tmpdir="$1" ref="$2"
   extract_to "$ref" "templates/workflow-config.md"   "$tmpdir/.claude/workflow-config.md"   || return 1
@@ -130,6 +135,7 @@ EOF
 
 # Run an idempotency check shell snippet inside a fixture dir.
 # Returns the exit code of the check.
+# SHARED — generic pass/fail check runner; repo-agnostic harness primitive
 run_check() {
   local fixture="$1" check="$2"
   ( cd "$fixture" && eval "$check" >/dev/null 2>&1 )
@@ -141,6 +147,7 @@ run_check() {
 # Semantic: "applied" means the idempotency check returned 0 (skip — already done).
 #          "not-applied" means it returned ANY non-zero (please apply).
 # Numeric exit codes beyond 0 vs non-0 don't matter to the migration runtime.
+# SHARED — generic assertion helper; logs PASS/FAIL and increments counters; repo-agnostic
 assert_check() {
   local label="$1" check="$2" fixture="$3" expected="$4"
   run_check "$fixture" "$check"
@@ -164,6 +171,7 @@ assert_check() {
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Migration 0001 — Wire Go skill packs + impeccable + database-sentinel
+# WORKFLOW — verify body specific to migration 0001 content; stays in claude-workflow
 # ─────────────────────────────────────────────────────────────────────────────
 
 test_migration_0001() {
@@ -281,6 +289,7 @@ test_migration_0001() {
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Migration 0009 — Vendor CLAUDE.md workflow block
+# WORKFLOW — verify body specific to migration 0009 content; stays in claude-workflow
 # ─────────────────────────────────────────────────────────────────────────────
 #
 # Unlike 0001, 0009's fixtures are HAND-BUILT (not extracted from git refs).
@@ -473,6 +482,7 @@ test_migration_0009() {
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Migration 0010 — post-process GSD section markers in CLAUDE.md
+# WORKFLOW — verify body specific to migration 0010 content; stays in claude-workflow
 # ─────────────────────────────────────────────────────────────────────────────
 #
 # Unlike 0001 and 0009 (which exercise idempotency checks only), 0010 ships
@@ -786,6 +796,7 @@ EOF
 
 # ─────────────────────────────────────────────────────────────────────────────
 # test_migration_0005 — Multi-AI plan review enforcement (PreToolUse hook)
+# WORKFLOW — verify body specific to migration 0005 content; stays in claude-workflow
 # ─────────────────────────────────────────────────────────────────────────────
 #
 # Exercises every decision branch of templates/.claude/hooks/multi-ai-review-gate.sh
@@ -913,6 +924,7 @@ test_migration_0005() {
 
 # ─────────────────────────────────────────────────────────────────────────────
 # test_migration_0006 — LLM wiki compiler integration (install + rollback scripts)
+# WORKFLOW — verify body specific to migration 0006 content; stays in claude-workflow
 # ─────────────────────────────────────────────────────────────────────────────
 #
 # Exercises every decision branch of templates/.claude/scripts/install-wiki-compiler.sh
@@ -1040,6 +1052,7 @@ test_migration_0006() {
 
 # ─────────────────────────────────────────────────────────────────────────────
 # test_migration_0007 — GitNexus code-graph integration (setup-only)
+# WORKFLOW — verify body specific to migration 0007 content; stays in claude-workflow
 # ─────────────────────────────────────────────────────────────────────────────
 #
 # Exercises every decision branch of templates/.claude/scripts/install-gitnexus.sh
@@ -1161,6 +1174,7 @@ test_migration_0007() {
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Migration 0011 — Spec §10.9 observability enforcement (1.9.3 → 1.10.0)
+# WORKFLOW — verify body specific to migration 0011 content; stays in claude-workflow
 # ─────────────────────────────────────────────────────────────────────────────
 # Migration 0011 is markdown-only (no install script). v1.10.0 ships
 # local-only enforcement — no CI workflow installed. The fixture pattern is
@@ -1264,6 +1278,7 @@ test_migration_0011() {
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Migration 0012 — Slash-command discovery wire-up
+# WORKFLOW — verify body specific to migration 0012 content; stays in claude-workflow
 # ─────────────────────────────────────────────────────────────────────────────
 # Same state-comparison pattern as 0011. Each fixture builds a sandboxed
 # $HOME with the scaffolder skill tree, a per-project workflow SKILL.md
@@ -1350,6 +1365,7 @@ test_migration_0012() {
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Migration 0013 — Auto-init + stale-vendored cleanup (closes cparx F1)
+# WORKFLOW — verify body specific to migration 0013 content; stays in claude-workflow
 # ─────────────────────────────────────────────────────────────────────────────
 # Same state-comparison pattern as 0011/0012. Each fixture builds a sandboxed
 # $HOME with the scaffolder skill tree + a stub init/INIT.md (the migration's
@@ -1440,6 +1456,7 @@ test_migration_0013() {
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Migration 0014 — Inject spec §11 canonical block (closes spec 0.4.0 §11)
+# WORKFLOW — verify body specific to migration 0014 content; stays in claude-workflow
 # ─────────────────────────────────────────────────────────────────────────────
 # Same state-comparison pattern as 0013. Each fixture builds a sandboxed
 # $HOME with the scaffolder skill tree + a stub vendored §11 block (the
@@ -1536,6 +1553,7 @@ test_migration_0014() {
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Migration 0015 — Scaffold ts-declare-first skill (closes spec 0.4.0 §13)
+# WORKFLOW — verify body specific to migration 0015 content; stays in claude-workflow
 # ─────────────────────────────────────────────────────────────────────────────
 # Same state-comparison pattern as 0013/0014. Each fixture builds a
 # sandboxed $HOME with the scaffolder skill tree containing a stub
@@ -1629,6 +1647,7 @@ test_migration_0015() {
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Migration 0017 — Adopt Axiom logs destination on existing v0.4.x wrappers
+# WORKFLOW — verify body specific to migration 0017 content; stays in claude-workflow
 # ─────────────────────────────────────────────────────────────────────────────
 # UNLIKE the idempotency-only migrations (0014/0015), 0017 ships an executable
 # apply engine (templates/.claude/scripts/migrate-0017-axiom-destination.sh)
@@ -1733,6 +1752,8 @@ test_migration_0017() {
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Preflight-correctness audit (Phase 13)
+# SHARED — generic verify-path auditor; walks migration frontmatter and checks
+#   requires[*].verify paths on the host; repo-agnostic mechanism
 # ─────────────────────────────────────────────────────────────────────────────
 # Walks every migration and executes each `requires[*].verify` shell command
 # against the host environment. Informational only — failures DO NOT add to
@@ -1831,6 +1852,7 @@ PY
 
 # ─────────────────────────────────────────────────────────────────────────────
 # test_migration_0016 — Review gate phase-resolution fix (ADR 0025)
+# WORKFLOW — verify body specific to migration 0016 content; stays in claude-workflow
 # ─────────────────────────────────────────────────────────────────────────────
 # The resolver behavior is exercised in detail by fixtures 14/15/16 under
 # test-fixtures/0005 (run by test_migration_0005 — they share the hook script).
@@ -1878,6 +1900,8 @@ test_migration_0016() {
 
 # ─────────────────────────────────────────────────────────────────────────────
 # meta.yaml ↔ adapter role-table consistency (Phase 21 / P4.3)
+# WORKFLOW — checks observability-specific meta.yaml/registry role tables;
+#   these are tied to this repo's add-observability templates, not generic infra
 # ─────────────────────────────────────────────────────────────────────────────
 #
 # `init` (add-observability/init/INIT.md) is an agent-followed markdown runbook,
@@ -1893,6 +1917,7 @@ test_migration_0016() {
 
 # Extract "sentry=errors,logs;axiom=logs,analytics" from a TS registry.ts
 # ADAPTER_SUPPORTED_ROLES block or a Go adapterSupportedRoles map.
+# WORKFLOW — helper for test_meta_destinations_consistency; parses observability-specific adapter tables
 _roles_from_adapter() {
   local file="$1"
   # Scope to the role table ONLY (not the ADAPTER_FACTORIES map, which also has
@@ -1919,6 +1944,7 @@ _roles_from_adapter() {
 
 # Extract "sentry=errors,logs;axiom=logs,analytics" from a meta.yaml
 # destinations.roles_supported block.
+# WORKFLOW — helper for test_meta_destinations_consistency; parses observability-specific meta.yaml
 _roles_from_meta() {
   local file="$1"
   awk '
@@ -1985,6 +2011,7 @@ test_meta_destinations_consistency() {
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Migration 0018 — Post-phase observability scan hook (advisory)
+# WORKFLOW — verify body specific to migration 0018 content; stays in claude-workflow
 # ─────────────────────────────────────────────────────────────────────────────
 # Like 0014/0015 this is an idempotency-only migration (no apply engine). The
 # fixtures probe the three steps' idempotency checks on pre-apply (01) and
@@ -2061,6 +2088,7 @@ test_migration_0018() {
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Migration 0019 — Sentry Crons withCronMonitor + healthz snippets
+# WORKFLOW — verify body specific to migration 0019 content; stays in claude-workflow
 # ─────────────────────────────────────────────────────────────────────────────
 # Same harness shape as test_migration_0017 / 0018: per-fixture setup.sh
 # materialises a synthetic v1.17.0 project; per-fixture verify.sh invokes the
@@ -2147,6 +2175,7 @@ test_migration_0019() {
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Migration 0021 — re-rev cron-monitor + add queue-monitor (v1.19.0→1.20.0)
+# WORKFLOW — verify body specific to migration 0021 content; stays in claude-workflow
 # ─────────────────────────────────────────────────────────────────────────────
 
 test_migration_0021() {
@@ -2205,6 +2234,14 @@ test_migration_0021() {
 # ─────────────────────────────────────────────────────────────────────────────
 # F4 — SKILL.md version drift test (D-06 / G4)
 # Asserts skill/SKILL.md version equals the highest-numbered migration's to_version.
+# SHARED — drift-test RUNNER mechanism: the generic grep+awk pattern for comparing
+#   a SKILL.md version field against the latest migration to_version is reusable
+#   by any repo with the same migration discipline.
+#   POLICY NOTE (ADR-0035): the specific coupling rule enforced here —
+#   "SKILL.md version == latest migration to_version" — is a WORKFLOW-owned policy,
+#   not a repo-agnostic invariant. It encodes claude-workflow's versioning-tracks-
+#   migrations discipline. SPLIT-01 may extract the runner mechanism, but the
+#   version-coupling rule stays owned by the consumer repo. See ADR-0035.
 # ─────────────────────────────────────────────────────────────────────────────
 
 test_skill_md_version_matches_latest_migration_to_version() {
@@ -2238,6 +2275,8 @@ test_skill_md_version_matches_latest_migration_to_version() {
 #   Case 2 — silent-on-success: EXIT trap emits NO "cleanup" output on exit 0.
 #   Case 3 — no secret leak: SIGTERM stderr has no SENTRY_DSN/API_KEY/TOKEN.
 #   Case 4 — path validation: /etc/passwd rejected (exit 2), allow-listed OK.
+# WORKFLOW — tests the specific migrate-0019-sentry-crons-and-healthz.sh engine;
+#   hardcoded to migration 0019's apply script path; stays in claude-workflow
 # ─────────────────────────────────────────────────────────────────────────────
 
 test_sigterm_mid_apply_preserves_state() {
@@ -2422,6 +2461,9 @@ EOF
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Dispatcher
+# SHARED — generic filter-driven test dispatcher; the if/FILTER pattern is
+#   repo-agnostic framework machinery; consumer repos replace the per-migration
+#   calls with their own test functions while keeping this dispatch shape
 # ─────────────────────────────────────────────────────────────────────────────
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "0001" ]; then
