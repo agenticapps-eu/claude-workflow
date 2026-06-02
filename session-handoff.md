@@ -1,53 +1,33 @@
 # Session Handoff — 2026-06-02
 
 ## Accomplished
-
-- Executed plan 28-03 (consumer wiring — Wave 2 of SPLIT-01)
-- Created feature branch `split-01-agenticapps-shared` off `plan/28-split-01`
-- Added `vendor/agenticapps-shared` git submodule pinned by gitlink SHA `1f5d543bc6ca080ab6e3ba188df33cf3d193e3d4` (A4 verified via `git ls-files -s`)
-- Refactored `migrations/run-tests.sh` to source shared lib (D-28e source-and-keep); rebuilt `setup_fixture` as WORKFLOW wrapper (A1); replaced `test_preflight_verify_paths` and `test_skill_md_version_matches_...` with thin policy wrappers
-- Confirmed `PASS=186 FAIL=4` hard gate preserved exactly; drift test PASS
-- Proved A3 stale-gitlink advance: rewound submodule to HEAD~1, ran install.sh, confirmed it advanced back to `1f5d543`
-- Proved A6 GSD non-regression: gsd-tools outputs byte-identical before/after refactor
-- Updated `install.sh` with submodule sync+update block (A3)
-- Added `[Unreleased] — SPLIT-01` section to `CHANGELOG.md`
-- Pushed branch and opened **PR #65** to main with concrete body (A7)
-- Created `28-03-SUMMARY.md`, updated `STATE.md` and `ROADMAP.md`
+- Executed **Phase 28 (SPLIT-01)** end-to-end across two repos — `/gsd-execute-phase 28`.
+- **Wave 1 / 28-01:** carved SHARED migration harness into `agenticapps-shared/migrations/lib/{helpers,fixture-runner,preflight,drift-test}.sh` (A1: only `extract_to` shared, `setup_fixture` stays WORKFLOW; A5: `${STRICT_PREFLIGHT:-0}` set-u safe; D-28d drift mechanism/policy split). ADR-0035 amended (9→8 SHARED). 3 commits in agenticapps-shared.
+- **Wave 1 / 28-02:** standalone suite (12/0) proving extract_to real-ref + preflight strict/non-strict + set-u; CHANGELOG provenance; tagged **v1.0.0** @ `1f5d543` (canonical pin SHA, A4).
+- Pushed `agenticapps-shared` main + v1.0.0 to GitHub (user-authorized release).
+- **Wave 2 / 28-03 (checkpoint plan):** claude-workflow consumes the submodule at `vendor/agenticapps-shared` (gitlink == `1f5d543`); run-tests.sh source-and-keep refactor; setup_fixture wrapper (A1); install.sh A3. **Hard gate held: PASS=186 FAIL=4.** Opened PR #65.
+- **Review:** gstack `/review` + codex cross-model on the diff. 3 edge-case findings → all hardened in `096f35f` (fail-closed lib check, install.sh non-git guard, symlink-safe path). Re-verified 186/4.
+- **Fresh-clone verification** (SC-2) passed: clean `--recurse-submodules` clone runs 186/4 at pinned SHA.
+- **Merged PR #65** (squash `aa1d60f`) to main; deleted feature branch.
+- **Close-out:** gsd-verifier PASS 9/9 → `28-VERIFICATION.md`; ROADMAP/STATE phase 28 complete. Opened **PR #66** (bookkeeping).
 
 ## Decisions
-
-- A4 gitlink pin is the superproject gitlink SHA (not `git describe --tags`) — verified via `git ls-files -s vendor/agenticapps-shared`
-- A1: `setup_fixture` stays in run-tests.sh as WORKFLOW wrapper, not in shared (codex HIGH, user-locked)
-- A3: `install.sh` always runs sync+update when `.gitmodules` exists — no VERSION-missing guard
-- A6 narrowed: captured `gsd-tools state` + `list-todos` (volatile timestamps stripped); diff empty
+- Wave 1 run sequentially on main tree (no worktree) — 28-02 depends on 28-01's lib AND both write the un-isolated `agenticapps-shared` repo. Worktree isolation would not have helped.
+- Submodule pinned by **gitlink SHA** (A4); tag v1.0.0 is provenance only.
+- Applied all 3 codex review findings before merge (user chose "apply all 3").
+- Close-out docs go via PR #66, not direct-to-main (global rule).
 
 ## Files modified
-
-- `.gitmodules` — submodule declaration (new)
-- `vendor/agenticapps-shared` — gitlink at 1f5d543 (new)
-- `migrations/run-tests.sh` — sourcing block + WORKFLOW wrappers (refactored)
-- `install.sh` — submodule sync+update block added
-- `CHANGELOG.md` — [Unreleased] SPLIT-01 section added
-- `.planning/phases/28-split-01-agenticapps-shared/28-03-SUMMARY.md` — created
-- `.planning/STATE.md` — decisions + session update
-- `.planning/ROADMAP.md` — plan progress updated
+- `migrations/run-tests.sh` — sources shared lib + setup_fixture wrapper + policy wrappers + hardening.
+- `install.sh` — submodule sync+update (A3) + non-git guard.
+- `.gitmodules`, `vendor/agenticapps-shared` (gitlink), `CHANGELOG.md`, `docs/decisions/0035-*.md`.
+- `agenticapps-shared` repo: `migrations/lib/*.sh`, `tests/run-tests.sh`, `_example` fixtures, CHANGELOG/README/VERSION, tag v1.0.0.
+- `.planning/`: 28-0{1,2,3}-SUMMARY, 28-VERIFICATION, ROADMAP, STATE.
 
 ## Next session: start here
-
-Plan 28-03 is at **Task 4 (human checkpoint)**. The PR #65 is open at
-https://github.com/agenticapps-eu/claude-workflow/pull/65 on branch `split-01-agenticapps-shared`.
-
-Human must:
-1. Fresh-clone verify: `git clone --recurse-submodules <remote> /tmp/cw-fresh && [ -f /tmp/cw-fresh/vendor/agenticapps-shared/migrations/lib/helpers.sh ] && echo OK`
-2. A4 confirm: `git -C /tmp/cw-fresh ls-tree HEAD vendor/agenticapps-shared` → 3rd field must equal `1f5d543bc6ca080ab6e3ba188df33cf3d193e3d4`
-3. Baseline: `bash migrations/run-tests.sh` in fresh clone → `PASS: 186  FAIL: 4`
-4. Run `/gsd-review` (codex cross-AI, D-28f) and `/review` on the PR diff
-5. Merge PR #65 when satisfied
-
-After merge: branch `split-01-agenticapps-shared` can be deleted. Phase 28 SPLIT-01 is complete.
-Next planned work is SPLIT-02 (agenticapps-observability) per `SPLIT-02-agenticapps-observability.md`.
+**Merge PR #66** (close-out bookkeeping) to finalize phase 28 records on main. Then Phase 28 is fully closed. Next roadmap item is **Phase 29 (SPLIT-02)** — extract observability to `agenticapps-observability` (skill rename `add-observability`→`observability`, starts 0.11.0, folds deferred obs fixes incl. `RESEARCH-cron-monitor-flush-fxsa.md`). Begin with `/gsd-plan-phase 29` (CONTEXT lives in `SPLIT-02-agenticapps-observability.md`).
 
 ## Open questions
-
-- None blocking. The 4 pre-existing FAIL in test_migration_0017 remain FIX-0017-ENGINE scope (separate).
-- `session-handoff.md` and the 3 untracked root noise files (FIX-0017-ENGINE.md, RESEARCH-cron-monitor-flush-fxsa.md, SPLIT-02-agenticapps-observability.md) are out of scope and NOT committed.
+- Optional: `/gsd-secure-phase 28` — low value (bash harness + submodule, no auth/storage/API/LLM surface); skipped by judgment.
+- `agenticapps-shared` is still **private**; go-public + LICENSE deferred until SPLIT-01 verified clean (now is — revisit before SPLIT-02 consumers).
+- Pre-existing untracked root noise (`FIX-0017-ENGINE.md`, `RESEARCH-cron-monitor-flush-fxsa.md`, `SPLIT-02-agenticapps-observability.md`) — decide commit/gitignore/relocate during SPLIT-02 planning.
