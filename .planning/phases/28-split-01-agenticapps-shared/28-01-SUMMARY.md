@@ -27,12 +27,12 @@ key_files:
     - ~/Sourcecode/agenticapps/agenticapps-shared/migrations/lib/preflight.sh
     - ~/Sourcecode/agenticapps/agenticapps-shared/migrations/lib/drift-test.sh
   modified:
-    - docs/decisions/0035-shared-extraction-boundaries.md (staged, uncommitted — 28-03 commits)
-    - migrations/run-tests.sh (staged, uncommitted — 28-03 commits; annotation-only)
+    - docs/decisions/0035-shared-extraction-boundaries.md (committed in fac4c7b with metadata)
+    - migrations/run-tests.sh (committed in fac4c7b with metadata; annotation-only, body unchanged)
 decisions:
   - "A1 boundary enforced: only extract_to goes to shared; setup_fixture stays in claude-workflow as WORKFLOW wrapper (built in 28-03)"
   - "agenticapps-shared lib files committed individually per task (not held staged for 28-02 — either approach works; 28-02 adds test/CHANGELOG then tags v1.0.0)"
-  - "claude-workflow ADR-0035 + run-tests.sh annotation staged but uncommitted — 28-03 folds them into its commit"
+  - "claude-workflow ADR-0035 + run-tests.sh annotation committed in fac4c7b (metadata commit) — 28-03 still performs the behavioral refactor (submodule pin, source-and-keep)"
 metrics:
   duration_seconds: 454
   completed_date: "2026-06-02"
@@ -106,11 +106,11 @@ Neither repo pushed. No tag created (that is plan 28-02's job).
 
 **agenticapps-shared (`main`):** All four lib files committed. `.gitkeep` still present alongside new files. Clean working tree — ready for 28-02 to add `tests/run-tests.sh` (standalone suite), update CHANGELOG/VERSION, and cut tag `v1.0.0`.
 
-**claude-workflow (`plan/28-split-01`):** Two files staged but uncommitted:
-- `docs/decisions/0035-shared-extraction-boundaries.md` — ADR-0035 amended (setup_fixture demoted to WORKFLOW)
-- `migrations/run-tests.sh` — annotation-only: line 109 now reads `# WORKFLOW — claude-workflow wrapper (A1)...`
+**claude-workflow (`plan/28-split-01`):** Both files committed in metadata commit `fac4c7b`:
+- `docs/decisions/0035-shared-extraction-boundaries.md` — ADR-0035 amended (setup_fixture demoted to WORKFLOW, A1 amendment section added, count updated 9→8 SHARED / 20→21 WORKFLOW)
+- `migrations/run-tests.sh` — annotation-only: line 109 now reads `# WORKFLOW — claude-workflow wrapper (A1)...` (no behavior change; PASS=186 FAIL=4 confirmed)
 
-Plan 28-03 will commit these as part of its submodule-pin + source-and-keep refactor commit.
+Plan 28-03 still performs the behavioral refactor (submodule pin, source-and-keep rewrite). Clean working tree on both repos — no uncommitted plan changes remain.
 
 ## GitNexus Impact Analysis Note
 
@@ -150,5 +150,6 @@ No new network endpoints, auth paths, file access patterns, or schema changes in
 | agenticapps-shared commit 6a665a6 | FOUND |
 | agenticapps-shared commit db57874 | FOUND |
 | agenticapps-shared commit 25303e2 | FOUND |
-| claude-workflow ADR-0035 staged | FOUND (docs/decisions/0035-shared-extraction-boundaries.md) |
-| claude-workflow run-tests.sh staged | FOUND (migrations/run-tests.sh) |
+| claude-workflow ADR-0035 committed (fac4c7b) | FOUND |
+| claude-workflow run-tests.sh committed (fac4c7b) | FOUND |
+| claude-workflow working tree clean | CONFIRMED |
