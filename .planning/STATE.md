@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.19.0
 milestone_name: migration
 status: executing
-stopped_at: Completed 28-01-PLAN.md — four lib files carved to agenticapps-shared, ADR-0035 amended + run-tests.sh annotation staged in claude-workflow
-last_updated: "2026-06-02T17:28:20.763Z"
+stopped_at: Completed 28-02-PLAN.md — standalone suite GREEN, v1.0.0 tagged at 1f5d543bc6ca080ab6e3ba188df33cf3d193e3d4; push pending user action
+last_updated: "2026-06-02T17:45:18.458Z"
 last_activity: 2026-06-02
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 17
-  completed_plans: 15
-  percent: 88
+  completed_plans: 16
+  percent: 94
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/ROADMAP.md (single-row stub, 2026-05-31 — Phase 25 + Phase 26 p
 
 Milestone: repo-split (cooling-off WAIVED 2026-06-02)
 Phase: 28 (split-01-agenticapps-shared) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 
   - /gsd-review done: gemini LOW, codex HIGH (caught 4 structural blind-spots the same-LLM checker missed). All findings A1-A7 in 28-REVIEWS.md.
@@ -70,6 +70,9 @@ Recent decisions affecting current work:
 - [Phase 27]: A2 invariant: SKILL.md stays 1.20.0, drift test GREEN, no migration — git tag v1.21.0 deferred to ship time after PR merge
 - [Phase 28-split-01-agenticapps-shared]: A1 boundary enforced: only extract_to shared; setup_fixture stays as claude-workflow WORKFLOW wrapper (built in 28-03); ADR-0035 amended 9->8 SHARED / 20->21 WORKFLOW
 - [Phase 28-split-01-agenticapps-shared]: preflight reads ${STRICT_PREFLIGHT:-0} internally (A5 set -u safe); drift-test returns 0/1 only, no PASS/FAIL mutation (D-28d policy separation)
+- [Phase 28-split-01-agenticapps-shared]: A2 gate honored: standalone suite proven GREEN before v1.0.0 tag (PASS=12 FAIL=0)
+- [Phase 28-split-01-agenticapps-shared]: A4 pin artifact: canonical pin SHA is 1f5d543bc6ca080ab6e3ba188df33cf3d193e3d4 (v1.0.0 tag); recorded in SUMMARY; 28-03 gitlink must equal this SHA
+- [Phase 28-split-01-agenticapps-shared]: SHA-in-CHANGELOG chicken-and-egg: SHA lives in tag annotation + SUMMARY, not CHANGELOG text (amend cycle is irresolvable)
 
 ### Roadmap Evolution
 
@@ -87,7 +90,7 @@ None tracked yet — todo system not initialized at project level.
 
 ## Session Continuity
 
-Last session: 2026-06-02T17:28:20.760Z
-Stopped at: Completed 28-01-PLAN.md — four lib files carved to agenticapps-shared, ADR-0035 amended + run-tests.sh annotation staged in claude-workflow
+Last session: 2026-06-02T17:45:18.455Z
+Stopped at: Completed 28-02-PLAN.md — standalone suite GREEN, v1.0.0 tagged at 1f5d543bc6ca080ab6e3ba188df33cf3d193e3d4; push pending user action
 Resume file: None
 Next action: `/gsd-execute-phase 28`. Execution acts on TWO repos: Wave 1 (28-01,28-02) autonomous on `~/Sourcecode/agenticapps/agenticapps-shared` — carve lib (helpers/fixture-runner[extract_to only]/preflight/drift-test), broadened standalone suite, ADR-0035 amendment, record release SHA, tag v1.0.0. Wave 2 (28-03) autonomous:false on claude-workflow feature branch `split-01-agenticapps-shared` — submodule pin by gitlink SHA, run-tests.sh source-and-keep refactor (setup_fixture rebuilt as wrapper), install.sh existing-clone fix, GSD before/after diff, PR; then human-verify checkpoint (fresh-clone test + /gsd-review on diff). HARD GATE: suite stays PASS=186 FAIL=4 exactly.
