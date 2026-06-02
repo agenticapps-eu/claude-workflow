@@ -4,7 +4,7 @@
 //
 // Composition chain (REQUIRED — codex HIGH-3 fix; see ADR-0030):
 //
-//   withSentry(env => ({...}))(
+//   withSentry(env => buildSentryOptions(env))(
 //     withObservabilityScheduled(           // ← calls init(env, ctx)
 //       withCronMonitor(                    // ← Sentry Crons heartbeat
 //         checkCredit,                      // ← the handler
@@ -29,6 +29,7 @@
 import { withSentry } from "@sentry/cloudflare";
 import { withObservabilityScheduled } from "./observability/middleware";
 import { withCronMonitor } from "./observability/cron-monitor";
+import { buildSentryOptions } from "./observability";
 import { checkCredit } from "./check-credit";
 
 // Env extends Record<string, unknown> so it's compatible with the generic
@@ -43,24 +44,11 @@ interface Env extends Record<string, unknown> {
   SERVICE_NAME?: string;
 }
 
-export default withSentry(
-  (env: Env) => ({
-    dsn: env.SENTRY_DSN,
-    // Default to "dev" (same as the wrapper's init() in observability/index.ts)
-    // so an unset DEPLOY_ENV during local `wrangler dev` doesn't pollute the
-    // "production" Sentry environment. The wrangler.toml [vars] block sets
-    // "production" explicitly for real deploys.
-    environment: env.DEPLOY_ENV ?? "dev",
-    release: env.SERVICE_NAME ?? "openrouter-monitor",
-    tracesSampleRate: 0.1,
-    sendDefaultPii: false,
-  }),
-  {
-    scheduled: withObservabilityScheduled(
-      withCronMonitor(checkCredit, {
-        monitorSlug: "openrouter-credit-check",
-        handlerName: "scheduled",
-      }),
-    ),
-  } as ExportedHandler<Env>,
-);
+export default withSentry((env: Env) => buildSentryOptions(env), {
+  scheduled: withObservabilityScheduled(
+    withCronMonitor(checkCredit, {
+      monitorSlug: "openrouter-credit-check",
+      handlerName: "scheduled",
+    }),
+  ),
+} as ExportedHandler<Env>);
