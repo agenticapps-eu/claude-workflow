@@ -1,8 +1,8 @@
 ---
 phase: 29
 slug: split-02-agenticapps-observability
-status: draft
-nyquist_compliant: false
+status: planned
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-06-02
 ---
@@ -46,17 +46,17 @@ created: 2026-06-02
 | Task ID | Plan | Wave | Deliverable | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
 | 29-01-xx | 01 | 1 | Repo + submodule | — | no `--force`; user-gated push | smoke | `gh repo view agenticapps-eu/agenticapps-observability --json url,visibility && git submodule status` | ❌ W0 | ⬜ pending |
-| 29-0x-xx | — | — | History — SKILL.md | — | N/A | smoke | `git log --follow --oneline -- SKILL.md \| head -5` | ❌ W0 | ⬜ pending |
-| 29-0x-xx | — | — | History — migrate-0019.sh | — | N/A | smoke | `git log --follow --oneline -- migrations/scripts/migrate-0019.sh \| head -3` | ❌ W0 | ⬜ pending |
-| 29-0x-xx | — | — | 0019 suite GREEN (13) | T-V5 | quoted paths | integration | `bash migrations/run-tests.sh 0019` → PASS=13 | ❌ W0 | ⬜ pending |
-| 29-0x-xx | — | — | 0021 suite GREEN (4) | T-V5 | quoted paths | integration | `bash migrations/run-tests.sh 0021` → PASS=4 | ❌ W0 | ⬜ pending |
-| 29-0x-xx | — | — | 0022 suite GREEN (new) | T-V5 | heredoc untrusted content | integration | `bash migrations/run-tests.sh 0022` → GREEN | ❌ W0 | ⬜ pending |
-| 29-0x-xx | — | — | Drift test PASS | — | correct obs SKILL.md path | integration | `bash migrations/run-tests.sh` → drift PASS | ❌ W0 | ⬜ pending |
-| 29-0x-xx | — | — | SKILL renamed | — | N/A | unit | `grep "^name: observability" SKILL.md && grep "^version: 0.11.0" SKILL.md` | ❌ W0 | ⬜ pending |
-| 29-0x-xx | — | — | `/observability` resolves | T-symlink | clobber-guard | smoke | `test -L ~/.claude/skills/observability && test -f ~/.claude/skills/observability/SKILL.md` | ❌ W0 | ⬜ pending |
-| 29-0x-xx | — | — | `/add-observability` alias resolves | T-symlink | clobber-guard | smoke | `test -L ~/.claude/skills/add-observability && test -f ~/.claude/skills/add-observability/SKILL.md` | ❌ W0 | ⬜ pending |
-| 29-0x-xx | — | — | Strict-Env generic NOT regressed (SC5/ADR-0032) | — | N/A | typecheck | `cd templates/ts-cloudflare-worker && npx vitest run cron-monitor.test.ts` | ❌ W0 | ⬜ pending |
-| 29-0x-xx | — | — | Immediate-flush regression test (FXSA-WORKERS-6) | — | N/A | unit | `cd templates/ts-cloudflare-worker && npx vitest run cron-monitor.test.ts` (new case) | ❌ W0 | ⬜ pending |
+| 29-02 | 02 | 2 | History — SKILL.md | — | N/A | smoke | `git log --follow --oneline -- SKILL.md \| head -5` | ❌ W0 | ⬜ pending |
+| 29-02 | 02 | 2 | History — migrate-0019.sh | — | N/A | smoke | `git log --follow --oneline -- migrations/scripts/migrate-0019.sh \| head -3` | ❌ W0 | ⬜ pending |
+| 29-03 | 03 | 3 | 0019 suite GREEN (13) | T-V5 | quoted paths | integration | `bash migrations/run-tests.sh 0019` → PASS=13 | ❌ W0 | ⬜ pending |
+| 29-03 | 03 | 3 | 0021 suite GREEN (4) | T-V5 | quoted paths | integration | `bash migrations/run-tests.sh 0021` → PASS=4 | ❌ W0 | ⬜ pending |
+| 29-04 | 04 | 4 | 0022 suite GREEN (new) | T-V5 | heredoc untrusted content | integration | `bash migrations/run-tests.sh 0022` → GREEN | ❌ W0 | ⬜ pending |
+| 29-05 | 05 | 5 | Drift test PASS | — | correct obs SKILL.md path | integration | `bash migrations/run-tests.sh` → drift PASS | ❌ W0 | ⬜ pending |
+| 29-03 | 03 | 3 | SKILL renamed | — | N/A | unit | `grep "^name: observability" SKILL.md && grep "^version: 0.11.0" SKILL.md` | ❌ W0 | ⬜ pending |
+| 29-03 | 03 | 3 | `/observability` resolves | T-symlink | clobber-guard | smoke | `test -L ~/.claude/skills/observability && test -f ~/.claude/skills/observability/SKILL.md` | ❌ W0 | ⬜ pending |
+| 29-03 | 03 | 3 | `/add-observability` alias resolves | T-symlink | clobber-guard | smoke | `test -L ~/.claude/skills/add-observability && test -f ~/.claude/skills/add-observability/SKILL.md` | ❌ W0 | ⬜ pending |
+| 29-04 | 04 | 4 | Strict-Env generic NOT regressed (SC5/ADR-0032) | — | N/A | typecheck | `cd templates/ts-cloudflare-worker && npx vitest run cron-monitor.test.ts` | ❌ W0 | ⬜ pending |
+| 29-04 | 04 | 4 | Immediate-flush regression test (FXSA-WORKERS-6) | — | N/A | unit | `cd templates/ts-cloudflare-worker && npx vitest run cron-monitor.test.ts` (new case) | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
