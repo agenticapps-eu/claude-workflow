@@ -136,3 +136,19 @@ Both reviewers agree the **implementation** risk is low — small, well-bounded,
 | 5 | 27-02 | Relabel as coverage-add OR document the RED-is-ritual limitation; tighten WR-03 acceptance to exact files/test names | both | low |
 | 6 | 27-06 | Preserve empty `[Unreleased]` after cutting `[1.21.0]` | codex | trivial |
 | 7 | 27-05 | Confirm whether `.byte-symmetry.snapshot` should be committed or gitignored | codex | trivial |
+
+---
+
+## Resolution — all 7 applied (2026-06-02, pre-execution)
+
+User accepted all 7 recommended edits. Applied directly to the unexecuted plans (phase at 0/6):
+
+1. **27-01** — Firewall acceptance/verify rewritten content-based: exactly 4 `|| echo "0"` lines (all `grep -oE`), zero `grep -c … || echo "0"`, 633-634 use `|| true`. Line-number assertions removed everywhere (incl. frontmatter truth + `<verification>`). Immune to line shifts.
+2. **27-05** — GitNexus impact target changed `withSentry` → `buildSentryOptions` (repo-owned symbol; `withSentry` is an imported library API). Updated read_first, `<manual>` detect-changes scope, and `<done>`.
+3. **27-03 / 27-06** — Added a `## Versioning policy` section to PROJECT.md defining standardized terms **release/baseline tag `v1.21.0`** vs **migration-coupled skill version `1.20.0`**; renumbered sections; added acceptance grep for the terms; instructed STATE/ROADMAP (27-03 Task 2) and the CHANGELOG note (27-06) to reuse the terminology.
+4. **27-04** — SPLIT-00 gains a downstream-evidence rule (record source tag + commit SHA; installed SKILL.md explicitly NOT proof of 1.21.0). ADR-0035 + run-tests.sh annotations now separate SHARED *mechanism* (drift-test runner) from repo-specific *policy* (the version-coupling rule). Added matching acceptance criteria.
+5. **27-02** — Recast from strict TDD to **coverage-add**: `type: tdd`→`execute`, both tasks de-TDD'd. The deliberately-false `.not.toBe(0.1)` RED is removed; test sensitivity is now proven via a temporary, uncommitted local impl mutation (reverted). Acceptance tightened to the 3 exact files + named tests (no broad recursive grep) + asserts no committed false assertion. VALIDATION.md Wave-0 + sign-off + the WR-03 row updated to match; ROADMAP plan-list line updated.
+6. **27-06** — Task 1 now preserves an empty `## [Unreleased]` header after cutting `[1.21.0]`, and notes SPLIT-00 stays blocked until the `v1.21.0` tag exists on `main`. Added acceptance grep.
+7. **27-05** — `.byte-symmetry.snapshot` declared ephemeral: gitignore it (added `add-observability/templates/.gitignore` to `files_modified`), never commit; acceptance asserts `git status --porcelain` is clean for it.
+
+Also corrected the WR-04 row in VALIDATION.md from "`diff -q` symmetry empty" to "snapshot-before/after UNCHANGED" (the pair is token-substituted with known drift — raw diff is non-empty by design).

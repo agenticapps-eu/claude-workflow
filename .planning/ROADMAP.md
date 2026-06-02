@@ -108,7 +108,7 @@ Plans:
 
 Plans:
 - [ ] 27-01-PLAN.md — Wave 1: WR-01 (go-test counter) + WR-02 (supabase-edge _resetForTest cleanup)
-- [ ] 27-02-PLAN.md — Wave 1 (tdd): WR-03 buildSentryOptions direct unit tests × 3 stacks (RED→GREEN)
+- [ ] 27-02-PLAN.md — Wave 1: WR-03 buildSentryOptions direct unit coverage × 3 stacks (coverage-add + local sensitivity proof)
 - [ ] 27-03-PLAN.md — Wave 1: canonical PROJECT.md (D-05) + STATE/ROADMAP drift refresh (D-08)
 - [ ] 27-04-PLAN.md — Wave 1: run-tests.sh SHARED/WORKFLOW annotations + ADR-0035 + SPLIT-01 correction + SPLIT-00 pin-by-tag fix (B1, D-06/D-07c)
 - [ ] 27-05-PLAN.md — Wave 2 (depends 02): WR-04 openrouter entry uses buildSentryOptions(env); byte-symmetry re-verify

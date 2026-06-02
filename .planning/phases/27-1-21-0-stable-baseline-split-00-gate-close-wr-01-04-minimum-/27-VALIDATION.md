@@ -45,10 +45,10 @@ created: 2026-06-02
 
 | Deliverable | Wave | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |-------------|------|------------|-----------------|-----------|-------------------|-------------|--------|
-| WR-01 (go-test counter) | 1 | — | N/A | grep | `grep -n '\|\| echo "0"' add-observability/templates/run-template-tests.sh` → only lines 128/130/558/559; 633-634 clean | ✅ | ⬜ pending |
+| WR-01 (go-test counter) | 1 | — | N/A | grep | CONTENT-BASED: exactly 4 `\|\| echo "0"` lines, all `grep -oE`; zero `grep -c … \|\| echo "0"`; 633-634 use `\|\| true` (immune to line-number shifts) | ✅ | ⬜ pending |
 | WR-02 (`_resetForTest()` in finally) | 1 | — | test isolation, no state bleed | unit | `bash add-observability/templates/run-template-tests.sh` (supabase-edge GREEN) + grep `_resetForTest` | ✅ | ⬜ pending |
-| WR-03 (buildSentryOptions tests ×3, tdd) | 1 | — | N/A | unit (RED→GREEN) | template vitest exit 0; `grep -rl buildSentryOptions` finds 3 test files; assertions per RESEARCH Blocker-C | ❌ W0 | ⬜ pending |
-| WR-04 (entry uses helper; byte-symmetry) | 2 | T-27-redaction* | REDACTED_KEYS path preserved via shared helper | unit + diff | grep `buildSentryOptions(env)` in `src/index.ts`; no hardcoded `tracesSampleRate: 0.1`; `diff -q` symmetry empty | ✅ | ⬜ pending |
+| WR-03 (buildSentryOptions coverage ×3) | 1 | — | N/A | unit (coverage + local sensitivity proof) | template vitest exit 0; each of the 3 named test files has a `describe("buildSentryOptions"` block; assertions per RESEARCH Blocker-C; no committed false assertion | ✅ | ⬜ pending |
+| WR-04 (entry uses helper; byte-symmetry) | 2 | T-27-redaction* | REDACTED_KEYS path preserved via shared helper | unit + diff | grep `buildSentryOptions(env)` in `src/index.ts`; no hardcoded `tracesSampleRate: 0.1`; snapshot-before vs after UNCHANGED by WR-04 (NOT raw `diff -q` empty — pair is token-substituted with known drift) | ✅ | ⬜ pending |
 | PROJECT.md | 1 | — | N/A | file | `test -f .planning/PROJECT.md` + required sections present | ✅ | ⬜ pending |
 | Boundary ADR-0035 | 1 | — | N/A | file+grep | `test -f docs/decisions/0035-*.md`; `grep '# SHARED\|# WORKFLOW' migrations/run-tests.sh` | ✅ | ⬜ pending |
 | Version A2 (tag + CHANGELOG) | 2 | — | N/A | drift | `bash migrations/run-tests.sh` drift test PASS (SKILL.md unchanged at 1.20.0); CHANGELOG has `## [1.21.0]` | ✅ | ⬜ pending |
@@ -62,7 +62,7 @@ created: 2026-06-02
 
 ## Wave 0 Requirements
 
-- [ ] WR-03 tdd: `buildSentryOptions` test files must be observably RED before implementation (RED commit is the §06 evidence). No new framework — vitest already present in the openrouter-monitor template.
+- [ ] WR-03 sensitivity (NOT strict TDD — codex review): prove the new `buildSentryOptions` tests are non-vacuous via a TEMPORARY, uncommitted local mutation of the helper (the failing run is the §06 evidence), then revert. No deliberately-false assertion is committed. No new framework — vitest already present in the openrouter-monitor template.
 
 *All other deliverables verify against existing infrastructure (worker-template harness, migration drift test, file/grep checks).*
 
@@ -81,7 +81,7 @@ created: 2026-06-02
 
 - [ ] All tasks have `<automated>` verify or Wave 0 dependencies
 - [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers WR-03 tdd RED evidence
+- [ ] WR-03 sensitivity proof captured (uncommitted local mutation, reverted); no committed false assertion
 - [ ] No watch-mode flags
 - [ ] Feedback latency < 120s
 - [ ] `nyquist_compliant: true` set in frontmatter
