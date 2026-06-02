@@ -4,7 +4,7 @@ milestone: v1.19.0
 milestone_name: migration
 status: verifying
 stopped_at: "Checkpoint Task 4: PR #65 open — awaiting human verify (fresh-clone + /gsd-review + merge)"
-last_updated: "2026-06-02T18:02:53.824Z"
+last_updated: "2026-06-02T18:43:20.344Z"
 last_activity: 2026-06-02
 progress:
   total_phases: 6
@@ -27,8 +27,8 @@ See: .planning/ROADMAP.md (single-row stub, 2026-05-31 — Phase 25 + Phase 26 p
 ## Current Position
 
 Milestone: repo-split (cooling-off WAIVED 2026-06-02)
-Phase: 28 (split-01-agenticapps-shared) — EXECUTING
-Plan: 3 of 3
+Phase: 29
+Plan: Not started
 Status: Phase complete — ready for verification
 
   - /gsd-review done: gemini LOW, codex HIGH (caught 4 structural blind-spots the same-LLM checker missed). All findings A1-A7 in 28-REVIEWS.md.

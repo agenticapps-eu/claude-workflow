@@ -1,36 +1,53 @@
 # Session Handoff — 2026-06-02
 
 ## Accomplished
-- Executed plan 28-01 (carve shared migration lib into agenticapps-shared)
-- Created four lib files in agenticapps-shared/migrations/lib/: helpers.sh, fixture-runner.sh, preflight.sh, drift-test.sh — all sourcing cleanly under `set -uo pipefail`
-- Enforced A1: only `extract_to` shared; `setup_fixture` stays as claude-workflow WORKFLOW wrapper
-- Enforced A5: `run_preflight_verify_paths` reads `${STRICT_PREFLIGHT:-0}` internally (set -u safe)
-- Enforced D-28d: `run_drift_test` returns 0/1 only, no PASS/FAIL mutation
-- Amended ADR-0035: setup_fixture demoted from SHARED to WORKFLOW (9→8 SHARED / 20→21 WORKFLOW)
-- Updated run-tests.sh annotation above setup_fixture from `# SHARED` to `# WORKFLOW`
-- Confirmed baseline unchanged: PASS=186 FAIL=4
-- Created SUMMARY.md; updated STATE.md (plan 2 of 3) and ROADMAP.md
+
+- Executed plan 28-03 (consumer wiring — Wave 2 of SPLIT-01)
+- Created feature branch `split-01-agenticapps-shared` off `plan/28-split-01`
+- Added `vendor/agenticapps-shared` git submodule pinned by gitlink SHA `1f5d543bc6ca080ab6e3ba188df33cf3d193e3d4` (A4 verified via `git ls-files -s`)
+- Refactored `migrations/run-tests.sh` to source shared lib (D-28e source-and-keep); rebuilt `setup_fixture` as WORKFLOW wrapper (A1); replaced `test_preflight_verify_paths` and `test_skill_md_version_matches_...` with thin policy wrappers
+- Confirmed `PASS=186 FAIL=4` hard gate preserved exactly; drift test PASS
+- Proved A3 stale-gitlink advance: rewound submodule to HEAD~1, ran install.sh, confirmed it advanced back to `1f5d543`
+- Proved A6 GSD non-regression: gsd-tools outputs byte-identical before/after refactor
+- Updated `install.sh` with submodule sync+update block (A3)
+- Added `[Unreleased] — SPLIT-01` section to `CHANGELOG.md`
+- Pushed branch and opened **PR #65** to main with concrete body (A7)
+- Created `28-03-SUMMARY.md`, updated `STATE.md` and `ROADMAP.md`
 
 ## Decisions
-- A1 boundary enforced as user-locked: extract_to SHARED, setup_fixture WORKFLOW wrapper (28-03)
-- agenticapps-shared lib files committed individually (3 commits) rather than held staged — functionally equivalent for 28-02
-- ADR-0035 + run-tests.sh annotation committed in claude-workflow metadata commit fac4c7b (not deferred to 28-03 as originally planned — same diff, earlier commit)
+
+- A4 gitlink pin is the superproject gitlink SHA (not `git describe --tags`) — verified via `git ls-files -s vendor/agenticapps-shared`
+- A1: `setup_fixture` stays in run-tests.sh as WORKFLOW wrapper, not in shared (codex HIGH, user-locked)
+- A3: `install.sh` always runs sync+update when `.gitmodules` exists — no VERSION-missing guard
+- A6 narrowed: captured `gsd-tools state` + `list-todos` (volatile timestamps stripped); diff empty
 
 ## Files modified
-- `/Users/donald/Sourcecode/agenticapps/agenticapps-shared/migrations/lib/helpers.sh` — created (6a665a6 in agenticapps-shared)
-- `/Users/donald/Sourcecode/agenticapps/agenticapps-shared/migrations/lib/fixture-runner.sh` — created (db57874)
-- `/Users/donald/Sourcecode/agenticapps/agenticapps-shared/migrations/lib/preflight.sh` — created (25303e2)
-- `/Users/donald/Sourcecode/agenticapps/agenticapps-shared/migrations/lib/drift-test.sh` — created (25303e2)
-- `docs/decisions/0035-shared-extraction-boundaries.md` — amended (fac4c7b in claude-workflow)
-- `migrations/run-tests.sh` — annotation-only edit (fac4c7b)
-- `.planning/phases/28-split-01-agenticapps-shared/28-01-SUMMARY.md` — created (2d5fd27)
-- `.planning/STATE.md` — plan advanced to 2 of 3 (fac4c7b)
-- `.planning/ROADMAP.md` — updated (fac4c7b)
+
+- `.gitmodules` — submodule declaration (new)
+- `vendor/agenticapps-shared` — gitlink at 1f5d543 (new)
+- `migrations/run-tests.sh` — sourcing block + WORKFLOW wrappers (refactored)
+- `install.sh` — submodule sync+update block added
+- `CHANGELOG.md` — [Unreleased] SPLIT-01 section added
+- `.planning/phases/28-split-01-agenticapps-shared/28-03-SUMMARY.md` — created
+- `.planning/STATE.md` — decisions + session update
+- `.planning/ROADMAP.md` — plan progress updated
 
 ## Next session: start here
-Execute plan 28-02 (`/gsd-execute-phase 28` will spawn the 28-02 executor). Plan 28-02 runs on agenticapps-shared: write the standalone test suite at `agenticapps-shared/tests/run-tests.sh` that exercises the four lib files in isolation (covering assert_check, extract_to with a real git ref, run_preflight_verify_paths in both strict and non-strict modes, and run_drift_test). Then update CHANGELOG + VERSION and cut tag v1.0.0. All lib files are already committed on agenticapps-shared main; 28-02 adds to that branch. First action: read `.planning/phases/28-split-01-agenticapps-shared/28-02-PLAN.md`.
+
+Plan 28-03 is at **Task 4 (human checkpoint)**. The PR #65 is open at
+https://github.com/agenticapps-eu/claude-workflow/pull/65 on branch `split-01-agenticapps-shared`.
+
+Human must:
+1. Fresh-clone verify: `git clone --recurse-submodules <remote> /tmp/cw-fresh && [ -f /tmp/cw-fresh/vendor/agenticapps-shared/migrations/lib/helpers.sh ] && echo OK`
+2. A4 confirm: `git -C /tmp/cw-fresh ls-tree HEAD vendor/agenticapps-shared` → 3rd field must equal `1f5d543bc6ca080ab6e3ba188df33cf3d193e3d4`
+3. Baseline: `bash migrations/run-tests.sh` in fresh clone → `PASS: 186  FAIL: 4`
+4. Run `/gsd-review` (codex cross-AI, D-28f) and `/review` on the PR diff
+5. Merge PR #65 when satisfied
+
+After merge: branch `split-01-agenticapps-shared` can be deleted. Phase 28 SPLIT-01 is complete.
+Next planned work is SPLIT-02 (agenticapps-observability) per `SPLIT-02-agenticapps-observability.md`.
 
 ## Open questions
-- Pre-existing untracked files in claude-workflow (FIX-0017-ENGINE.md, RESEARCH-cron-monitor-flush-fxsa.md, SPLIT-02-agenticapps-observability.md) are out-of-scope noise — not related to plan 28-01.
-- agenticapps-shared go-public + LICENSE deferred (repo private; org-policy decision).
-- claude-workflow version bump deferred to SPLIT-02 ship time (likely 2.0.0-rc.X).
+
+- None blocking. The 4 pre-existing FAIL in test_migration_0017 remain FIX-0017-ENGINE scope (separate).
+- `session-handoff.md` and the 3 untracked root noise files (FIX-0017-ENGINE.md, RESEARCH-cron-monitor-flush-fxsa.md, SPLIT-02-agenticapps-observability.md) are out of scope and NOT committed.
