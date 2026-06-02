@@ -1,0 +1,3 @@
+[submodule "vendor/agenticapps-shared"]
+	path = vendor/agenticapps-shared
+	url = https://github.com/agenticapps-eu/agenticapps-shared

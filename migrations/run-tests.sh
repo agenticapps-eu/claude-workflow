@@ -26,20 +26,55 @@
 
 set -uo pipefail
 
-# Colors for output (skip if not a tty)
-if [ -t 1 ]; then
-  RED=$'\033[31m'; GREEN=$'\033[32m'; YELLOW=$'\033[33m'; RESET=$'\033[0m'
-else
-  RED=""; GREEN=""; YELLOW=""; RESET=""
+# ─── Resolve shared lib (D-28e source-and-keep) ──────────────────────────────
+# BASH_SOURCE[0] is this script's path; dirname gives migrations/; go up one
+# level to the repo root, then descend into vendor/agenticapps-shared.
+# Canonicalize through any symlink (review finding 3): resolve BASH_SOURCE so an
+# invocation via a symlinked path/dir still anchors _SHARED_LIB at the real repo.
+# Portable on macOS/BSD (no `readlink -f`).
+_src="${BASH_SOURCE[0]}"
+while [ -h "$_src" ]; do
+  _dir="$(cd -P "$(dirname "$_src")" && pwd)"
+  _src="$(readlink "$_src")"
+  case "$_src" in /*) ;; *) _src="$_dir/$_src" ;; esac
+done
+_SCRIPT_DIR="$(cd -P "$(dirname "$_src")" && pwd)"
+unset _src _dir
+_SHARED_LIB="$_SCRIPT_DIR/../vendor/agenticapps-shared/migrations/lib"
+
+# Fail closed on a partial/stale submodule (review finding 1): a present dir with
+# a missing lib file would otherwise fail-open under `set -uo pipefail` (a failed
+# `source` does not abort without `set -e`) and run with wrong/stale helpers while
+# still printing a PASS/FAIL total. Verify the dir AND all four required libs.
+if [ ! -d "$_SHARED_LIB" ]; then
+  echo "ERROR: agenticapps-shared submodule not initialized." >&2
+  echo "Fix: git submodule update --init --recursive" >&2
+  exit 1
 fi
+for _lib in helpers.sh fixture-runner.sh preflight.sh drift-test.sh; do
+  if [ ! -f "$_SHARED_LIB/$_lib" ]; then
+    echo "ERROR: agenticapps-shared submodule incomplete — missing $_lib." >&2
+    echo "Fix: git submodule update --init --recursive" >&2
+    exit 1
+  fi
+done
+unset _lib
+
+source "$_SHARED_LIB/helpers.sh"
+source "$_SHARED_LIB/fixture-runner.sh"
+source "$_SHARED_LIB/preflight.sh"
+source "$_SHARED_LIB/drift-test.sh"
+
+# ─── SPLIT TRAP (codex HIGH-2 / R-rev-2) ─────────────────────────────────────
+# Set traps AFTER sourcing (helpers.sh defines _runtests_do_cleanup — Risk 2).
+# EXIT is silent (no cleanup output on normal harness exit).
+# INT → exit 130; TERM → exit 143.
+trap '_runtests_do_cleanup'        EXIT
+trap '_runtests_do_cleanup; exit 130' INT
+trap '_runtests_do_cleanup; exit 143' TERM
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
-
-PASS=0
-FAIL=0
-SKIP=0
-RAN_AUDIT=0
 
 # Flag + filter parsing. Order-agnostic: --strict-preflight may appear before
 # or after the optional <filter> positional. Unknown flags reject with exit 2.
@@ -68,45 +103,11 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# ─── SPLIT TRAP (codex HIGH-2 / R-rev-2) ─────────────────────────────────────
-# Mirrors the split-trap shape in migrate-0019-sentry-crons-and-healthz.sh.
-# EXIT is silent (no cleanup output on normal harness exit).
-# INT → exit 130; TERM → exit 143.
-# SHARED — generic harness signal trap; any repo using this runner needs clean signal handling
-_runtests_cleanup_fired=0
-_runtests_do_cleanup() {
-  [ "$_runtests_cleanup_fired" -eq 1 ] && return 0
-  _runtests_cleanup_fired=1
-  # harness-level cleanup (intentionally empty — no shared state to tear down)
-  :
-}
-trap '_runtests_do_cleanup'        EXIT
-trap '_runtests_do_cleanup; exit 130' INT
-trap '_runtests_do_cleanup; exit 143' TERM
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Helpers
-# SHARED — all helpers in this section are generic fixture-runner infrastructure;
-#   agenticapps-observability needs these to apply its own migrations.
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Extract a file from a git ref into a temp path.
-# Usage: extract_to <ref> <path-in-repo> <output-path>
-# SHARED — generic git-ref extraction utility; repo-agnostic fixture setup
-extract_to() {
-  local ref="$1" path="$2" out="$3"
-  mkdir -p "$(dirname "$out")"
-  if git show "$ref:$path" >"$out" 2>/dev/null; then
-    return 0
-  else
-    return 1
-  fi
-}
-
 # Setup a fixture project at $1=tmpdir from git ref $2.
 # The fixture mimics a project's on-disk shape: maps scaffolder template
 # paths to project paths.
-# SHARED — generic fixture-runner harness; agenticapps-observability needs this to stand up test fixtures for its migrations
+# WORKFLOW — claude-workflow wrapper (A1): hardcodes template paths + the 1.3.0 special-case.
+# Calls SHARED extract_to (vendor/agenticapps-shared) and layers workflow specifics on top.
 setup_fixture() {
   local tmpdir="$1" ref="$2"
   extract_to "$ref" "templates/workflow-config.md"   "$tmpdir/.claude/workflow-config.md"   || return 1
@@ -130,42 +131,6 @@ EOF
   # that migration 0001 Step 9 copies into the project.
   if [ "$version" = "1.3.0" ]; then
     extract_to "$ref" "templates/adr-db-security-acceptance.md" "$tmpdir/templates/adr-db-security-acceptance.md" || true
-  fi
-}
-
-# Run an idempotency check shell snippet inside a fixture dir.
-# Returns the exit code of the check.
-# SHARED — generic pass/fail check runner; repo-agnostic harness primitive
-run_check() {
-  local fixture="$1" check="$2"
-  ( cd "$fixture" && eval "$check" >/dev/null 2>&1 )
-  return $?
-}
-
-# Assert helper.
-# Usage: assert_check "<label>" "<check>" "<fixture>" "<expected: applied|not-applied>"
-# Semantic: "applied" means the idempotency check returned 0 (skip — already done).
-#          "not-applied" means it returned ANY non-zero (please apply).
-# Numeric exit codes beyond 0 vs non-0 don't matter to the migration runtime.
-# SHARED — generic assertion helper; logs PASS/FAIL and increments counters; repo-agnostic
-assert_check() {
-  local label="$1" check="$2" fixture="$3" expected="$4"
-  run_check "$fixture" "$check"
-  local actual=$?
-  local pass=0
-  case "$expected" in
-    applied)     [ "$actual" = "0" ] && pass=1 ;;
-    not-applied) [ "$actual" != "0" ] && pass=1 ;;
-    *) echo "  ${RED}!${RESET} bad expected value: $expected"; FAIL=$((FAIL+1)); return ;;
-  esac
-  if [ "$pass" = "1" ]; then
-    echo "  ${GREEN}✓${RESET} $label (expected $expected, exit=$actual)"
-    PASS=$((PASS+1))
-  else
-    echo "  ${RED}✗${RESET} $label (expected $expected, got exit=$actual)"
-    echo "      check: $check"
-    echo "      fixture: $fixture"
-    FAIL=$((FAIL+1))
   fi
 }
 
@@ -1765,89 +1730,9 @@ test_migration_0017() {
 # it ships.
 
 test_preflight_verify_paths() {
-  local audit_pass=0 audit_fail=0 audit_skip=0
-  RAN_AUDIT=1
-
-  local mode_label="informational"
-  [ "$STRICT_PREFLIGHT" = "1" ] && mode_label="strict — failures gate exit"
-
-  echo ""
-  echo "${YELLOW}━━━ Preflight-correctness audit ($mode_label) ━━━${RESET}"
-  echo "  Exercises each migration's requires.verify against THIS machine."
-  echo "  Failures may mean either a broken verify path (real bug) OR a"
-  echo "  missing local dependency (expected on fresh machines)."
-  echo ""
-
-  # Sanity-check that python3 + pyyaml are available; skip the whole audit
-  # cleanly if not (degrades gracefully on minimal CI images). In strict
-  # mode this is a real failure — CI should install PyYAML or accept
-  # missing audit coverage as a regression.
-  if ! python3 -c 'import yaml' 2>/dev/null; then
-    if [ "$STRICT_PREFLIGHT" = "1" ]; then
-      echo "  ${RED}✗${RESET} python3 with PyYAML not available — audit cannot run (strict)"
-      FAIL=$((FAIL+1))
-    else
-      echo "  ${YELLOW}~${RESET} python3 with PyYAML not available — preflight audit skipped"
-    fi
-    return 0
-  fi
-
-  for migration in "$REPO_ROOT/migrations"/[0-9]*.md; do
-    local id
-    id="$(basename "$migration" | sed 's/-.*//')"
-    local verifies
-    verifies=$(python3 - "$migration" <<'PY'
-import sys, re, yaml
-text = open(sys.argv[1]).read()
-m = re.search(r'^---\n(.*?)\n---', text, re.DOTALL | re.MULTILINE)
-if not m:
-    sys.exit(0)
-try:
-    fm = yaml.safe_load(m.group(1))
-except Exception:
-    sys.exit(0)
-requires = fm.get('requires') if isinstance(fm, dict) else None
-if not isinstance(requires, list):
-    sys.exit(0)
-for entry in requires:
-    if isinstance(entry, dict) and 'verify' in entry:
-        v = entry['verify']
-        if isinstance(v, str) and v.strip():
-            print(v)
-PY
-    )
-
-    if [ -z "$verifies" ]; then
-      audit_skip=$((audit_skip+1))
-      continue
-    fi
-
-    while IFS= read -r v; do
-      [ -z "$v" ] && continue
-      if eval "$v" >/dev/null 2>&1; then
-        printf "  ${GREEN}✓${RESET} %s: %s\n" "$id" "$v"
-        audit_pass=$((audit_pass+1))
-      else
-        local rc=$?
-        printf "  ${RED}✗${RESET} %s: %s (exit %d)\n" "$id" "$v" "$rc"
-        audit_fail=$((audit_fail+1))
-      fi
-    done <<< "$verifies"
-  done
-
-  echo ""
-  printf "  Audit summary: ${GREEN}PASS=%d${RESET} ${RED}FAIL=%d${RESET} ${YELLOW}SKIP=%d${RESET}\n" \
-    "$audit_pass" "$audit_fail" "$audit_skip"
-  if [ "$STRICT_PREFLIGHT" = "1" ]; then
-    if [ "$audit_fail" -gt 0 ]; then
-      FAIL=$((FAIL + audit_fail))
-      echo "  (counted in suite totals — strict mode: $audit_fail FAIL rolled into global FAIL.)"
-    else
-      echo "  (counted in suite totals — strict mode: 0 audit FAIL to roll in.)"
-    fi
-  else
-    echo "  (NOT counted in suite totals — pass --strict-preflight to gate.)"
-  fi
+  # WORKFLOW policy wrapper (D-28e / Pattern 3): delegates mechanism to shared lib.
+  # run_preflight_verify_paths reads ${STRICT_PREFLIGHT:-0} internally (A5 set -u safe).
+  run_preflight_verify_paths "$REPO_ROOT/migrations"
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2245,25 +2130,15 @@ test_migration_0021() {
 # ─────────────────────────────────────────────────────────────────────────────
 
 test_skill_md_version_matches_latest_migration_to_version() {
-  # NOTE (D-04): intentionally minimal grep + awk parser. Fragile against
-  # YAML variations (quoted values, indented keys, trailing comments).
-  # SKILL.md frontmatter is fixed-shape (`version: X.Y.Z` on its own line);
-  # if that ever changes, this test must be updated.
-
-  local skill_version latest_migration_file migration_to_version
-
-  skill_version=$(grep ^version: skill/SKILL.md | awk '{print $2}')
-  latest_migration_file=$(ls migrations/[0-9][0-9][0-9][0-9]-*.md | sort | tail -1)
-  migration_to_version=$(grep ^to_version: "$latest_migration_file" | awk '{print $2}')
-
-  local migration_num
-  migration_num=$(basename "$latest_migration_file" | cut -c1-4)
-
-  if [ "$skill_version" = "$migration_to_version" ]; then
+  # WORKFLOW policy wrapper (D-28d / Pattern 2 / ADR-0035 MECHANISM vs POLICY):
+  # run_drift_test is the shared mechanism (returns 0/1 only, no PASS/FAIL mutation).
+  # This function owns the POLICY: "SKILL.md version == latest migration to_version"
+  # is a claude-workflow versioning-tracks-migrations invariant (not a universal law).
+  if run_drift_test "$REPO_ROOT/skill/SKILL.md" "$REPO_ROOT/migrations"; then
     echo "  ${GREEN}PASS${RESET}: test-skill-md-version-matches-latest-migration-to-version"
     PASS=$((PASS+1))
   else
-    echo "  ${RED}FAIL${RESET}: SKILL.md at v${skill_version} but migration ${migration_num} declares to_version: v${migration_to_version}"
+    echo "  ${RED}FAIL${RESET}: SKILL.md version does not match latest migration to_version"
     FAIL=$((FAIL+1))
   fi
 }

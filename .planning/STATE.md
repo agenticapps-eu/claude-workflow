@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.21.0
-milestone_name: stable baseline (SPLIT-00 gate)
+milestone: v1.19.0
+milestone_name: migration
 status: verifying
-stopped_at: Completed 27-06-PLAN.md (Task 1 done; Task 2 git tag deferred to ship time)
-last_updated: "2026-06-02T11:54:29.840Z"
+stopped_at: "Checkpoint Task 4: PR #65 open — awaiting human verify (fresh-clone + /gsd-review + merge)"
+last_updated: "2026-06-02T18:02:53.824Z"
 last_activity: 2026-06-02
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 14
-  completed_plans: 14
+  total_phases: 6
+  completed_phases: 4
+  total_plans: 17
+  completed_plans: 17
   percent: 100
 ---
 
@@ -22,16 +22,24 @@ See: .planning/PROJECT.md
 See: .planning/ROADMAP.md (single-row stub, 2026-05-31 — Phase 25 + Phase 26 placeholder only)
 
 **Core value:** Spec-first, migration-driven workflow scaffolder for AgenticApps projects.
-**Current focus:** Phase 27 — 1-21-0-stable-baseline-split-00-gate-close-wr-01-04-minimum-
+**Current focus:** Phase 28 — split-01-agenticapps-shared
 
 ## Current Position
 
-Phase: 27
-Plan: Not started
+Milestone: repo-split (cooling-off WAIVED 2026-06-02)
+Phase: 28 (split-01-agenticapps-shared) — EXECUTING
+Plan: 3 of 3
 Status: Phase complete — ready for verification
+
+  - /gsd-review done: gemini LOW, codex HIGH (caught 4 structural blind-spots the same-LLM checker missed). All findings A1-A7 in 28-REVIEWS.md.
+  - Replanned with --reviews; gsd-plan-checker re-check = VERIFICATION PASSED (A1-A7 covered, no regression). Plans committed `d1e67ba`.
+  - A1 user-locked: setup_fixture demoted to claude-workflow wrapper; only extract_to shared (amends ADR-0035 9→8 SHARED).
+  - (Side fix: patched ~/.claude/get-shit-done/workflows/review.md — codex/claude/gemini invocations now `< /dev/null` + timeout; the stdin-hang that bit /gsd-review 3× across repos. Survives /gsd-update via gsd-local-patches. See memory codex-exec-stdin-hang.)
+
+**Plan shape:** Wave 1 = 28-01 (carve 9 SHARED fns → `agenticapps-shared/migrations/lib/{helpers,fixture-runner,preflight,drift-test}.sh` incl. setup_fixture 4th-arg fix + drift mechanism/policy split) → 28-02 (standalone smoke suite + CHANGELOG provenance + tag v1.0.0). Wave 2 = 28-03 (claude-workflow submodule pin @v1.0.0 + run-tests.sh source-and-keep refactor + install.sh + PR; HARD GATE PASS=186 FAIL=4 exact; autonomous:false checkpoint). **Reconciliation resolved:** baseline is 186/4 (not 190+ green); NO filter-repo needed (all migrate-*.sh are obs-specific → SPLIT-02); every carved artifact is provenance-by-note (D-28b).
 Last activity: 2026-06-02
 
-Progress: Phase 25 complete + merged (5/5 plans); Phase 26 complete + merged — PR #60, commit `46bb394`
+Progress: v1.21.0 milestone shipped+merged (PR #62 `5aff1b1`, tag `v1.21.0`). Lightweight close (no heavy /gsd-complete-milestone ceremony — tag already exists, project uses stub-ROADMAP model, no REQUIREMENTS.md/milestones-archive). Sharing mechanism locked = git submodule. ADR-0035 + run-tests.sh SHARED/WORKFLOW annotations (9 SHARED / 20 WORKFLOW) confirm extraction target = `migrations/run-tests.sh` + framework + fixtures (NOT `bin/gsd-tools.cjs`, which is not in-repo).
 
 ## Performance Metrics
 
@@ -60,6 +68,14 @@ Recent decisions affecting current work:
 - [Phase 27]: ROADMAP.md v1.21.0 milestone entry added with tag-only framing; skill version stays 1.20.0
 - [Phase 27]: WR-04: withSentry entry uses buildSentryOptions(env); snapshot-unchanged invariant confirmed; openrouter 17 tests GREEN
 - [Phase 27]: A2 invariant: SKILL.md stays 1.20.0, drift test GREEN, no migration — git tag v1.21.0 deferred to ship time after PR merge
+- [Phase 28-split-01-agenticapps-shared]: A1 boundary enforced: only extract_to shared; setup_fixture stays as claude-workflow WORKFLOW wrapper (built in 28-03); ADR-0035 amended 9->8 SHARED / 20->21 WORKFLOW
+- [Phase 28-split-01-agenticapps-shared]: preflight reads ${STRICT_PREFLIGHT:-0} internally (A5 set -u safe); drift-test returns 0/1 only, no PASS/FAIL mutation (D-28d policy separation)
+- [Phase 28-split-01-agenticapps-shared]: A2 gate honored: standalone suite proven GREEN before v1.0.0 tag (PASS=12 FAIL=0)
+- [Phase 28-split-01-agenticapps-shared]: A4 pin artifact: canonical pin SHA is 1f5d543bc6ca080ab6e3ba188df33cf3d193e3d4 (v1.0.0 tag); recorded in SUMMARY; 28-03 gitlink must equal this SHA
+- [Phase 28-split-01-agenticapps-shared]: SHA-in-CHANGELOG chicken-and-egg: SHA lives in tag annotation + SUMMARY, not CHANGELOG text (amend cycle is irresolvable)
+- [Phase 28-split-01-agenticapps-shared]: A4 gitlink pin: superproject gitlink SHA equals 28-02 recorded release SHA 1f5d543bc6ca080ab6e3ba188df33cf3d193e3d4 (verified via git ls-files -s, NOT git describe)
+- [Phase 28-split-01-agenticapps-shared]: A1: setup_fixture stays as WORKFLOW wrapper in run-tests.sh; calls shared extract_to and layers workflow-specific template paths + 1.3.0 special-case
+- [Phase 28-split-01-agenticapps-shared]: A3: install.sh always runs sync+update when .gitmodules exists; stale gitlink advance proven
 
 ### Roadmap Evolution
 
@@ -77,7 +93,7 @@ None tracked yet — todo system not initialized at project level.
 
 ## Session Continuity
 
-Last session: 2026-06-02T10:48:36.854Z
-Stopped at: Completed 27-06-PLAN.md (Task 1 done; Task 2 git tag deferred to ship time)
+Last session: 2026-06-02T18:02:53.822Z
+Stopped at: Checkpoint Task 4: PR #65 open — awaiting human verify (fresh-clone + /gsd-review + merge)
 Resume file: None
-Next action: Execute remaining Phase 27 plans (27-05, 27-06) — WR-04 openrouter entry uses buildSentryOptions(env) + byte-symmetry re-verify (27-05); CHANGELOG ## [1.21.0] + git tag v1.21.0 (27-06, autonomous: false).
+Next action: `/gsd-execute-phase 28`. Execution acts on TWO repos: Wave 1 (28-01,28-02) autonomous on `~/Sourcecode/agenticapps/agenticapps-shared` — carve lib (helpers/fixture-runner[extract_to only]/preflight/drift-test), broadened standalone suite, ADR-0035 amendment, record release SHA, tag v1.0.0. Wave 2 (28-03) autonomous:false on claude-workflow feature branch `split-01-agenticapps-shared` — submodule pin by gitlink SHA, run-tests.sh source-and-keep refactor (setup_fixture rebuilt as wrapper), install.sh existing-clone fix, GSD before/after diff, PR; then human-verify checkpoint (fresh-clone test + /gsd-review on diff). HARD GATE: suite stays PASS=186 FAIL=4 exactly.

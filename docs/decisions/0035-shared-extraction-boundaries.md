@@ -66,7 +66,6 @@ reusable by any repo that follows the same migration discipline:
 |---------|-----------|
 | `_runtests_do_cleanup()` | Generic signal-trap harness lifecycle (INT→130, TERM→143); any migration runner needs this |
 | `extract_to()` | Generic git-ref extraction utility; repo-agnostic fixture setup |
-| `setup_fixture()` | Generic fixture-runner harness; agenticapps-observability needs this to stand up test fixtures |
 | `run_check()` | Generic pass/fail check runner; repo-agnostic harness primitive |
 | `assert_check()` | Generic assertion helper with PASS/FAIL counter; repo-agnostic |
 | `test_preflight_verify_paths()` | Generic verify-path auditor; walks migration frontmatter and checks `requires[*].verify` paths — any consumer repo with migration frontmatter can use this |
@@ -84,6 +83,7 @@ artifacts; they have no use in `agenticapps-observability`:
 | `test_meta_destinations_consistency()` | Tests observability-specific `meta.yaml` / adapter role tables in `add-observability/templates/`; not generic |
 | `_roles_from_adapter()` / `_roles_from_meta()` | Helpers for the above; observability-specific |
 | `test_sigterm_mid_apply_preserves_state()` | Tests the specific `migrate-0019-sentry-crons-and-healthz.sh` engine via hardcoded path; migration-0019-specific |
+| `setup_fixture()` | Carved review (A1, codex HIGH): hardcodes claude-workflow template paths (templates/workflow-config.md, config-hooks.json, claude-md-sections.md) and a workflow-only 1.3.0 ADR special-case. Not reusable by agenticapps-observability as-is. Stays in claude-workflow as a thin WRAPPER that calls shared `extract_to` and layers the workflow specifics on top. |
 | Drift-test **coupling POLICY** (see MECHANISM vs POLICY note below) | The specific rule "SKILL.md version == latest migration to_version" is claude-workflow-owned policy |
 
 ### MECHANISM vs POLICY (codex review finding)
@@ -125,6 +125,26 @@ are the canonical boundary map that SPLIT-01 Phase C executes against.
 Do not treat this ADR's tables as more authoritative than the annotations
 in the file — if they ever conflict, fix this ADR to match the annotated
 file (the file has git blame; this ADR is narrative).
+
+### A1 amendment (2026-06-02): setup_fixture demoted to WORKFLOW wrapper
+
+**Trigger:** Cross-AI review (28-REVIEWS.md A1, codex HIGH, user-locked).
+
+`setup_fixture` was originally listed in the SHARED set. The codex review found it hardcodes
+claude-workflow template paths (`templates/workflow-config.md`, `config-hooks.json`,
+`claude-md-sections.md`) and a workflow-only 1.3.0 ADR special-case (`run-tests.sh:131-133`).
+Parameterizing only the skill name leaves hidden consumer coupling — `agenticapps-observability`
+cannot reuse it, violating SC-5. It is therefore demoted to the WORKFLOW set.
+
+The SHARED count drops from **9 to 8** elements. The WORKFLOW count rises from **20 to 21**.
+
+`extract_to` remains SHARED as the truly-generic git-ref primitive. `setup_fixture` becomes
+a claude-workflow WORKFLOW wrapper (built in plan 28-03) that calls shared `extract_to` and
+layers the workflow-specific template paths and the 1.3.0 special-case on top.
+
+The line-level canonical reference is the `# WORKFLOW` annotation above `setup_fixture()`
+in `migrations/run-tests.sh` (updated as part of plan 28-01 Task 4). This ADR table now
+matches that annotation.
 
 ## Consequences
 

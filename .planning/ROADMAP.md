@@ -13,7 +13,8 @@
 
 - ✅ **v0.x → v1.19.0** — Phases 01-24 (shipped, see `session-handoff.md` and git log; not enumerated here)
 - ✅ **v1.20.x worker-template hardening + 0019 engine fixes** — Phases 25-26 (shipped 1.20.0; PR #60 merged `46bb394`)
-- 🚧 **v1.21.0 stable baseline (SPLIT-00 gate)** — Phase 27 (in progress; release/baseline tag `v1.21.0`; skill version stays 1.20.0 — tag-only, no migration)
+- ✅ **v1.21.0 stable baseline (SPLIT-00 gate)** — Phase 27 (shipped + merged PR #62 `5aff1b1`; release/baseline tag `v1.21.0`; skill version stays 1.20.0 — tag-only, no migration). All three factiv downstreams recorded on the 1.21.0 baseline (DOWNSTREAM-EVIDENCE RULE).
+- 🚧 **repo-split** — extract claude-workflow into three repos (cooling-off WAIVED 2026-06-02). SPLIT-01 → `agenticapps-shared` (migration runner + drift test + fixtures, git submodule); SPLIT-02 → `agenticapps-observability` (skill renamed `add-observability`→`observability`, starts 0.11.0; folds deferred obs fixes); SPLIT-03 → `claude-workflow 2.0.0` follow-up (+ #58). Plans in `SPLIT-00/01/02-*.md`; sharing mechanism = git submodule (locked).
 
 ## Phases
 
@@ -115,6 +116,50 @@ Plans:
 - [x] 27-05-PLAN.md — Wave 2 (depends 02): WR-04 openrouter entry uses buildSentryOptions(env); byte-symmetry re-verify
 - [x] 27-06-PLAN.md — Wave 2 (depends 01-05, manual tag): CHANGELOG ## [1.21.0] + git tag v1.21.0 (autonomous: false)
 
+---
+
+## Milestone: repo-split
+
+### Phase 28: SPLIT-01 — extract shared infrastructure to `agenticapps-shared`
+
+**Goal:** Carve the shared migration infrastructure out of `claude-workflow` into the new repo `agenticapps-eu/agenticapps-shared`, consumed by both `claude-workflow` and the future `agenticapps-observability` as a **git submodule** at `vendor/agenticapps-shared/`. The shared layer holds the migration-runner mechanism, fixture harness, generic helpers, and the drift-test RUNNER (mechanism only — the version-coupling POLICY stays in each consumer). After this phase, `claude-workflow`'s `migrations/run-tests.sh` sources the shared lib and keeps only its WORKFLOW (per-migration) test bodies + its drift POLICY; the suite baseline `PASS=186 FAIL=4` is preserved exactly (the 4 pre-existing `test_migration_0017` failures are FIX-0017 scope, out of this phase — NOT introduced or fixed here).
+
+**Depends on:** Phase 27 (`5aff1b1`, v1.21.0 baseline) · ADR-0035 (SHARED/WORKFLOW boundary) · SPLIT-00 gate (GREEN by waiver 2026-06-02)
+
+**Canonical refs:**
+- Plan doc: `SPLIT-01-agenticapps-shared.md` (Phase A complete; Phase C `gsd-tools.cjs` framing SUPERSEDED by ADR-0035 — real target is `run-tests.sh`)
+- `docs/decisions/0035-shared-extraction-boundaries.md` — line-level SHARED/WORKFLOW boundary (canonical map = the annotations in `migrations/run-tests.sh`)
+- `SPLIT-00-PREREQUISITES.md` — gate (pin-by-tag D-07c; cooling-off waived)
+
+**Locked decisions (this session, 2026-06-02):**
+- **D-28a Sharing mechanism = git submodule** at `vendor/agenticapps-shared/` (zero runtime dep, SHA-pinned). See [[split-sharing-mechanism]].
+- **D-28b History = provenance-by-note.** Shared helpers are carved from the single `run-tests.sh` into clean new `migrations/lib/*.sh` files; `git filter-repo` is whole-file granularity and cannot carve functions, so `git log --follow` lineage is NOT preserved for carved code. Provenance recorded in `agenticapps-shared` CHANGELOG "Migration provenance" + commit messages referencing claude-workflow SHAs. The original SPLIT-01 acceptance criterion "every moved file's full log via git log --follow" is AMENDED accordingly (applies only to any whole-file moves, e.g. framework-generic `migrate-*.sh` / generic fixtures).
+
+**Success Criteria** (what must be TRUE):
+  1. `agenticapps-eu/agenticapps-shared` at v1.0.0 holds the carved SHARED set from `run-tests.sh` (per ADR-0035 annotations) as `migrations/lib/*.sh` + the dispatcher + fixture harness, with provenance recorded (D-28b)
+  2. `claude-workflow` consumes it as a git submodule at `vendor/agenticapps-shared/`; fresh clone + CI fetch with `--recurse-submodules` documented in `install.sh`/CI
+  3. `claude-workflow`'s `migrations/run-tests.sh` sources the shared lib, retains all WORKFLOW (per-migration `test_migration_00NN`) bodies + the drift-coupling POLICY, and the suite baseline is preserved EXACTLY at `PASS=186 FAIL=4` (the 4 failures are pre-existing `test_migration_0017` / FIX-0017 scope — not touched here)
+  4. Drift test still PASSES: SKILL.md `version` == latest migration `to_version` (mechanism from shared, policy owned by claude-workflow)
+  5. NO observability-specific code in shared (e.g. `test_meta_destinations_consistency`, `migrate-0019/0021`, fixtures 0019/0021 stay/move-to-obs); NO GSD planning code in shared
+  6. No regression in any GSD command output (`/gsd-progress`, `/gsd-stats`, `/gsd-help`)
+  7. `agenticapps-shared` README documents the submodule consumption pattern; claude-workflow CHANGELOG records the extraction
+  8. PR merged to claude-workflow main; version bump decided at SPLIT-02 ship time (likely 2.0.0-rc.X)
+
+**Plans:** 3/3 plans complete
+
+Plans:
+- [x] 28-01-PLAN.md -- Wave 1: carve SHARED harness fns from run-tests.sh into agenticapps-shared migrations/lib/{helpers,fixture-runner,preflight,drift-test}.sh (parameterized; provenance-by-note)
+- [x] 28-02-PLAN.md -- Wave 1 (after 01): agenticapps-shared standalone test suite + _example fixture + CHANGELOG provenance + commit & tag v1.0.0
+- [x] 28-03-PLAN.md -- Wave 2: claude-workflow consumes submodule pinned to v1.0.0; run-tests.sh sources lib (186/4 preserved); install.sh init; CHANGELOG; PR (checkpoint: review/merge)
+
+### Phase 29: SPLIT-02 — extract observability to `agenticapps-observability` (planned)
+
+**Goal:** Extract `add-observability/` → new repo `agenticapps-eu/agenticapps-observability`; rename skill `add-observability` → `observability` (starts 0.11.0); fold deferred obs fixes into its first migration (cron-flush backport per `RESEARCH-cron-monitor-flush-fxsa.md`, #61 `buildMonitorConfig`/fixture fix, queue-monitor.ts race audit). Consumes `agenticapps-shared` as submodule. Plan doc: `SPLIT-02-agenticapps-observability.md`. **Blocked on Phase 28.**
+
+### Phase 30: SPLIT-03 — claude-workflow 2.0.0 follow-up (planned)
+
+**Goal:** Post-split cleanup: `add-observability`→`observability` alias (2-minor deprecation window), reference cleanup, ship `claude-workflow 2.0.0` (split = breaking-change rationale), fix #58 (Stop-hook nag). **Blocked on Phase 29.**
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -122,3 +167,6 @@ Plans:
 | 25. Fix 0019 engine + withCronMonitor | 5/5 | Complete    | 2026-06-01 |
 | 26. worker-template hardening | 3/3 | Complete (merged PR #60, 46bb394) | 2026-06-01 |
 | 27. 1.21.0 stable baseline (SPLIT-00 gate) | 6/6 | Complete    | 2026-06-02 |
+| 28. SPLIT-01 — agenticapps-shared extraction | 3/3 | Complete   | 2026-06-02 |
+| 29. SPLIT-02 — agenticapps-observability extraction | 0/? | Blocked on 28 | — |
+| 30. SPLIT-03 — claude-workflow 2.0.0 follow-up | 0/? | Blocked on 29 | — |

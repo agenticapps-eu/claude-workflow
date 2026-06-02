@@ -20,6 +20,22 @@ set -euo pipefail
 SCAFFOLDER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILLS_DIR="$HOME/.claude/skills"
 
+# Advance the agenticapps-shared submodule (idempotent: safe on fresh AND existing clones).
+# A3: do NOT guard on VERSION-missing — after a `git pull` an existing clone must move to the
+# new gitlink SHA. sync picks up any .gitmodules URL change; update --init advances/initialises.
+# Guard on a real .git (review finding 2): a copied/tarball tree carries .gitmodules but no
+# git dir, so the refresh would fatal and `set -e` would abort the whole install before any
+# skill linking. .git is a dir in a clone, a file in a worktree/submodule — accept both. Keep
+# the refresh non-fatal so a transient submodule error still lets skill linking proceed.
+if [ -f "$SCAFFOLDER/.gitmodules" ] && { [ -d "$SCAFFOLDER/.git" ] || [ -f "$SCAFFOLDER/.git" ]; }; then
+  echo "Syncing git submodule(s) vendor/agenticapps-shared..."
+  if ! { git -C "$SCAFFOLDER" submodule sync --recursive \
+      && git -C "$SCAFFOLDER" submodule update --init --recursive; }; then
+    echo "WARNING: submodule refresh failed — continuing with skill linking." >&2
+    echo "  Fix later: git -C \"$SCAFFOLDER\" submodule update --init --recursive" >&2
+  fi
+fi
+
 # Pairs of "<subdir-in-scaffolder> <skill-name-for-claude-code>".
 # Order matters for the install summary; scaffolder name alphabetical.
 LINKS=(

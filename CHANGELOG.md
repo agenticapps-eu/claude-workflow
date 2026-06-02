@@ -4,6 +4,48 @@ All notable changes to the AgenticApps Claude Workflow scaffolder are
 documented here. The format follows [Keep a Changelog](https://keepachangelog.com/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased] — SPLIT-01: extract shared migration infrastructure to agenticapps-shared
+
+### Added
+
+- **`vendor/agenticapps-shared` git submodule** — `agenticapps-eu/agenticapps-shared` vendored
+  as a git submodule pinned by gitlink SHA `1f5d543bc6ca080ab6e3ba188df33cf3d193e3d4`
+  (tag `v1.0.0` is provenance only — the gitlink SHA is the canonical pin artifact, A4).
+  Submodule contains the shared migration runner lib (helpers / fixture-runner / preflight /
+  drift-test) carved from `migrations/run-tests.sh` in Wave 1 (plans 28-01, 28-02).
+
+### Changed
+
+- **`migrations/run-tests.sh` refactored as a consumer (D-28e source-and-keep)** — sources
+  the four shared lib files from the submodule
+  (`helpers.sh / fixture-runner.sh / preflight.sh / drift-test.sh`) via `BASH_SOURCE[0]`
+  dirname path resolution. SHARED function bodies (`extract_to`, `run_check`, `assert_check`,
+  `_runtests_do_cleanup`) removed from this file (now sourced). `setup_fixture` REBUILT as a
+  **WORKFLOW wrapper** that calls shared `extract_to` and layers the workflow-specific template
+  paths (`templates/workflow-config.md`, `config-hooks.json`, `claude-md-sections.md`) and the
+  1.3.0 ADR special-case on top (A1 — workflow template paths are not generic). All per-migration
+  WORKFLOW bodies (`test_migration_0001`…`test_migration_0021`) plus the dispatcher and summary
+  blocks are kept verbatim. Drift + preflight are thin WORKFLOW policy wrappers over the shared
+  mechanism functions (`run_drift_test`, `run_preflight_verify_paths`).
+- **Suite baseline preserved EXACTLY:** `PASS=186 FAIL=4`. The 4 failures are pre-existing
+  `test_migration_0017` / FIX-0017 scope — unchanged, not regressed, not "fixed" here.
+  Drift test (`test-skill-md-version-matches-latest-migration-to-version`) still **PASSES**.
+- **`install.sh` advances the submodule on every run** — when `.gitmodules` exists, always runs
+  `git submodule sync --recursive && git submodule update --init --recursive` (idempotent on
+  existing clones; advances a stale gitlink after `git pull`; A3).
+- **`docs/decisions/0035-shared-extraction-boundaries.md` ADR-0035 amended** — `setup_fixture`
+  demoted from SHARED to WORKFLOW set (A1, codex HIGH, user-locked); `extract_to` remains SHARED.
+  SHARED count drops 9→8; WORKFLOW count rises 20→21.
+
+### Notes
+
+- `claude-workflow` VERSION and `skill/SKILL.md` intentionally NOT bumped — version bump decided
+  at SPLIT-02 ship time (likely 2.0.0-rc.X).
+- GSD command outputs (`/gsd-progress`, `/gsd-stats`, `/gsd-help` equivalents) verified
+  byte-identical before and after the refactor (A6, SC-6).
+- ADR-0035 amendment + `run-tests.sh` WORKFLOW annotation were staged in plan 28-01 and
+  committed here alongside the behavioral refactor (plan 28-03).
+
 ## [Unreleased]
 
 ## [1.21.0] — stable baseline (SPLIT-00 gate) — 2026-06-02
