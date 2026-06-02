@@ -4,7 +4,7 @@ milestone: v1.21.0
 milestone_name: stable baseline (SPLIT-00 gate)
 status: verifying
 stopped_at: Completed 27-06-PLAN.md (Task 1 done; Task 2 git tag deferred to ship time)
-last_updated: "2026-06-02T11:03:40.435Z"
+last_updated: "2026-06-02T11:54:29.840Z"
 last_activity: 2026-06-02
 progress:
   total_phases: 3
