@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.19.0
 milestone_name: migration
 status: executing
-stopped_at: Completed 27-01-PLAN.md
-last_updated: "2026-06-02T10:04:34.533Z"
+stopped_at: Completed 27-02-PLAN.md
+last_updated: "2026-06-02T10:12:48.173Z"
 last_activity: 2026-06-02
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 14
-  completed_plans: 9
-  percent: 64
+  completed_plans: 10
+  percent: 71
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/ROADMAP.md (single-row stub, 2026-05-31 — Phase 25 + Phase 26 p
 ## Current Position
 
 Phase: 27 (1-21-0-stable-baseline-split-00-gate-close-wr-01-04-minimum-) — EXECUTING
-Plan: 2 of 6
+Plan: 3 of 6
 Status: Ready to execute
 Last activity: 2026-06-02
 
@@ -52,6 +52,7 @@ Recent decisions affecting current work:
 - **Phase 23 / ADR-0029:** Guarded Shape A for Sentry-wrapped handlers
 - **Phase 22:** Sentry Crons heartbeats + healthz endpoint convention
 - [Phase 27]: WR-01: used '|| true' to suppress grep exit-1 without double-count; WR-02: _resetForTest() moved inside finally block
+- [Phase 27]: Token-aware assertions in cf-worker/cf-pages tests use materialized values (SENTRY_DSN, test-service, 0.1) — harness substitutes tokens before vitest runs
 
 ### Roadmap Evolution
 
@@ -69,7 +70,7 @@ None tracked yet — todo system not initialized at project level.
 
 ## Session Continuity
 
-Last session: 2026-06-02T10:04:34.529Z
-Stopped at: Completed 27-01-PLAN.md
+Last session: 2026-06-02T10:12:48.169Z
+Stopped at: Completed 27-02-PLAN.md
 Resume file: None
 Next action: `/gsd-discuss-phase 26` for worker-template hardening. Scope: DEF-1/2/3 + F-2 carry-forwards from PR #55 + upstream `vitest@3.2.5` / `vite-node@3.2.5` registry-drift pin (flagged at `25-VALIDATION.md` audit-time caveat) + `_filter_index_ts_requires_co_anchor` content-marker firewall (CodeRabbit finding D, `migrate-0019-...sh:233`) + `0021/04 verify.sh` exit-0-when-npx-missing mask + TS1038 console declaration in `types.d.ts:63` (CodeRabbit finding E).
