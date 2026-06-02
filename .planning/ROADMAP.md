@@ -167,6 +167,6 @@ Plans:
 | 25. Fix 0019 engine + withCronMonitor | 5/5 | Complete    | 2026-06-01 |
 | 26. worker-template hardening | 3/3 | Complete (merged PR #60, 46bb394) | 2026-06-01 |
 | 27. 1.21.0 stable baseline (SPLIT-00 gate) | 6/6 | Complete    | 2026-06-02 |
-| 28. SPLIT-01 — agenticapps-shared extraction | 3/3 | Complete   | 2026-06-02 |
+| 28. SPLIT-01 — agenticapps-shared extraction | 3/3 | Complete    | 2026-06-02 |
 | 29. SPLIT-02 — agenticapps-observability extraction | 0/? | Blocked on 28 | — |
 | 30. SPLIT-03 — claude-workflow 2.0.0 follow-up | 0/? | Blocked on 29 | — |
