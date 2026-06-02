@@ -106,7 +106,8 @@ extract_to() {
 # Setup a fixture project at $1=tmpdir from git ref $2.
 # The fixture mimics a project's on-disk shape: maps scaffolder template
 # paths to project paths.
-# SHARED — generic fixture-runner harness; agenticapps-observability needs this to stand up test fixtures for its migrations
+# WORKFLOW — claude-workflow wrapper (A1): hardcodes template paths + the 1.3.0 special-case.
+# Calls SHARED extract_to (vendor/agenticapps-shared) and layers workflow specifics on top.
 setup_fixture() {
   local tmpdir="$1" ref="$2"
   extract_to "$ref" "templates/workflow-config.md"   "$tmpdir/.claude/workflow-config.md"   || return 1

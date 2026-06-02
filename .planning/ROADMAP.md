@@ -145,10 +145,10 @@ Plans:
   7. `agenticapps-shared` README documents the submodule consumption pattern; claude-workflow CHANGELOG records the extraction
   8. PR merged to claude-workflow main; version bump decided at SPLIT-02 ship time (likely 2.0.0-rc.X)
 
-**Plans:** 3 plans (Phase A bootstrap done outside the plan cycle: repo skeleton `d136c96`, tag `v1.0.0-pre.0`)
+**Plans:** 1/3 plans executed
 
 Plans:
-- [ ] 28-01-PLAN.md -- Wave 1: carve SHARED harness fns from run-tests.sh into agenticapps-shared migrations/lib/{helpers,fixture-runner,preflight,drift-test}.sh (parameterized; provenance-by-note)
+- [x] 28-01-PLAN.md -- Wave 1: carve SHARED harness fns from run-tests.sh into agenticapps-shared migrations/lib/{helpers,fixture-runner,preflight,drift-test}.sh (parameterized; provenance-by-note)
 - [ ] 28-02-PLAN.md -- Wave 1 (after 01): agenticapps-shared standalone test suite + _example fixture + CHANGELOG provenance + commit & tag v1.0.0
 - [ ] 28-03-PLAN.md -- Wave 2: claude-workflow consumes submodule pinned to v1.0.0; run-tests.sh sources lib (186/4 preserved); install.sh init; CHANGELOG; PR (checkpoint: review/merge)
 
@@ -167,6 +167,6 @@ Plans:
 | 25. Fix 0019 engine + withCronMonitor | 5/5 | Complete    | 2026-06-01 |
 | 26. worker-template hardening | 3/3 | Complete (merged PR #60, 46bb394) | 2026-06-01 |
 | 27. 1.21.0 stable baseline (SPLIT-00 gate) | 6/6 | Complete    | 2026-06-02 |
-| 28. SPLIT-01 — agenticapps-shared extraction | 0/3 | Planned (3 plans, 2 waves) | — |
+| 28. SPLIT-01 — agenticapps-shared extraction | 1/3 | In Progress|  |
 | 29. SPLIT-02 — agenticapps-observability extraction | 0/? | Blocked on 28 | — |
 | 30. SPLIT-03 — claude-workflow 2.0.0 follow-up | 0/? | Blocked on 29 | — |
