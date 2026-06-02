@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.19.0
 milestone_name: migration
-status: executing
-stopped_at: Completed 28-02-PLAN.md — standalone suite GREEN, v1.0.0 tagged at 1f5d543bc6ca080ab6e3ba188df33cf3d193e3d4; push pending user action
-last_updated: "2026-06-02T17:45:18.458Z"
+status: verifying
+stopped_at: "Checkpoint Task 4: PR #65 open — awaiting human verify (fresh-clone + /gsd-review + merge)"
+last_updated: "2026-06-02T18:02:53.824Z"
 last_activity: 2026-06-02
 progress:
   total_phases: 6
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 17
-  completed_plans: 16
-  percent: 94
+  completed_plans: 17
+  percent: 100
 ---
 
 # Project State
@@ -29,7 +29,7 @@ See: .planning/ROADMAP.md (single-row stub, 2026-05-31 — Phase 25 + Phase 26 p
 Milestone: repo-split (cooling-off WAIVED 2026-06-02)
 Phase: 28 (split-01-agenticapps-shared) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 
   - /gsd-review done: gemini LOW, codex HIGH (caught 4 structural blind-spots the same-LLM checker missed). All findings A1-A7 in 28-REVIEWS.md.
   - Replanned with --reviews; gsd-plan-checker re-check = VERIFICATION PASSED (A1-A7 covered, no regression). Plans committed `d1e67ba`.
@@ -73,6 +73,9 @@ Recent decisions affecting current work:
 - [Phase 28-split-01-agenticapps-shared]: A2 gate honored: standalone suite proven GREEN before v1.0.0 tag (PASS=12 FAIL=0)
 - [Phase 28-split-01-agenticapps-shared]: A4 pin artifact: canonical pin SHA is 1f5d543bc6ca080ab6e3ba188df33cf3d193e3d4 (v1.0.0 tag); recorded in SUMMARY; 28-03 gitlink must equal this SHA
 - [Phase 28-split-01-agenticapps-shared]: SHA-in-CHANGELOG chicken-and-egg: SHA lives in tag annotation + SUMMARY, not CHANGELOG text (amend cycle is irresolvable)
+- [Phase 28-split-01-agenticapps-shared]: A4 gitlink pin: superproject gitlink SHA equals 28-02 recorded release SHA 1f5d543bc6ca080ab6e3ba188df33cf3d193e3d4 (verified via git ls-files -s, NOT git describe)
+- [Phase 28-split-01-agenticapps-shared]: A1: setup_fixture stays as WORKFLOW wrapper in run-tests.sh; calls shared extract_to and layers workflow-specific template paths + 1.3.0 special-case
+- [Phase 28-split-01-agenticapps-shared]: A3: install.sh always runs sync+update when .gitmodules exists; stale gitlink advance proven
 
 ### Roadmap Evolution
 
@@ -90,7 +93,7 @@ None tracked yet — todo system not initialized at project level.
 
 ## Session Continuity
 
-Last session: 2026-06-02T17:45:18.455Z
-Stopped at: Completed 28-02-PLAN.md — standalone suite GREEN, v1.0.0 tagged at 1f5d543bc6ca080ab6e3ba188df33cf3d193e3d4; push pending user action
+Last session: 2026-06-02T18:02:53.822Z
+Stopped at: Checkpoint Task 4: PR #65 open — awaiting human verify (fresh-clone + /gsd-review + merge)
 Resume file: None
 Next action: `/gsd-execute-phase 28`. Execution acts on TWO repos: Wave 1 (28-01,28-02) autonomous on `~/Sourcecode/agenticapps/agenticapps-shared` — carve lib (helpers/fixture-runner[extract_to only]/preflight/drift-test), broadened standalone suite, ADR-0035 amendment, record release SHA, tag v1.0.0. Wave 2 (28-03) autonomous:false on claude-workflow feature branch `split-01-agenticapps-shared` — submodule pin by gitlink SHA, run-tests.sh source-and-keep refactor (setup_fixture rebuilt as wrapper), install.sh existing-clone fix, GSD before/after diff, PR; then human-verify checkpoint (fresh-clone test + /gsd-review on diff). HARD GATE: suite stays PASS=186 FAIL=4 exactly.
