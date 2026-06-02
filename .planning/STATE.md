@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.19.0
-milestone_name: migration
+milestone: v1.21.0
+milestone_name: stable baseline (SPLIT-00 gate)
 status: executing
-stopped_at: Completed 27-04-PLAN.md
-last_updated: "2026-06-02T10:29:03Z"
+stopped_at: Completed 27-03-PLAN.md
+last_updated: "2026-06-02T10:32:59.348Z"
 last_activity: 2026-06-02
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 14
-  completed_plans: 11
-  percent: 79
+  completed_plans: 12
+  percent: 86
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/ROADMAP.md (single-row stub, 2026-05-31 — Phase 25 + Phase 26 p
 ## Current Position
 
 Phase: 27 (1-21-0-stable-baseline-split-00-gate-close-wr-01-04-minimum-) — EXECUTING
-Plan: 4 of 6
+Plan: 5 of 6
 Status: Ready to execute
 Last activity: 2026-06-02
 
@@ -55,6 +55,9 @@ Recent decisions affecting current work:
 - [Phase 27]: Token-aware assertions in cf-worker/cf-pages tests use materialized values (SENTRY_DSN, test-service, 0.1) — harness substitutes tokens before vitest runs
 - [Phase 27]: SHARED/WORKFLOW boundary pre-decided for migrations/run-tests.sh extraction (ADR-0035); bin/gsd-tools.cjs is GSD framework, not this repo
 - [Phase 27]: SPLIT-00 gate changed to pin-by-tag v1.21.0/commit SHA; SKILL.md version not acceptable evidence under A2 (D-07c)
+- [Phase 27]: PROJECT.md is forward-looking only — history stays in .planning/phases/ + git (D-05)
+- [Phase 27]: Versioning policy section defines release/baseline tag vs skill version as distinct terms to prevent dual-version confusion
+- [Phase 27]: ROADMAP.md v1.21.0 milestone entry added with tag-only framing; skill version stays 1.20.0
 
 ### Roadmap Evolution
 
@@ -72,7 +75,7 @@ None tracked yet — todo system not initialized at project level.
 
 ## Session Continuity
 
-Last session: 2026-06-02T10:26:50.905Z
-Stopped at: Completed 27-04-PLAN.md
+Last session: 2026-06-02T10:32:59.345Z
+Stopped at: Completed 27-03-PLAN.md
 Resume file: None
 Next action: Execute remaining Phase 27 plans (27-05, 27-06) — WR-04 openrouter entry uses buildSentryOptions(env) + byte-symmetry re-verify (27-05); CHANGELOG ## [1.21.0] + git tag v1.21.0 (27-06, autonomous: false).
