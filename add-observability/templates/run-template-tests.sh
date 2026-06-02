@@ -630,8 +630,8 @@ GOMOD
   OUTPUT=$(cd "$WORKDIR" && go test ./... -v 2>&1) || EXIT_CODE=$?
 
   local PASSED FAILED
-  PASSED=$(echo "$OUTPUT" | grep -c '^--- PASS' || echo "0")
-  FAILED=$(echo "$OUTPUT" | grep -c '^--- FAIL' || echo "0")
+  PASSED=$(echo "$OUTPUT" | grep -c '^--- PASS' || true)
+  FAILED=$(echo "$OUTPUT" | grep -c '^--- FAIL' || true)
 
   if [[ $EXIT_CODE -eq 0 ]]; then
     pass "[$STACK] ${PASSED} tests passed"

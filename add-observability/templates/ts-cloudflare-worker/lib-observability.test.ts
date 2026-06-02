@@ -22,6 +22,7 @@ import {
   runWithContext,
   getActiveContext,
   init,
+  buildSentryOptions,
   type Severity,
 } from "./index";
 
@@ -224,6 +225,51 @@ describe("§10.3 traceparent semantic validation", () => {
     expect(fwd).not.toBeNull();
     expect(fwd!.traceId).toBe("4bf92f3577b34da6a3ce929d0e0e4736");
     expect(fwd!.parentSpanId).toBe("00f067aa0ba902b7");
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// WR-03: buildSentryOptions direct unit coverage (Phase 27 / Plan 02).
+//
+// Token note: after harness materialization, {{ENV_VAR_DSN}} → SENTRY_DSN,
+// {{ENV_VAR_ENV}} → DEPLOY_ENV, {{ENV_VAR_SERVICE}} → SERVICE_NAME,
+// {{TRACE_SAMPLE_RATE}} → 0.1, {{SERVICE_NAME}} → test-service.
+//
+// Assertion set (RESEARCH Blocker-C corrected):
+//   A. All env fields set → returned shape matches exactly.
+//   B. DEPLOY_ENV + SERVICE_NAME absent → environment="dev", release=SERVICE_DEFAULT.
+//   C. TRACE_SAMPLE_RATE is a baked constant — a bogus env override is ignored.
+//
+// Decoupling: this block is SEPARATE from the D-02a determinism block (MED-4);
+// D-02a has NO dependency on buildSentryOptions.
+// ────────────────────────────────────────────────────────────────────
+describe("buildSentryOptions", () => {
+  // Test A: all env fields set — returned shape matches exactly.
+  it("returns the correct SentryOptions shape when all env fields are set", () => {
+    const env = { SENTRY_DSN: "dsn-x", DEPLOY_ENV: "staging", SERVICE_NAME: "svc-x" };
+    const opts = buildSentryOptions(env);
+    expect(opts.dsn).toBe("dsn-x");
+    expect(opts.environment).toBe("staging");
+    expect(opts.release).toBe("svc-x");
+    expect(opts.tracesSampleRate).toBe(0.1); // {{TRACE_SAMPLE_RATE}} baked to 0.1 by harness
+    expect(opts.sendDefaultPii).toBe(false);
+  });
+
+  // Test B: DEPLOY_ENV and SERVICE_NAME absent → fall back to defaults.
+  it("falls back to defaults when DEPLOY_ENV and SERVICE_NAME are absent", () => {
+    const env = { SENTRY_DSN: "dsn-y" };
+    const opts = buildSentryOptions(env);
+    expect(opts.dsn).toBe("dsn-y");
+    expect(opts.environment).toBe("dev");
+    expect(opts.release).toBe("test-service"); // {{SERVICE_NAME}} baked to "test-service" by harness
+    expect(opts.tracesSampleRate).toBe(0.1);
+    expect(opts.sendDefaultPii).toBe(false);
+  });
+
+  // Test C: tracesSampleRate is a baked constant — env override is ignored.
+  it("tracesSampleRate is a baked constant, ignoring any env override", () => {
+    const opts = buildSentryOptions({ SENTRY_DSN: "d", TRACE_SAMPLE_RATE: "0.99" } as any);
+    expect(opts.tracesSampleRate).toBe(0.1); // baked const; the bogus env key is ignored
   });
 });
 

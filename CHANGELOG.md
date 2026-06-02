@@ -4,22 +4,48 @@ All notable changes to the AgenticApps Claude Workflow scaffolder are
 documented here. The format follows [Keep a Changelog](https://keepachangelog.com/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased] — Phase 26 engine + harness + fixture hardening (2026-06-01)
+## [Unreleased]
 
-> **Versioning note:** This `claude-workflow` track holds Phase 26's engine/harness/fixture
-> changes in `[Unreleased]` rather than bumping to 1.20.1. Rationale: the
-> `test-skill-md-version-matches-latest-migration-to-version` invariant (migrations/run-tests.sh
-> §F4) requires `skill/SKILL.md` to track the latest migration's `to_version`. Phase 26
-> ships NO new migration (D-04 decision — engine bugfix to existing migration 0019
-> is template-surface only); therefore `skill/SKILL.md` stays at 1.20.0 and the
-> version-bump in Plan 03 D-10a is deferred to the next phase that lands a migration.
-> The `add-observability` skill (independent SemVer track, no migration coupling)
-> still ships its 0.10.0 bump for the template-surface work — see
-> `add-observability/CHANGELOG.md`. Mirrors user-memory rule
-> "versioning-tracks-migrations: engine bugfixes to an existing migration get no version bump"
-> and codex HIGH-4 + cross-AI review corrections that prompted Phase 26.
+## [1.21.0] — stable baseline (SPLIT-00 gate) — 2026-06-02
 
-### Fixed (Phase 26 engine + harness + fixture hardening — pending version assignment)
+> **Versioning note (migration-locked-version policy):** This is an **A2 (tag-only) release**.
+> The **release/baseline tag** `v1.21.0` leads the **skill version** (`skill/SKILL.md`),
+> which is migration-coupled and TRAILS at `1.20.0` — it advances only when a migration's
+> `to_version` advances (user rule `versioning-tracks-migrations`; A2 decision D-07;
+> see `.planning/PROJECT.md` §"Versioning policy"). Phase 27 ships NO new migration;
+> therefore `skill/SKILL.md` stays at `1.20.0` and the drift test
+> (`test_skill_md_version_matches_latest_migration_to_version` in `migrations/run-tests.sh`)
+> stays GREEN (`SKILL.md 1.20.0 == migration 0021 to_version 1.20.0`). This is
+> deliberate policy, NOT an inconsistency — downstreams verify the 1.21.0 baseline
+> via the **git tag `v1.21.0` + commit SHA**, not by reading the installed `SKILL.md` version.
+> `add-observability` stays at `0.10.0` — its template fixes are internal until the
+> deferred DEF-1/DEF-2 re-rev migration (D-07d). Mirrors `.planning/PROJECT.md`
+> §"Versioning policy" standardized two-axis version model.
+>
+> **SPLIT-00 gate note:** The CHANGELOG section landing in the PR does NOT by itself
+> satisfy the SPLIT-00 gate. The `v1.21.0` tag must exist on `main` (see Task 2
+> manual release action below). The 7-day cooling-off clock starts after tagging.
+
+### Fixed (Phase 27 — WR-01, WR-02)
+
+- **WR-01: go-test counter double-count** (`add-observability/templates/run-template-tests.sh`, lines 633-634) — `grep -c` always prints a count (`0` on no match) and exits 1 on no match, so the prior `|| echo "0"` appended a second `0`, yielding `"0\n0"` and inflating the pass/fail display. Fixed by dropping the redundant fallback (`|| true` used to suppress the non-zero exit). Lines 128, 130, 558, 559 (which use `grep -oE … | grep -oE '^[0-9]+'`) are correct and unchanged — those emit nothing on no match and do need `|| echo "0"`.
+- **WR-02: supabase-edge `_resetForTest` cleanup in `finally`** (`add-observability/templates/ts-supabase-edge/index.test.ts`) — `Deno.test("D-02a init() repeated-init determinism")` restored `console.log` in its `finally` block but never called `_resetForTest()`, causing `initialized=true` and env-a singletons to leak into subsequent tests. Added `_resetForTest()` to the `finally` block alongside `console.log` restoration. Closes test-isolation gap (Phase 26 carry-forward D-02a).
+
+### Added (Phase 27 — WR-03, PROJECT.md, ADR-0035, boundary annotations)
+
+- **WR-03: direct `buildSentryOptions` unit tests × 3 stacks** — new dedicated test blocks for `buildSentryOptions(env)` across cf-worker (`lib-observability.test.ts`), cf-pages (`lib-observability.test.ts`), and openrouter-monitor (`src/observability/index.test.ts`). Assertions (5 per stack): `tracesSampleRate === TRACE_SAMPLE_RATE` (baked constant), `environment === env.DEPLOY_ENV ?? "dev"`, `release === env.SERVICE_NAME ?? SERVICE_DEFAULT`, `sendDefaultPii === false`, `dsn === env.SENTRY_DSN`. Completes DEF-1 unit-test coverage for the helper that Phase 26 added.
+- **`.planning/PROJECT.md`** — canonical product identity document: core value, two-axis versioning policy (release/baseline tag vs skill version), known downstream consumers, current milestone, and 3-repo split overview. Forward-looking only; history lives in `.planning/phases/` and the git log.
+- **`docs/decisions/0035-shared-extraction-boundaries.md`** — ADR records the SHARED/WORKFLOW boundary audit for `migrations/run-tests.sh` extraction into `agenticapps-shared`. Documents what belongs in each layer, the extraction sequence, and explicitly defers code movement to SPLIT-01 (post-1.21.0 cooling-off).
+- **`migrations/run-tests.sh` `# SHARED /` and `# WORKFLOW` boundary annotations** — audit-only; no code movement. Comments mark which test stanzas belong to the future `agenticapps-shared` layer vs the claude-workflow-specific layer, giving SPLIT-01 a clear extraction map.
+
+### Changed (Phase 27 — WR-04, STATE/ROADMAP refresh, SPLIT doc fixes)
+
+- **WR-04: openrouter-monitor entry routes Sentry options through `buildSentryOptions(env)`** (`add-observability/templates/openrouter-monitor/src/index.ts`) — replaces the hardcoded inline options object (`tracesSampleRate: 0.1` et al., lines 48-57) with `withSentry(env => buildSentryOptions(env), …)`, completing DEF-1 wiring in the worked example. Snapshot-unchanged invariant confirmed; 17 openrouter tests GREEN.
+- **`STATE.md` + `ROADMAP.md` drift refresh** — updated to reflect Phase 27 execution progress, v1.21.0 milestone entry, and tag-only release framing.
+- **`SPLIT-01-agenticapps-shared.md` premise correction** — corrected an inaccurate framing of what SPLIT-01 extracts; aligned with ADR-0035 boundary decision.
+- **`SPLIT-00-PREREQUISITES.md` gate changed to pin-by-tag** — replaces the prior `SKILL.md` version check with a git tag `v1.21.0` + commit SHA pin. `SKILL.md version: 1.20.0` is not acceptable evidence of the 1.21.0 baseline under A2 (an auditor would incorrectly read it as 1.20.0).
+
+### Fixed (Phase 26 — promoted from [Unreleased]; engine + harness + fixture hardening — 2026-06-01)
 
 - **`_filter_index_ts_requires_co_anchor` content-marker firewall** (Phase 26 D-06 / CR-D) — `migrate-0019-sentry-crons-and-healthz.sh` now content-checks `index.ts` against `grep -qiE "observability|lib-observability|withObservability|sentry|agenticapps:observability"` before classifying as an alias wrapper anchor. Closes the CodeRabbit Phase 25 finding D false-positive class. Regression detector: `migrations/test-fixtures/0019/13-index-ts-without-observability-content/`. Engine-only fix.
 - **Harness pin hardening — DUAL strategy** (Phase 26 D-03, D-03a, D-03b, D-03c — corrected per cross-AI review codex HIGH-4) — `run-template-tests.sh` pins `vitest` to **EXACT `3.2.4`** (no operator) in 3 heredocs (cf-worker, cf-pages, ts-react-vite). The prior tilde-pin proposal (`~3.2.4`) was insufficient: npm tilde semantics permit `>=3.2.4 <3.3.0`, which still allows vitest@3.2.5 — exactly the drift event Phase 25 audit-time identified. Exact pin blocks it. Separately, `@sentry/cloudflare` pins to **TILDE `~8.55.0`** (patch drift acceptable; SDK is more stable than vitest). D-03b policy comment documents the DUAL strategy. ts-react-vite uses `@sentry/react` and is excluded from the cloudflare pin. supabase-edge runner block (negative-asserted per D-03c) contains zero pins — `deno test`, no npm install.
@@ -31,6 +57,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 - All Phase 26 changes are template-surface / engine-binary / fixture-level — no migration 0022 (D-04).
 - `add-observability` ships 0.10.0 with template-surface changes; see `add-observability/CHANGELOG.md`. That track is decoupled from the migration chain.
 - **Cross-AI review (codex) corrections incorporated in engine/harness scope:** HIGH-4 (vitest exact pin, not tilde); MED-2 (fixture 13 verify.sh strengthens SC-5 evidence via sha + skip-classification grep); Mechanical-1 (single-capture suite runs across tasks).
+- **`skill/SKILL.md` stays at `1.20.0`** — A2 invariant. No migration ships in Phase 27.
+- **`add-observability` stays at `0.10.0`** — D-07e; template fixes are internal until the deferred DEF-1/DEF-2 re-rev migration.
+- **Manual release action (Task 2 — deferred to ship time):** After the Phase 27 PR merges to `main`, create the annotated tag on the merge commit:
+  ```
+  git tag -a v1.21.0 -m "claude-workflow 1.21.0 — stable baseline (SPLIT-00 gate)"
+  git push origin v1.21.0
+  ```
+  Then verify: `git tag --list 'v1.21.0'` shows the tag; `git describe --tags` points at the merge commit. Do NOT bump `skill/SKILL.md` to 1.21.0 — the drift test would FAIL.
 
 ## [1.20.0] — 2026-05-31
 
