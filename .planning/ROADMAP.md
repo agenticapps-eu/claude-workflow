@@ -81,9 +81,29 @@ Plans:
 - [x] 26-02-PLAN.md — Wave 2: Template edits — `buildSentryOptions` helper × 3 stacks (D-01, byte-symmetric); env-additions.md × 3 (D-01a); REDACTED_KEYS additive expansion × 5 meta.yaml + 5 policy.md.template (D-05, D-05b); .gitignore × 5 new files (D-08, D-08a); GREEN-flip 4 idempotency tests (D-02a)
 - [x] 26-03-PLAN.md — Wave 3: Harness pins × 5 + policy comment (D-03, D-03a, D-03b); engine content-marker firewall + fixture 13 GREEN-flip (D-06); fixture 0021/04 TS1038 + exit-0 fix (D-07a, D-07b); version bumps + CHANGELOGs (D-10, D-10a). **D-04a decision: SKIP migrations/0022-worker-template-hardening.md** — template-only changes don't fit the migration chain (RESEARCH §D-04a + CONTEXT D-04 rationale).
 
+### Phase 27: 1.21.0 stable baseline (SPLIT-00 gate)
+
+**Goal:** Ship claude-workflow 1.21.0 as the cooled-off, stable baseline that downstream factiv repos (cparx, callbot, fx-signal-agent) upgrade to before the three-repo split (SPLIT-01/02) begins. This phase closes PR #60's deferred WR items, establishes the canonical PROJECT.md, refreshes drifted STATE/ROADMAP tracking, and lays split-prep groundwork (gsd-tools boundary audit + ADR) — WITHOUT moving any code, so the 7-day cooling-off baseline stays stable.
+
+**Depends on:** Phase 26 (`46bb394`, v0.10.0 / claude-workflow 1.20.0 baseline)
+**Canonical refs:**
+- SPLIT plan: `SPLIT-00-PREREQUISITES.md` (the workflow-side gate this phase satisfies)
+- Brainstorm decisions (approved 2026-06-02): WR-04 use-helper · split-prep audit-only · milestone-archive-after-ship · minimum-viable PROJECT.md
+- WR-01: `add-observability/templates/run-template-tests.sh` go-test counter (`grep -c … || echo "0"` double-count)
+- WR-04: `add-observability/templates/openrouter-monitor/src/index.ts` vs `src/observability/index.ts:154` (`buildSentryOptions` export unused by the entry point)
+- Byte-symmetry contract: Phase 25 D-21 / Phase 26 SC-9 (`cf-worker/lib-observability.ts ↔ openrouter-monitor/src/observability/index.ts`)
+
+**Success Criteria** (what must be TRUE): TBD — run `/gsd-discuss-phase 27` then `/gsd-plan-phase 27`
+
+**Plans:** 0 plans (not planned yet)
+
+Plans:
+- [ ] TBD (run /gsd-discuss-phase 27 → /gsd-plan-phase 27 to break down)
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 25. Fix 0019 engine + withCronMonitor | 5/5 | Complete    | 2026-06-01 |
 | 26. worker-template hardening | 3/3 | Complete    | 2026-06-01 |
+| 27. 1.21.0 stable baseline (SPLIT-00 gate) | 0/? | Not planned | — |
