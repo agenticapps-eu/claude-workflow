@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.21.0
 milestone_name: stable baseline (SPLIT-00 gate)
-status: executing
-stopped_at: Completed 27-05-PLAN.md
-last_updated: "2026-06-02T10:41:29.959Z"
+status: verifying
+stopped_at: Completed 27-06-PLAN.md (Task 1 done; Task 2 git tag deferred to ship time)
+last_updated: "2026-06-02T10:48:36.858Z"
 last_activity: 2026-06-02
 progress:
   total_phases: 3
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 14
-  completed_plans: 13
-  percent: 93
+  completed_plans: 14
+  percent: 100
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/ROADMAP.md (single-row stub, 2026-05-31 — Phase 25 + Phase 26 p
 
 Phase: 27 (1-21-0-stable-baseline-split-00-gate-close-wr-01-04-minimum-) — EXECUTING
 Plan: 6 of 6
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-02
 
 Progress: Phase 25 complete + merged (5/5 plans); Phase 26 complete + merged — PR #60, commit `46bb394`
@@ -59,6 +59,7 @@ Recent decisions affecting current work:
 - [Phase 27]: Versioning policy section defines release/baseline tag vs skill version as distinct terms to prevent dual-version confusion
 - [Phase 27]: ROADMAP.md v1.21.0 milestone entry added with tag-only framing; skill version stays 1.20.0
 - [Phase 27]: WR-04: withSentry entry uses buildSentryOptions(env); snapshot-unchanged invariant confirmed; openrouter 17 tests GREEN
+- [Phase 27]: A2 invariant: SKILL.md stays 1.20.0, drift test GREEN, no migration — git tag v1.21.0 deferred to ship time after PR merge
 
 ### Roadmap Evolution
 
@@ -76,7 +77,7 @@ None tracked yet — todo system not initialized at project level.
 
 ## Session Continuity
 
-Last session: 2026-06-02T10:41:29.956Z
-Stopped at: Completed 27-05-PLAN.md
+Last session: 2026-06-02T10:48:36.854Z
+Stopped at: Completed 27-06-PLAN.md (Task 1 done; Task 2 git tag deferred to ship time)
 Resume file: None
 Next action: Execute remaining Phase 27 plans (27-05, 27-06) — WR-04 openrouter entry uses buildSentryOptions(env) + byte-symmetry re-verify (27-05); CHANGELOG ## [1.21.0] + git tag v1.21.0 (27-06, autonomous: false).

@@ -105,7 +105,7 @@ Plans:
   8. SPLIT-00 gate changed to pin-by-tag (D-07c) — satisfiable under A2
   9. CHANGELOG ## [1.21.0] section added; skill/SKILL.md STAYS 1.20.0; drift test GREEN (A2 tag-only); git tag v1.21.0 created manually at ship
 
-**Plans:** 5/6 plans executed
+**Plans:** 6/6 plans complete
 
 Plans:
 - [x] 27-01-PLAN.md — Wave 1: WR-01 (go-test counter) + WR-02 (supabase-edge _resetForTest cleanup)
@@ -113,7 +113,7 @@ Plans:
 - [x] 27-03-PLAN.md — Wave 1: canonical PROJECT.md (D-05) + STATE/ROADMAP drift refresh (D-08)
 - [x] 27-04-PLAN.md — Wave 1: run-tests.sh SHARED/WORKFLOW annotations + ADR-0035 + SPLIT-01 correction + SPLIT-00 pin-by-tag fix (B1, D-06/D-07c)
 - [x] 27-05-PLAN.md — Wave 2 (depends 02): WR-04 openrouter entry uses buildSentryOptions(env); byte-symmetry re-verify
-- [ ] 27-06-PLAN.md — Wave 2 (depends 01-05, manual tag): CHANGELOG ## [1.21.0] + git tag v1.21.0 (autonomous: false)
+- [x] 27-06-PLAN.md — Wave 2 (depends 01-05, manual tag): CHANGELOG ## [1.21.0] + git tag v1.21.0 (autonomous: false)
 
 ## Progress
 
@@ -121,4 +121,4 @@ Plans:
 |-------|----------------|--------|-----------|
 | 25. Fix 0019 engine + withCronMonitor | 5/5 | Complete    | 2026-06-01 |
 | 26. worker-template hardening | 3/3 | Complete (merged PR #60, 46bb394) | 2026-06-01 |
-| 27. 1.21.0 stable baseline (SPLIT-00 gate) | 5/6 | In Progress|  |
+| 27. 1.21.0 stable baseline (SPLIT-00 gate) | 6/6 | Complete   | 2026-06-02 |
