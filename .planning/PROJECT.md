@@ -71,9 +71,12 @@ evidence of the 1.21.0 baseline (it would incorrectly indicate 1.20.0 to an audi
 **v1.20.x worker-template hardening** — Phases 25-26 shipped `claude-workflow 1.20.0`
 (PR #55, `8a838e8`) and then `0.10.0` / `1.20.0` polish (PR #60, `46bb394`).
 
-**Phase 27 (in progress):** Ships the `v1.21.0` stable baseline as a **tag-only release**
-(release/baseline tag `v1.21.0`; skill version stays `1.20.0` — no new migration, per A2).
-Goal: a cooled-off, stable baseline the factiv downstreams upgrade to before the
+**Phase 27 (complete, 2026-06-02 — verified 9/9):** Shipped the `v1.21.0` stable baseline as a
+**tag-only release** (release/baseline tag `v1.21.0`; skill version stays `1.20.0` — no new
+migration, per A2). Closed PR #60's deferred WR-01..04, established this PROJECT.md, refreshed
+STATE/ROADMAP drift, and laid split-prep groundwork (ADR-0035 boundary audit). The
+`git tag v1.21.0` is a manual release action created at ship time once this work merges to
+`main`. Goal: a cooled-off, stable baseline the factiv downstreams upgrade to before the
 three-repo split begins. See `SPLIT-00-PREREQUISITES.md`.
 
 ## The 3-repo split
