@@ -20,6 +20,15 @@ set -euo pipefail
 SCAFFOLDER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILLS_DIR="$HOME/.claude/skills"
 
+# Advance the agenticapps-shared submodule (idempotent: safe on fresh AND existing clones).
+# A3: do NOT guard on VERSION-missing — after a `git pull` an existing clone must move to the
+# new gitlink SHA. sync picks up any .gitmodules URL change; update --init advances/initialises.
+if [ -f "$SCAFFOLDER/.gitmodules" ]; then
+  echo "Syncing git submodule(s) vendor/agenticapps-shared..."
+  git -C "$SCAFFOLDER" submodule sync --recursive
+  git -C "$SCAFFOLDER" submodule update --init --recursive
+fi
+
 # Pairs of "<subdir-in-scaffolder> <skill-name-for-claude-code>".
 # Order matters for the install summary; scaffolder name alphabetical.
 LINKS=(
