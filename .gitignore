@@ -6,9 +6,17 @@
 .planning/phases/*/.review-prompt.md
 
 # Local state
-.claude/scheduled_tasks.lock
+.claude/
 .planning/current-phase
 .planning/skill-observations/
+
+# GitNexus-generated code-intelligence files (fully regenerable: `npx gitnexus analyze`)
+AGENTS.md
+CLAUDE.md
+
+# Ephemeral npm lockfiles produced by running template test suites
+add-observability/templates/**/package-lock.json
+add-observability/templates/**/node_modules/
 
 # Local working notes
 claude-workflow-update-prompt.md
