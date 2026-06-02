@@ -404,11 +404,13 @@ Sub-skill routing:
 **Frontmatter:**
 ```yaml
 ---
+# NOTE: to_version is the OBS version 0.11.0 (Pitfall 3 Option B — see Open Questions Q1 RESOLVED).
+# Only the LATEST migration's to_version drives the shared run_drift_test vs obs SKILL.md version.
 migration_id: "0022"
 from_version: 1.20.0
-to_version: 1.21.0
+to_version: 0.11.0
 type: "re-rev-with-dirty-detection"
-idempotency_marker: "cron-monitor.ts content-hash matches v1.21.0 explicit-flush baseline (twofold: includes monitorConfig-on-every-checkin shape)"
+idempotency_marker: "cron-monitor.ts content-hash matches obs-0.11.0 explicit-flush baseline (twofold: includes monitorConfig-on-every-checkin shape)"
 related: ["0021", "FXSA-WORKERS-6", "ADR-0033", "ADR-0035-obs"]
 ---
 ```
@@ -637,7 +639,19 @@ declare module "@sentry/cloudflare" {
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> All three resolved by the planner 2026-06-02 and locked in ROADMAP.md (planner decisions)
+> + 29-04-PLAN.md (DECISIONS LOCKED block). Resolutions annotated inline below.
+
+**RESOLVED Q1:** `to_version: 0.11.0` (obs version, Pitfall 3 Option B). Only the latest migration's
+`to_version` drives the shared `run_drift_test` vs obs SKILL.md `version: 0.11.0`.
+**RESOLVED Q2:** Flush fix applies to cron-monitor on cf-worker + cf-pages + supabase-edge; queue-monitor
+on cf-worker + cf-pages only (supabase-edge has no queue-monitor — verified). fxsa `CronMonitorConfigInput`
+function-form left out (separable).
+**RESOLVED Q3:** Two-step operator process documented in the 0022 migration markdown's Recovery section
+(migration detects FXSA-WORKERS-6 marker as reconcilable → operator removes marker + refusal artifact →
+re-run yields SKIP_ALREADY).
 
 1. **Migration 0022 version numbering: obs-version vs cw-version?**
    - What we know: obs SKILL.md version is `0.11.0`; the moved migrations (0012–0021) use `agentic-apps-workflow` SKILL.md versions (1.x.y) in their frontmatter.
