@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.21.0
 milestone_name: stable baseline (SPLIT-00 gate)
 status: executing
-stopped_at: Completed 27-03-PLAN.md
-last_updated: "2026-06-02T10:32:59.348Z"
+stopped_at: Completed 27-05-PLAN.md
+last_updated: "2026-06-02T10:41:29.959Z"
 last_activity: 2026-06-02
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 14
-  completed_plans: 12
-  percent: 86
+  completed_plans: 13
+  percent: 93
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/ROADMAP.md (single-row stub, 2026-05-31 — Phase 25 + Phase 26 p
 ## Current Position
 
 Phase: 27 (1-21-0-stable-baseline-split-00-gate-close-wr-01-04-minimum-) — EXECUTING
-Plan: 5 of 6
+Plan: 6 of 6
 Status: Ready to execute
 Last activity: 2026-06-02
 
@@ -58,6 +58,7 @@ Recent decisions affecting current work:
 - [Phase 27]: PROJECT.md is forward-looking only — history stays in .planning/phases/ + git (D-05)
 - [Phase 27]: Versioning policy section defines release/baseline tag vs skill version as distinct terms to prevent dual-version confusion
 - [Phase 27]: ROADMAP.md v1.21.0 milestone entry added with tag-only framing; skill version stays 1.20.0
+- [Phase 27]: WR-04: withSentry entry uses buildSentryOptions(env); snapshot-unchanged invariant confirmed; openrouter 17 tests GREEN
 
 ### Roadmap Evolution
 
@@ -75,7 +76,7 @@ None tracked yet — todo system not initialized at project level.
 
 ## Session Continuity
 
-Last session: 2026-06-02T10:32:59.345Z
-Stopped at: Completed 27-03-PLAN.md
+Last session: 2026-06-02T10:41:29.956Z
+Stopped at: Completed 27-05-PLAN.md
 Resume file: None
 Next action: Execute remaining Phase 27 plans (27-05, 27-06) — WR-04 openrouter entry uses buildSentryOptions(env) + byte-symmetry re-verify (27-05); CHANGELOG ## [1.21.0] + git tag v1.21.0 (27-06, autonomous: false).
