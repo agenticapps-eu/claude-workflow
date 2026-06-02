@@ -44,21 +44,23 @@ alias deprecation window, `claude-workflow 2.0.0` ship, fix #58) is **Phase 30 (
      `RESEARCH-cron-monitor-flush-fxsa.md` (confirmed FX-SIGNALS-WORKERS-6 race; no upstream
      SDK fix as of 2026-06-02). Recognise the `FXSA-WORKERS-6` LOCAL-PATCH marker as a
      known-reconcilable divergence so fx-signal-agent accepts on marker removal.
-  2. **#61 buildMonitorConfig / fixture fix** — replace the relaxed `MonitorConfig` stub in
-     `migrations/test-fixtures/0021/04-.../types.d.ts` with the real `@sentry/cloudflare`
-     shape; forward `monitorConfig` on every check-in (in_progress/ok/error).
+  2. **#61 buildMonitorConfig / fixture fix** — in the NEW 0022 migration's own fixtures,
+     replace the relaxed `MonitorConfig` stub (the shape inherited from `0021/04`'s
+     `types.d.ts`) with the real `@sentry/cloudflare` shape; forward `monitorConfig` on every
+     check-in (in_progress/ok/error). **This fix lands ONLY in 0022 artifacts/fixtures — it does
+     NOT mutate the released `0021/04` fixture (0021 is immutable).**
   3. **queue-monitor.ts race audit** — audit `queue-monitor.ts` (cf-worker + cf-pages, shipped
      by 0021) for the identical buffered-flush race; apply the same explicit-flush treatment
-     if its handler can run long.
+     if its handler can run long. Update + run `queue-monitor.test.ts` in BOTH stacks alongside.
   Plus a **new ADR** in the obs repo superseding ADR-0033's Guarded-Shape-A flush point, and
   rewriting the ~11 `withMonitor`-contract test cases + adding the immediate-flush regression
   test (per RESEARCH-cron Q3), while **preserving the narrowed strict-Env generic** (ADR-0032
   / SC5 — do NOT copy fxsa's `Record<string, unknown>` form).
-- **Phase G — Verify the new repo green.** obs `migrations/run-tests.sh` runs 0019 (13
-  fixtures) + 0021 (4 fixtures) + the new migration GREEN; all 5 template stacks pass; drift
-  test passes (SKILL.md version == latest migration to_version, mechanism from shared);
-  `/observability *` AND `/add-observability *` slash commands both resolve; `git log --follow`
-  works on moved files.
+- **Phase G — Verify the new repo green.** obs `migrations/run-tests.sh` runs the full moved
+  set GREEN (see "### Ship gate / expected-failure semantics" below); all template stacks
+  pass; drift test passes (latest migration `to_version` == obs `migrations/MIGRATIONS_VERSION`,
+  mechanism from shared); `/observability *` AND `/add-observability *` slash commands both
+  resolve; `git log --follow` works on moved files.
 - **Phase H (partial) — Ship the new repo.** Tag `agenticapps-observability v0.11.0`; push
   (USER-GATED — see Cross-Repo Constraints). The claude-workflow PR / `2.0.0` tag is Phase 30.
 </domain>
@@ -90,6 +92,72 @@ alias deprecation window, `claude-workflow 2.0.0` ship, fix #58) is **Phase 30 (
   RESEARCH-cron: leave it out (fxsa retains a much smaller local delta); planner may fold it in
   if low-cost. Not required for the missed-checkin fix.
 
+### Version axes (LOCKED — resolves codex HIGH-1; OVERRULES 29-RESEARCH Pitfall-3 Option B)
+
+There are TWO INDEPENDENT version axes in the obs repo. Conflating them corrupts consumers.
+
+1. **Migration consumer-project axis (`from_version`/`to_version`, the `1.x` line).**
+   `to_version` is the version the update skill WRITES INTO A CONSUMING PROJECT's local skill
+   copy (`migrations/README.md`: "Update skill writes this to the project's installed-version
+   field"). The released migrations 0012–0021 are IMMUTABLE; they MOVE VERBATIM carrying their
+   `1.11.0 … 1.20.0` to_versions. The new corrective migration `0022` CONTINUES this consumer
+   axis: `from_version: 1.20.0`, `to_version: 1.21.0` (the next free semver on the consumer
+   axis). **DO NOT write an obs-product version (0.11.0) into any migration `to_version`** — a
+   `1.20.0 → 0.11.0` migration would DOWNGRADE/CORRUPT a consumer sitting at 1.20.0. This is the
+   error codex flagged in HIGH-1; the 29-RESEARCH "Option B / to_version: 0.11.0" recommendation
+   is OVERRULED.
+
+2. **Obs product axis (the SKILL.md `version:` field, the `0.x` line).**
+   The obs SKILL.md product version stays `0.11.0` (locked). This tracks the observability
+   product's own release line (continuing from add-observability 0.10.0). It is SEPARATE from the
+   consumer migration axis and is NOT written into migration metadata.
+
+**Drift policy post-split (consumer-owned, per ADR-0035).** Because the two axes differ, the
+naive `run_drift_test(SKILL.md=0.11.0, migrations/=…1.21.0)` MISMATCHES by design. The obs repo
+defines its own drift POLICY: introduce a **`migrations/MIGRATIONS_VERSION` marker file** whose
+first line is `version: 1.21.0` (the consumer-axis version). The obs `run-tests.sh` drift
+wrapper calls `run_drift_test "$REPO_ROOT/migrations/MIGRATIONS_VERSION" "$REPO_ROOT/migrations"`
+— verifying "latest migration `to_version` == the obs repo's declared migration-axis version"
+(`1.21.0 == 1.21.0` → PASS). The shared `run_drift_test`'s `grep ^version:` parser reads the
+marker's `version: 1.21.0` line unchanged (the shared mechanism is generic over the path —
+D-28d). Drift is thus defined on the CONSUMER AXIS, never against the 0.11.0 product version.
+The obs SKILL.md 0.11.0 product version is verified separately by inspection, not by the
+migration drift test. (Alternative considered and rejected: document-and-skip the naive drift —
+rejected because it leaves the chain-integrity guarantee unenforced.)
+
+### Ship gate / expected-failure semantics (LOCKED — resolves codex HIGH-2)
+
+The shared harness exits non-zero whenever `FAIL>0`. That contradicts "0017 ships at PASS=7
+FAIL=4". Resolution: the obs `run-tests.sh` encodes the 4 known-failing 0017 fixtures (02, 06,
+10, 11) as EXPLICIT expected-failures (XFAIL). An XFAIL that fails increments an `XFAIL`
+counter (NOT `FAIL`); an XFAIL that unexpectedly PASSES is itself a failure (the known-bug list
+is stale). "Green" therefore means **no UNEXPECTED failures**. The v0.11.0 ship gate passes on
+(1) zero unexpected failures + (2) the documented expected failures (the 4 × 0017, tracked as
+the FIX-0017 obs follow-up); it blocks on (3) any release-blocking (unexpected) failure.
+
+### Migration ownership / test-coverage carry-forward (LOCKED — resolves codex HIGH-3)
+
+The move set and the test-body + fixture carry-forward MUST match. Verified against the live
+repo (2026-06-02):
+
+| Migration | .md moves | test_migration body moves | test-fixtures/NN moves |
+|-----------|-----------|---------------------------|------------------------|
+| 0012 | yes | yes | yes (5 fixtures) |
+| 0013 | yes | yes | yes (5 fixtures) |
+| 0017 | yes | yes | yes (11 fixtures; 4 XFAIL) |
+| 0018 | yes | yes | yes (2 fixtures) |
+| 0019 | yes | yes | yes (13 fixtures) |
+| 0020 | yes (.md ONLY) | NO (none exists) | NO (none exists) |
+| 0021 | yes | yes | yes (4 fixtures) |
+| 0022 | NEW (plan 04) | NEW | NEW |
+| 0011 | STAYS | STAYS | STAYS |
+
+For EVERY moved migration that HAS a `test_migration_00NN` body, the obs `run-tests.sh` carries
+that body forward (into its WORKFLOW section) AND its `test-fixtures/00NN/`. 0020 moves the .md
+only — it ships no test body and no fixtures in claude-workflow, so there is nothing to carry
+(confirmed by inspection: no `test_migration_0020`, no `test-fixtures/0020/`). The earlier plan
+draft that carried only 0017/0019/0021 was a coverage regression — corrected.
+
 ### History
 - Phase 29 uses `git filter-repo` for **whole-file moves** (the observability tree), so
   `git log --follow` lineage IS preserved (unlike SPLIT-01's function-carve, which was
@@ -102,25 +170,19 @@ alias deprecation window, `claude-workflow 2.0.0` ship, fix #58) is **Phase 30 (
 </decisions>
 
 <gray_areas>
-## Gray Areas — resolve during planning (planner audit tasks)
+## Gray Areas — RESOLVED during planning
 
-1. **Migration-ownership audit (REQUIRED early task).** Apply the SPLIT-02 doc's boundary test
-   — *"who owns the failure mode if this migration breaks?"* — to migrations 0011–0021 and
-   produce a definitive move/copy/stay table. Known anchors: `add-observability/` install
-   migration 0011 STAYS in claude-workflow (it bootstraps the skill INTO a project — Phase 30
-   repoints it); 0019 + 0021 (scripts + content + fixtures) MOVE; obs ADRs 0029–0034 MOVE.
-   **Unresolved in the source doc:** the SPLIT-02 doc lists `0017` under "stays in
-   claude-workflow" (line 122) but `migrate-0017-axiom-destination.sh` scaffolds the Axiom
-   destination = observability — the boundary test says it MOVES. Resolve explicitly. Also
-   audit 0012/0013 (init/SKILL versioning — obs-specific per the doc).
-2. **Disposition of the 4 known-failing `test_migration_0017` tests.** claude-workflow's
-   baseline is `PASS=186 FAIL=4` where the 4 fails are `test_migration_0017` (FIX-0017 scope).
-   If 0017 moves to the obs repo, those 4 failures move with it — the obs repo would start at
-   `~13+4+...` with 4 known-failures until FIX-0017 lands. Decide: move 0017 + document the
-   known-failures (mirroring claude-workflow today), or leave 0017 in claude-workflow for now
-   and move it in a later obs migration. Either is defensible; planner picks and documents.
-3. **Deferred-fix migration number + from/to versions.** Pick the obs migration number
-   (continue the chain), `from_version` = current obs baseline, `to_version` = next.
+1. **Migration-ownership audit (RESOLVED).** Boundary test applied to 0011–0021. 0011 STAYS
+   (bootstraps the skill INTO a project — Phase 30 repoints). 0012, 0013, 0017, 0018, 0019,
+   0020, 0021 MOVE; obs ADRs 0029–0034 MOVE. 0017 MOVES (overriding the SPLIT-02 doc line 122
+   "stays") because its engine sources `add-observability/templates/`. See "### Migration
+   ownership / test-coverage carry-forward" above for the authoritative move + carry-forward
+   matrix.
+2. **Disposition of the 4 known-failing `test_migration_0017` tests (RESOLVED).** 0017 MOVES
+   with its 4 known-failing fixtures (02, 06, 10, 11), encoded as XFAIL in the obs harness (see
+   "### Ship gate / expected-failure semantics"). FIX-0017 becomes an obs-repo follow-up phase.
+3. **Deferred-fix migration number + from/to versions (RESOLVED).** Migration `0022`,
+   `from_version: 1.20.0`, `to_version: 1.21.0` (consumer axis — see "### Version axes").
 </gray_areas>
 
 <cross_repo_constraints>
@@ -143,6 +205,11 @@ alias deprecation window, `claude-workflow 2.0.0` ship, fix #58) is **Phase 30 (
   bootstrap the fresh obs repo directly on `main` (no pre-existing branch to PR against — SPLIT-01
   precedent); plans 03–05 do their substantive development on the obs-repo feature branch
   `split-02-rename-and-0022`, and plan 05 opens a PR that is merged to `main` BEFORE the `v0.11.0` tag.
+- **Install verification isolation.** Tasks that run `bash install.sh` to verify dual-symlink
+  resolution MUST NOT mutate the operator's active `~/.claude/skills/{observability,
+  add-observability}`. Run install verification against a TEMPORARY `HOME` (or temp skills dir),
+  OR snapshot-and-restore any pre-existing symlinks/targets after the check, so Phase 29 leaves
+  the operator's real skill tree exactly as it found it. (Both reviewers flagged this.)
 </cross_repo_constraints>
 
 <canonical_refs>
@@ -155,6 +222,8 @@ alias deprecation window, `claude-workflow 2.0.0` ship, fix #58) is **Phase 30 (
   commands, new-repo layout, skill-rename mechanics, failure-mode handling. **NOTE the scope
   correction in this CONTEXT: Phase E / 2.0.0 ship / claude-workflow deletion belong to Phase
   30, not 29; Phase D impl-agnostic refactor is deferred to its own phase in the new repo.**
+  **ALSO NOTE: the SPLIT-02 doc's `0021-cron-monitor-shape-and-queues.md` filename is WRONG —
+  the real file is `0021-with-cron-and-queue-updates.md` (verified live).**
 - `RESEARCH-cron-monitor-flush-fxsa.md` — cron-flush fix: SDK-internals proof, the canonical
   `withCronMonitor` explicit-flush draft body, the 22-test impact, the FXSA-WORKERS-6 marker,
   and the obs-migration delivery recommendation. The `<draft>` body is copy-ready.
@@ -173,9 +242,12 @@ alias deprecation window, `claude-workflow 2.0.0` ship, fix #58) is **Phase 30 (
   claude-workflow's working submodule-consumer reference implementation.
 
 ### Sources to extract (the move set — audit confirms exact list)
-- `add-observability/` whole tree; `migrations/0019-*.md`, `0021-*.md`;
-  `templates/.claude/scripts/migrate-0019-*.sh`, `migrate-0021-*.sh`;
-  `migrations/test-fixtures/0019/` (13), `0021/` (4).
+- `add-observability/` whole tree; `migrations/0012-*.md`, `0013-*.md`, `0017-*.md`, `0018-*.md`,
+  `0019-*.md`, `0020-*.md`, `0021-with-cron-and-queue-updates.md`;
+  `templates/.claude/scripts/migrate-0017-axiom-destination.sh` (+ `migrate-0017-old-wrappers/`),
+  `migrate-0019-sentry-crons-and-healthz.sh`, `migrate-0021-with-cron-and-queue-updates.sh`;
+  `migrations/test-fixtures/{0012,0013,0017,0018,0019,0021}/` (5, 5, 11, 2, 13, 4 fixtures
+  respectively). 0020 moves the .md only (no script/fixtures exist).
 </canonical_refs>
 
 <specifics>
@@ -210,9 +282,9 @@ alias deprecation window, `claude-workflow 2.0.0` ship, fix #58) is **Phase 30 (
   + `_examples/` skeletons, design the downstream `--migrate-to-destinations` story. The
   SPLIT-02 doc itself recommends running this as the obs repo's own Phase 1.
 - **FIX-0017-ENGINE.md** (3 migration-0017 engine bugs + coverage gaps): NOT in the Phase 29
-  goal. It travels WITH migration 0017 wherever the ownership audit lands it — if 0017 moves to
-  the obs repo, FIX-0017 becomes an obs-repo follow-up phase. Documented + deferred, not
-  implemented in Phase 29.
+  goal. It travels WITH migration 0017 wherever the ownership audit lands it — 0017 moves to
+  the obs repo, so FIX-0017 becomes an obs-repo follow-up phase. The 4 XFAIL 0017 fixtures track
+  this work. Documented + deferred, not implemented in Phase 29.
 - **fxsa `CronMonitorConfigInput` function-form generalisation** — separable from the
   missed-checkin fix; default leave out (see Decisions).
 
@@ -220,3 +292,4 @@ alias deprecation window, `claude-workflow 2.0.0` ship, fix #58) is **Phase 30 (
 
 *Phase: 29-split-02-agenticapps-observability*
 *Context gathered: 2026-06-02 (synthesized from SPLIT-02 + RESEARCH-cron docs; scope corrected against ROADMAP Phase 29/30 boundary)*
+*Revised 2026-06-02 (reviews mode): locked Version axes (consumer 1.x vs product 0.x), ship-gate XFAIL semantics, and the full move/test carry-forward matrix per codex HIGH-1/2/3.*
