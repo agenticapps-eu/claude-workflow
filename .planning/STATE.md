@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.21.0
-milestone_name: stable baseline (SPLIT-00 gate)
-status: verifying
-stopped_at: Completed 27-06-PLAN.md (Task 1 done; Task 2 git tag deferred to ship time)
-last_updated: "2026-06-02T11:54:29.840Z"
+milestone: repo-split
+milestone_name: extract claude-workflow into three repos
+status: planning
+stopped_at: v1.21.0 shipped+merged (PR #62 `5aff1b1`, tag v1.21.0); repo-split milestone opened, SPLIT-01 Phase A pre-flight passed
+last_updated: "2026-06-02T13:02:21.000Z"
 last_activity: 2026-06-02
 progress:
   total_phases: 3
-  completed_phases: 3
-  total_plans: 14
-  completed_plans: 14
-  percent: 100
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -22,16 +22,19 @@ See: .planning/PROJECT.md
 See: .planning/ROADMAP.md (single-row stub, 2026-05-31 — Phase 25 + Phase 26 placeholder only)
 
 **Core value:** Spec-first, migration-driven workflow scaffolder for AgenticApps projects.
-**Current focus:** Phase 27 — 1-21-0-stable-baseline-split-00-gate-close-wr-01-04-minimum-
+**Current focus:** repo-split milestone — SPLIT-01 (extract `agenticapps-shared`: migration runner + drift test + fixtures via git submodule).
 
 ## Current Position
 
-Phase: 27
-Plan: Not started
-Status: Phase complete — ready for verification
+Milestone: repo-split (cooling-off WAIVED 2026-06-02)
+Phase: SPLIT-01 — agenticapps-shared extraction
+Plan: SPLIT-01 Phase A DONE (repo `agenticapps-eu/agenticapps-shared` created private, skeleton pushed `d136c96`, tag `v1.0.0-pre.0`; `git-filter-repo` installed). Phase B BLOCKED on a plan-reconciliation decision (see below).
+Status: planning — Phase B/C plan needs reconciliation vs ADR-0035 before execution
+
+**Phase B/C reconciliation finding (2026-06-02):** `run-tests.sh` is ONE 2579-line file with SHARED+WORKFLOW functions intermingled (9 SHARED / 20 WORKFLOW annotations). `git filter-repo` is whole-file granularity → it CANNOT carve out only the SHARED functions. Shared helpers must be refactored OUT of run-tests.sh into new `migrations/lib/*.sh` — a refactor, not a move. This contradicts SPLIT-01's acceptance criterion "every moved file's full log via `git log --follow`" (carved functions in new files lose `--follow` lineage). DECISION NEEDED: history-preservation approach (provenance-by-note vs filter-repo gymnastics vs hybrid) before Phase B.
 Last activity: 2026-06-02
 
-Progress: Phase 25 complete + merged (5/5 plans); Phase 26 complete + merged — PR #60, commit `46bb394`
+Progress: v1.21.0 milestone shipped+merged (PR #62 `5aff1b1`, tag `v1.21.0`). Lightweight close (no heavy /gsd-complete-milestone ceremony — tag already exists, project uses stub-ROADMAP model, no REQUIREMENTS.md/milestones-archive). Sharing mechanism locked = git submodule. ADR-0035 + run-tests.sh SHARED/WORKFLOW annotations (9 SHARED / 20 WORKFLOW) confirm extraction target = `migrations/run-tests.sh` + framework + fixtures (NOT `bin/gsd-tools.cjs`, which is not in-repo).
 
 ## Performance Metrics
 
@@ -77,7 +80,7 @@ None tracked yet — todo system not initialized at project level.
 
 ## Session Continuity
 
-Last session: 2026-06-02T10:48:36.854Z
-Stopped at: Completed 27-06-PLAN.md (Task 1 done; Task 2 git tag deferred to ship time)
-Resume file: None
-Next action: Execute remaining Phase 27 plans (27-05, 27-06) — WR-04 openrouter entry uses buildSentryOptions(env) + byte-symmetry re-verify (27-05); CHANGELOG ## [1.21.0] + git tag v1.21.0 (27-06, autonomous: false).
+Last session: 2026-06-02T13:02:21.000Z
+Stopped at: repo-split milestone opened; v1.21.0 lightweight-closed; SPLIT-01 Phase A pre-flight passed.
+Resume file: SPLIT-01-agenticapps-shared.md (read alongside ADR-0035 + SPLIT-00 gate=GREEN-by-waiver)
+Next action: SPLIT-01 Phase A — `gh repo create agenticapps-eu/agenticapps-shared --private` + initial skeleton/CHANGELOG/VERSION/README per SPLIT-01 §Phase A. Before Phase B: `brew install git-filter-repo`. Note: SPLIT-01's Phase C (split `bin/gsd-tools.cjs`) is MOOT per ADR-0035 — real target is `migrations/run-tests.sh` SHARED-annotated extraction; refresh the plan to drop the stale gsd-tools framing before the filter-repo surgery.
