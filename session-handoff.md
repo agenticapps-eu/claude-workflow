@@ -8,8 +8,15 @@
 - Wave 4 (29-04, TDD): migration 0022 — explicit per-checkin flush (cron-monitor ×3 stacks, queue-monitor ×2 CF stacks), #61 types fix (in 0022 fixtures only), ADR-0036 (supersedes ADR-0033 flush point). Consumer axis bumped 1.20.0→1.21.0.
 - Wave 5 (29-05): full suite **PASS=42 XFAIL=4 FAIL=0** (re-run independently by orchestrator AND verifier), drift PASS (1.21.0==1.21.0). PR #1 merged to obs main, tag **v0.11.0** pushed. Gated ship — user-approved full ship.
 
+## Post-execution (same session)
+- **No CI in either repo** (no `.github/workflows`, 0 runs) — tests are local via `run-tests.sh`. Nothing to gate on.
+- **Merged both PRs:** obs PR #1 (already merged at ship); **claude-workflow PR #67** `plan-29-split-02` → main (18 docs-only commits, merged f96b2b8). main now in sync with origin.
+- **Code-reviewed the obs repo** (range 24c44c9..d3c6a6a). Verdict shippable; found M-1/M-2: terminal ok/error Sentry flush was fire-and-forget (`void flush`) on the two no-`waitUntil` cron stacks (cf-pages-cron, supabase-edge) → terminal heartbeat could drop. (in_progress race was already fixed on all stacks; cf-worker + all queue-monitors correct via waitUntil.) install.sh / migrate-0022.sh / run-tests XFAIL accounting / fixtures verified clean.
+- **Shipped obs v0.11.1** (PR #2, tag f87e4d3): void→await on the 2 terminal flushes (in_progress stays void/concurrent), TDD red→green (the supabase test was stale — imported a removed seam, never ran; rewritten to ADR-0036 contract), reconciled ADR-0036 + comments, L-1 abort-message fix. Suite still PASS=42 XFAIL=4 FAIL=0, drift PASS. **Consumer axis unchanged** (MIGRATIONS_VERSION + 0022 to_version stay 1.21.0); only obs product bumped 0.11.0→0.11.1.
+
 ## Decisions
 - Ran waves SEQUENTIALLY without worktree isolation — work targets a SIBLING repo, so claude-workflow worktrees don't apply (memory `repo-split-wave-isolation`).
+- Patched 0022 in place (not a follow-up migration) because v0.11.1 shipped with ZERO consumers — the immutability/hash contract only bites once a consumer applies a migration, so amending what 0022 installs was safe.
 - Treated 29-CONTEXT.md as authority over the stale ROADMAP line `0022 to_version: 0.11.0` — codex HIGH-1 decoupled the axes: obs product=0.11.0, migration consumer=1.21.0, drift compares MIGRATIONS_VERSION marker. Implementation + verification used 1.21.0.
 - code_review_gate: NOT run as a no-op — claude-workflow's phase diff is docs-only; the real code is in the sibling repo. Plan peer-review (codex) already done in planning; verifier deep-checked the obs code.
 
@@ -18,7 +25,7 @@
 - claude-workflow (branch `plan-29-split-02`): `.planning/phases/29-.../29-0{1..5}-SUMMARY.md`, `29-VERIFICATION.md`, `.planning/ROADMAP.md`, `.planning/STATE.md`. NO source changes (copy-out only).
 
 ## Next session: start here
-Phase 29 is COMPLETE and verified; obs v0.11.0 is live. The planning commits are still on branch **`plan-29-split-02`** (not merged to main). First action: decide whether to merge `plan-29-split-02` → main, then either (a) run a **codex code review against the obs repo** (`~/Sourcecode/agenticapps/agenticapps-observability`) — the meaningful review the standard gate couldn't reach — or (b) proceed to **Phase 30 (SPLIT-03)**: delete `add-observability/` from claude-workflow, repoint migration 0011, ship claude-workflow 2.0.0, fix #58.
+Phase 29 is COMPLETE, verified, merged to main (PR #67), and code-reviewed; obs is live at **v0.11.1** (M-1/M-2 fixed). Nothing from Phase 29 is outstanding. First action: proceed to **Phase 30 (SPLIT-03)** — `/gsd-discuss-phase 30` or `/gsd-plan-phase 30`: delete `add-observability/` from claude-workflow, repoint migration 0011, ship claude-workflow 2.0.0, fix #58 (Stop-hook nag). Note the local main has unrelated feature branches (programmatic-hooks, go-impeccable, etc.) untouched this session.
 
 ## Open questions
 - `agenticapps-shared` and `agenticapps-observability` are both PRIVATE. If obs gains external consumers, make shared public (+ confirm the submodule URL is reachable). FIX-0017-ENGINE (4 XFAIL 0017 fixtures) is a deferred obs follow-up, tracked, travels with migration 0017.
