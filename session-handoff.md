@@ -1,30 +1,26 @@
 # Session Handoff — 2026-06-03
 
 ## Accomplished
-- **Executed Plan 29-01** (bootstrap agenticapps-observability repo) to completion on branch `plan-29-split-02`.
-- Created GitHub repo `agenticapps-eu/agenticapps-observability` (private, MIT) via `gh repo create --add-readme --clone`. Cloned auto-landed at sibling path `~/Sourcecode/agenticapps/agenticapps-observability`.
-- Laid 0.11.0 skeleton metadata: VERSION=0.11.0, CHANGELOG.md (continues from add-observability 0.10.0 / claude-workflow Phase 26), README.md, implements-spec.md (0.3.2), .gitignore, Phase-D .gitkeep skeleton dirs in `destinations/`.
-- Added `agenticapps-shared` as git submodule at `vendor/agenticapps-shared/`, pinned to v1.0.0 (gitlink SHA `1f5d543bc6ca080ab6e3ba188df33cf3d193e3d4`). All four shared libs (helpers, fixture-runner, preflight, drift-test) resolve.
-- Committed skeleton + submodule in a single atomic commit (`9965f94`) and pushed to `origin main` (plain push, no --force). Remote HEAD verified to match local.
-- Created `29-01-SUMMARY.md` in `.planning/phases/29-split-02-agenticapps-observability/`. Committed to claude-workflow as `8468a7b`.
-- All 11 acceptance criteria verified GREEN before proceeding.
+- **Executed Phase 29 (SPLIT-02) end-to-end** via `/gsd-execute-phase 29` — all 5 waves complete, verifier PASSED 8/8. Shipped **`agenticapps-eu/agenticapps-observability` v0.11.0** (live, private repo).
+- Wave 1 (29-01): bootstrapped the repo (private, MIT), 0.11.0 skeleton, `agenticapps-shared` submodule pinned @v1.0.0 (`1f5d543`). Gated repo-create + first push — user-approved.
+- Wave 2 (29-02): `git filter-repo` extract-with-history on a scratch clone → 7 migrations (0012/0013/0017/0018/0019/0020/0021) + 6 ADRs (0029-0034) + all 5 stack templates, `--follow` lineage preserved. 0011 + ADR-0035 stayed in claude-workflow. Gated push — user-approved (fast-forward, skeleton preserved).
+- Wave 3 (29-03): skill rename `add-observability`→`observability` 0.11.0, legacy dual-symlink alias, `install.sh` (clobber-guard), `run-tests.sh` source-and-keep shim, `MIGRATIONS_VERSION=1.20.0`. On feature branch `split-02-rename-and-0022`. 3 documented auto-fixes (missing hook template, migrate-0021 REPO_ROOT, stale TEMPLATES_DIR).
+- Wave 4 (29-04, TDD): migration 0022 — explicit per-checkin flush (cron-monitor ×3 stacks, queue-monitor ×2 CF stacks), #61 types fix (in 0022 fixtures only), ADR-0036 (supersedes ADR-0033 flush point). Consumer axis bumped 1.20.0→1.21.0.
+- Wave 5 (29-05): full suite **PASS=42 XFAIL=4 FAIL=0** (re-run independently by orchestrator AND verifier), drift PASS (1.21.0==1.21.0). PR #1 merged to obs main, tag **v0.11.0** pushed. Gated ship — user-approved full ship.
 
 ## Decisions
-- Skeleton metadata files (Task 2) were staged and committed together with the submodule (Task 3) in one atomic commit — per the plan's explicit `git add` block which listed all skeleton files alongside `.gitmodules` and `vendor/agenticapps-shared`.
-- No .gitkeep in filter-repo target dirs (`migrations/scripts/`, `migrations/test-fixtures/`, `docs/decisions/`, `legacy/`, `tests/`) — filter-repo (Plan 29-02) will populate them with content.
+- Ran waves SEQUENTIALLY without worktree isolation — work targets a SIBLING repo, so claude-workflow worktrees don't apply (memory `repo-split-wave-isolation`).
+- Treated 29-CONTEXT.md as authority over the stale ROADMAP line `0022 to_version: 0.11.0` — codex HIGH-1 decoupled the axes: obs product=0.11.0, migration consumer=1.21.0, drift compares MIGRATIONS_VERSION marker. Implementation + verification used 1.21.0.
+- code_review_gate: NOT run as a no-op — claude-workflow's phase diff is docs-only; the real code is in the sibling repo. Plan peer-review (codex) already done in planning; verifier deep-checked the obs code.
 
 ## Files modified
-- `.planning/phases/29-split-02-agenticapps-observability/29-01-SUMMARY.md` — created (plan 01 execution record)
-- `~/Sourcecode/agenticapps/agenticapps-observability/` — new sibling repo, skeleton files committed and pushed
+- Created sibling repo `~/Sourcecode/agenticapps/agenticapps-observability` (live on GitHub, v0.11.0 tagged).
+- claude-workflow (branch `plan-29-split-02`): `.planning/phases/29-.../29-0{1..5}-SUMMARY.md`, `29-VERIFICATION.md`, `.planning/ROADMAP.md`, `.planning/STATE.md`. NO source changes (copy-out only).
 
 ## Next session: start here
-Plan 29-01 is complete. Next is **Plan 29-02**: history-preserving filter-repo extraction from a claude-workflow scratch clone into the new obs repo. 
-
-**First action:** Run the continuation executor for Plan 29-02 (`/gsd-execute-phase 29` or spawn executor for `29-02-PLAN.md`). That plan is NOT `autonomous:false` — it's a pure local git operation. Key: clone `https://github.com/agenticapps-eu/claude-workflow` to `/tmp/cw-scratch-for-obs`, run `git filter-repo` with the path/path-rename rules from 29-RESEARCH, then `git push origin main` into the obs repo (additive, NOT --force, as obs main already has the skeleton commit `9965f94`).
-
-The obs repo is at `~/Sourcecode/agenticapps/agenticapps-observability` on `main` (tip `9965f94`). The submodule is initialized. Plans 03–05 should work on the obs feature branch `split-02-rename-and-0022`.
+Phase 29 is COMPLETE and verified; obs v0.11.0 is live. The planning commits are still on branch **`plan-29-split-02`** (not merged to main). First action: decide whether to merge `plan-29-split-02` → main, then either (a) run a **codex code review against the obs repo** (`~/Sourcecode/agenticapps/agenticapps-observability`) — the meaningful review the standard gate couldn't reach — or (b) proceed to **Phase 30 (SPLIT-03)**: delete `add-observability/` from claude-workflow, repoint migration 0011, ship claude-workflow 2.0.0, fix #58.
 
 ## Open questions
-- The three root docs (`SPLIT-02-agenticapps-observability.md`, `RESEARCH-cron-monitor-flush-fxsa.md`, `FIX-0017-ENGINE.md`) are still untracked in claude-workflow. Their content is mirrored into the phase dir. Decide commit/gitignore/archive.
-- `agenticapps-shared` is still private — make public before obs consumers use it as a public submodule URL if needed.
-- Branch `plan-29-split-02` in claude-workflow still has the planning + 29-01-SUMMARY commits. Orchestrator owns the STATE.md/ROADMAP.md updates and final merge.
+- `agenticapps-shared` and `agenticapps-observability` are both PRIVATE. If obs gains external consumers, make shared public (+ confirm the submodule URL is reachable). FIX-0017-ENGINE (4 XFAIL 0017 fixtures) is a deferred obs follow-up, tracked, travels with migration 0017.
+- The 3 untracked root docs (`SPLIT-02-...md`, `RESEARCH-cron-monitor-flush-fxsa.md`, `FIX-0017-ENGINE.md`) are still untracked — content mirrored into the phase dir; decide commit/gitignore/archive.
+- Branch decision for `plan-29-split-02` planning commits (merge-to-main) still open.
