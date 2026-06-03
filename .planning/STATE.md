@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.19.0
 milestone_name: migration
 status: executing
-stopped_at: Completed 30-02-PLAN.md (migration 0022 + SKILL.md 2.0.0; drift PASS; suite PASS 149/FAIL 0)
-last_updated: "2026-06-03T09:59:02.051Z"
+stopped_at: 30-03-PLAN.md Tasks 1-2 complete (ref cleanup + install.sh skill-pair drop + docs/UPGRADING.md + CHANGELOG [2.0.0]); Task 3 ship gate PENDING orchestrator checkpoint (suite PASS 149/FAIL 0, drift PASS 2.0.0)
+last_updated: "2026-06-03T10:30:00.000Z"
 last_activity: 2026-06-03
 progress:
   total_phases: 6
@@ -28,8 +28,8 @@ See: .planning/ROADMAP.md (single-row stub, 2026-05-31 — Phase 25 + Phase 26 p
 
 Milestone: repo-split (cooling-off WAIVED 2026-06-02)
 Phase: 30 (split-03-claude-workflow-2-0-0-follow-up) — EXECUTING
-Plan: 3 of 3
-Status: Ready to execute
+Plan: 3 of 3 (Tasks 1-2 done; Task 3 ship gate pending)
+Status: 30-03 partial — Tasks 1-2 committed (13258c3, 8a7dccd); Task 3 (checkpoint:human-verify ship gate) pending orchestrator /gsd-review + human approval
 
   - /gsd-review done: gemini LOW, codex HIGH (caught 4 structural blind-spots the same-LLM checker missed). All findings A1-A7 in 28-REVIEWS.md.
   - Replanned with --reviews; gsd-plan-checker re-check = VERIFICATION PASSED (A1-A7 covered, no regression). Plans committed `d1e67ba`.
@@ -79,6 +79,10 @@ Recent decisions affecting current work:
 - [Phase 30]: 30-01: 0020 IS tombstoned (D-01/Pitfall 4); SKILL.md stays 1.20.0 this wave (0021 tombstone to_version 1.20.0 keeps drift GREEN); new green baseline PASS 143 FAIL 0 (was 186/4); add-observability tree + 6 obs ADRs deleted, all obs-presence-verified
 - [Phase 30]: 30-02: migration 0022 supersedes 0011 install step WITHOUT mutating 0011 (byte-unchanged); repoints add-observability -> observability skill; exit-3 abort-if-absent (no auto-install, D-03); folds #58 phase-sentinel hook swap; to_version 2.0.0
 - [Phase 30]: 30-02: 0022 Step 4 version-bump targets CANONICAL hyphenated .claude/skills/agentic-apps-workflow/SKILL.md (per 0011 applies_to + install.sh:42); SKILL.md 1.20.0 -> 2.0.0 bumped atomically with 0022 (Pitfall 3); drift GREEN 2.0.0; new baseline PASS 149 FAIL 0
+- [Phase 30]: 30-03 (Tasks 1-2): install.sh add-observability skill-pair DROPPED not renamed (no observability/ subdir in this repo; obs installs from sibling repo per D-03); LINKS entry + help echo + grep-hint alternation removed; remaining pairs' subdirs asserted to exist; bash -n passes
+- [Phase 30]: 30-03 (Tasks 1-2): D-05 forward-looking refs repointed add-observability -> observability across README, setup/SKILL.md, config-hooks.json (observability:scan), postphase-scan.sh + workflow.md (/observability slash cmds); immutable migrations + .planning + CHANGELOG history untouched
+- [Phase 30]: 30-03 (Tasks 1-2): D-06 named-target override — obs repo has NO docs/INSTALLATION.md (RESEARCH §7); docs/UPGRADING.md cross-references obs README + install.sh instead; documents supported upgrade floor 1.21.0 (pre-baseline replay out of scope)
+- [Phase 30]: 30-03 Task 3 (ship gate) PENDING orchestrator checkpoint — suite + /gsd-review + breaking PR/tag gated on human approval; NOT executed by the sequential executor
 
 ### Roadmap Evolution
 
@@ -96,7 +100,9 @@ None tracked yet — todo system not initialized at project level.
 
 ## Session Continuity
 
-Last session: 2026-06-03T09:58:51.287Z
-Stopped at: Completed 30-02-PLAN.md (migration 0022 + SKILL.md 2.0.0; drift PASS; suite PASS 149/FAIL 0)
-Resume file: None
-Next action: `/gsd-execute-phase 28`. Execution acts on TWO repos: Wave 1 (28-01,28-02) autonomous on `~/Sourcecode/agenticapps/agenticapps-shared` — carve lib (helpers/fixture-runner[extract_to only]/preflight/drift-test), broadened standalone suite, ADR-0035 amendment, record release SHA, tag v1.0.0. Wave 2 (28-03) autonomous:false on claude-workflow feature branch `split-01-agenticapps-shared` — submodule pin by gitlink SHA, run-tests.sh source-and-keep refactor (setup_fixture rebuilt as wrapper), install.sh existing-clone fix, GSD before/after diff, PR; then human-verify checkpoint (fresh-clone test + /gsd-review on diff). HARD GATE: suite stays PASS=186 FAIL=4 exactly.
+Last session: 2026-06-03T10:30:00.000Z
+Stopped at: 30-03-PLAN.md Tasks 1-2 complete (ref cleanup + install.sh skill-pair drop + docs/UPGRADING.md + CHANGELOG [2.0.0]); commits 13258c3, 8a7dccd. Task 3 ship gate PENDING orchestrator checkpoint (suite PASS 149/FAIL 0, drift PASS 2.0.0).
+Resume file: .planning/phases/30-split-03-claude-workflow-2-0-0-follow-up/30-03-PLAN.md (Task 3)
+Next action: Orchestrator owns Task 3 (checkpoint:human-verify ship gate) — run full suite + `/gsd-review` on the phase diff, then on human approval commit/open the breaking PR (`v2.0.0 chore!: extract observability to agenticapps-observability (SPLIT-03)`), create + push tag `v2.0.0`, merge, and `git -C ~/.claude/skills/agenticapps-workflow pull` (local-scaffolder-clone). PRIOR (now-stale) note retained below for history.
+
+PRIOR Next action: `/gsd-execute-phase 28`. Execution acts on TWO repos: Wave 1 (28-01,28-02) autonomous on `~/Sourcecode/agenticapps/agenticapps-shared` — carve lib (helpers/fixture-runner[extract_to only]/preflight/drift-test), broadened standalone suite, ADR-0035 amendment, record release SHA, tag v1.0.0. Wave 2 (28-03) autonomous:false on claude-workflow feature branch `split-01-agenticapps-shared` — submodule pin by gitlink SHA, run-tests.sh source-and-keep refactor (setup_fixture rebuilt as wrapper), install.sh existing-clone fix, GSD before/after diff, PR; then human-verify checkpoint (fresh-clone test + /gsd-review on diff). HARD GATE: suite stays PASS=186 FAIL=4 exactly.
