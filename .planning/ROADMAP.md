@@ -14,7 +14,7 @@
 - ✅ **v0.x → v1.19.0** — Phases 01-24 (shipped, see `session-handoff.md` and git log; not enumerated here)
 - ✅ **v1.20.x worker-template hardening + 0019 engine fixes** — Phases 25-26 (shipped 1.20.0; PR #60 merged `46bb394`)
 - ✅ **v1.21.0 stable baseline (SPLIT-00 gate)** — Phase 27 (shipped + merged PR #62 `5aff1b1`; release/baseline tag `v1.21.0`; skill version stays 1.20.0 — tag-only, no migration). All three factiv downstreams recorded on the 1.21.0 baseline (DOWNSTREAM-EVIDENCE RULE).
-- 🚧 **repo-split** — extract claude-workflow into three repos (cooling-off WAIVED 2026-06-02). SPLIT-01 → `agenticapps-shared` (migration runner + drift test + fixtures, git submodule); SPLIT-02 → `agenticapps-observability` (skill renamed `add-observability`→`observability`, starts 0.11.0; folds deferred obs fixes); SPLIT-03 → `claude-workflow 2.0.0` follow-up (+ #58). Plans in `SPLIT-00/01/02-*.md`; sharing mechanism = git submodule (locked).
+- ✅ **repo-split (claude-workflow v2.0.0)** — Phases 28-30 (shipped 2026-06-03; PR #68, tag `v2.0.0`). Extracted claude-workflow into three repos (cooling-off WAIVED 2026-06-02): SPLIT-01 → `agenticapps-shared` v1.0.0 (migration runner + drift test + fixtures, consumed as git submodule, locked); SPLIT-02 → `agenticapps-observability` v0.11.1 (skill renamed `add-observability`→`observability`, dual-symlink alias retained through 0.12.0); SPLIT-03 → `claude-workflow 2.0.0` (deleted bundled obs tree, 7 migration tombstones, migration 0022 repoint + #58 deterministic Phase Sentinel hook). Lightweight close (stub-ROADMAP model: tag already exists, no REQUIREMENTS.md/milestones-archive — consistent with the v1.21.0 close).
 
 ## Phases
 

@@ -1,9 +1,9 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.19.0
-milestone_name: migration
-status: verifying
-stopped_at: 30-03-PLAN.md Tasks 1-2 complete (ref cleanup + install.sh skill-pair drop + docs/UPGRADING.md + CHANGELOG [2.0.0]); commits 13258c3, 8a7dccd. Task 3 ship gate PENDING orchestrator checkpoint (suite PASS 149/FAIL 0, drift PASS 2.0.0).
+milestone: v2.0.0
+milestone_name: repo-split
+status: complete
+stopped_at: repo-split milestone (Phases 28-30) SHIPPED — claude-workflow 2.0.0 released (PR #68 merged, tag v2.0.0 pushed). Lightweight close. Ready for next milestone (/gsd-new-milestone).
 last_updated: "2026-06-03T11:43:57.762Z"
 last_activity: 2026-06-03
 progress:
@@ -22,14 +22,14 @@ See: .planning/PROJECT.md
 See: .planning/ROADMAP.md (single-row stub, 2026-05-31 — Phase 25 + Phase 26 placeholder only)
 
 **Core value:** Spec-first, migration-driven workflow scaffolder for AgenticApps projects.
-**Current focus:** Phase 30 — split-03-claude-workflow-2-0-0-follow-up
+**Current focus:** repo-split milestone shipped (claude-workflow 2.0.0) — planning next milestone
 
 ## Current Position
 
-Milestone: repo-split (cooling-off WAIVED 2026-06-02)
-Phase: 30
-Plan: Not started
-Status: 30-03 partial — Tasks 1-2 committed (13258c3, 8a7dccd); Task 3 (checkpoint:human-verify ship gate) pending orchestrator /gsd-review + human approval
+Milestone: repo-split (v2.0.0) — SHIPPED 2026-06-03 (lightweight close)
+Phase: 30 (complete — last phase of milestone)
+Plan: —
+Status: claude-workflow 2.0.0 released (PR #68 merged → main `d2d041a`; tag `v2.0.0` pushed). SPLIT-01 (agenticapps-shared v1.0.0) + SPLIT-02 (agenticapps-observability v0.11.1) + SPLIT-03 (this repo 2.0.0) all complete. Open follow-up: 30-VERIFICATION.md human-verify item (docs/UPGRADING.md prose read-through). Next: /gsd-new-milestone.
 
   - /gsd-review done: gemini LOW, codex HIGH (caught 4 structural blind-spots the same-LLM checker missed). All findings A1-A7 in 28-REVIEWS.md.
   - Replanned with --reviews; gsd-plan-checker re-check = VERIFICATION PASSED (A1-A7 covered, no regression). Plans committed `d1e67ba`.
@@ -38,6 +38,8 @@ Status: 30-03 partial — Tasks 1-2 committed (13258c3, 8a7dccd); Task 3 (checkp
 
 **Plan shape:** Wave 1 = 28-01 (carve 9 SHARED fns → `agenticapps-shared/migrations/lib/{helpers,fixture-runner,preflight,drift-test}.sh` incl. setup_fixture 4th-arg fix + drift mechanism/policy split) → 28-02 (standalone smoke suite + CHANGELOG provenance + tag v1.0.0). Wave 2 = 28-03 (claude-workflow submodule pin @v1.0.0 + run-tests.sh source-and-keep refactor + install.sh + PR; HARD GATE PASS=186 FAIL=4 exact; autonomous:false checkpoint). **Reconciliation resolved:** baseline is 186/4 (not 190+ green); NO filter-repo needed (all migrate-*.sh are obs-specific → SPLIT-02); every carved artifact is provenance-by-note (D-28b).
 Last activity: 2026-06-03
+
+Progress: **repo-split milestone (v2.0.0) shipped+merged 2026-06-03** (PR #68, tag `v2.0.0`, main `d2d041a`). Phases 28-30: agenticapps-shared v1.0.0 (SPLIT-01, submodule) + agenticapps-observability v0.11.1 (SPLIT-02) + claude-workflow 2.0.0 (SPLIT-03: obs tree deleted, 7 tombstones, migration 0022 repoint + #58 deterministic Phase Sentinel). Gates: suite PASS 150/FAIL 0, drift PASS 2.0.0, code-review clean, codex caught+fixed 1 HIGH (phase-sentinel SIGPIPE), verifier 16/16. Lightweight close (stub-ROADMAP model — same as v1.21.0). Bookkeeping routed via PR #69 (never commit to main directly).
 
 Progress: v1.21.0 milestone shipped+merged (PR #62 `5aff1b1`, tag `v1.21.0`). Lightweight close (no heavy /gsd-complete-milestone ceremony — tag already exists, project uses stub-ROADMAP model, no REQUIREMENTS.md/milestones-archive). Sharing mechanism locked = git submodule. ADR-0035 + run-tests.sh SHARED/WORKFLOW annotations (9 SHARED / 20 WORKFLOW) confirm extraction target = `migrations/run-tests.sh` + framework + fixtures (NOT `bin/gsd-tools.cjs`, which is not in-repo).
 
