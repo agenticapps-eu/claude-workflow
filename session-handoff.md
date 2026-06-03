@@ -1,33 +1,25 @@
-# Session Handoff — 2026-06-03
+# Session Handoff — 2026-06-03 (Phase 30 execution — at ship gate)
 
 ## Accomplished
-- **Executed Phase 29 (SPLIT-02) end-to-end** via `/gsd-execute-phase 29` — all 5 waves complete, verifier PASSED 8/8. Shipped **`agenticapps-eu/agenticapps-observability` v0.11.0** (live, private repo).
-- Wave 1 (29-01): bootstrapped the repo (private, MIT), 0.11.0 skeleton, `agenticapps-shared` submodule pinned @v1.0.0 (`1f5d543`). Gated repo-create + first push — user-approved.
-- Wave 2 (29-02): `git filter-repo` extract-with-history on a scratch clone → 7 migrations (0012/0013/0017/0018/0019/0020/0021) + 6 ADRs (0029-0034) + all 5 stack templates, `--follow` lineage preserved. 0011 + ADR-0035 stayed in claude-workflow. Gated push — user-approved (fast-forward, skeleton preserved).
-- Wave 3 (29-03): skill rename `add-observability`→`observability` 0.11.0, legacy dual-symlink alias, `install.sh` (clobber-guard), `run-tests.sh` source-and-keep shim, `MIGRATIONS_VERSION=1.20.0`. On feature branch `split-02-rename-and-0022`. 3 documented auto-fixes (missing hook template, migrate-0021 REPO_ROOT, stale TEMPLATES_DIR).
-- Wave 4 (29-04, TDD): migration 0022 — explicit per-checkin flush (cron-monitor ×3 stacks, queue-monitor ×2 CF stacks), #61 types fix (in 0022 fixtures only), ADR-0036 (supersedes ADR-0033 flush point). Consumer axis bumped 1.20.0→1.21.0.
-- Wave 5 (29-05): full suite **PASS=42 XFAIL=4 FAIL=0** (re-run independently by orchestrator AND verifier), drift PASS (1.21.0==1.21.0). PR #1 merged to obs main, tag **v0.11.0** pushed. Gated ship — user-approved full ship.
-
-## Post-execution (same session)
-- **No CI in either repo** (no `.github/workflows`, 0 runs) — tests are local via `run-tests.sh`. Nothing to gate on.
-- **Merged both PRs:** obs PR #1 (already merged at ship); **claude-workflow PR #67** `plan-29-split-02` → main (18 docs-only commits, merged f96b2b8). main now in sync with origin.
-- **Code-reviewed the obs repo** (range 24c44c9..d3c6a6a). Verdict shippable; found M-1/M-2: terminal ok/error Sentry flush was fire-and-forget (`void flush`) on the two no-`waitUntil` cron stacks (cf-pages-cron, supabase-edge) → terminal heartbeat could drop. (in_progress race was already fixed on all stacks; cf-worker + all queue-monitors correct via waitUntil.) install.sh / migrate-0022.sh / run-tests XFAIL accounting / fixtures verified clean.
-- **Shipped obs v0.11.1** (PR #2, tag f87e4d3): void→await on the 2 terminal flushes (in_progress stays void/concurrent), TDD red→green (the supabase test was stale — imported a removed seam, never ran; rewritten to ADR-0036 contract), reconciled ADR-0036 + comments, L-1 abort-message fix. Suite still PASS=42 XFAIL=4 FAIL=0, drift PASS. **Consumer axis unchanged** (MIGRATIONS_VERSION + 0022 to_version stay 1.21.0); only obs product bumped 0.11.0→0.11.1.
+- **Executed Phase 30 (SPLIT-03) end-to-end** via `/gsd-execute-phase 30` — 3 sequential waves on `plan-30-split-03` (no worktrees; single plan per wave, cross-wave file overlap forces ordering). Executors run on Opus.
+  - **Wave 1 (30-01):** deleted `add-observability/` tree (−33,700 lines) + 7 moved migrations/fixtures/3 engines + 6 obs ADRs (0035 kept); wrote 7 verbatim-versioned tombstones; stripped 8 obs-dependent run-tests.sh bodies + 0011 sanity-check — ONE atomic commit, suite green, SKILL.md stayed 1.20.0 (drift green). Commits 217baec/1229cc9/e900058.
+  - **Wave 2 (30-02):** `phase-sentinel.sh` template + Stop-hook swap (#58); migration **0022** (repoint→`observability`, exit-3 abort-if-absent, to_version 2.0.0, hyphenated bump path); SKILL.md→2.0.0 SAME commit; 0022 + phase-sentinel tests. 0011 byte-unchanged. Commits c5ba2e9/d631127/4211de5/8de5cba.
+  - **Wave 3 (30-03) Tasks 1-2:** install.sh skill-pair DROP + 5 forward-looking files repointed to `observability`; config-hooks.json→observability:scan; docs/UPGRADING.md + CHANGELOG [2.0.0] + README link. Commits 13258c3/8a7dccd/ceeb00a.
+- **Gates:** code-review (gsd-code-reviewer) clean; regression suite green; no schema drift; verifier **16/16** code-side must-haves (D-01–D-07). Reports committed (30-REVIEW.md 6eefca1, 30-VERIFICATION.md).
+- **Codex cross-AI review (Task 3 step 2):** 1 HIGH + 2 MED + 1 LOW. **All resolved** in 4d97066: phase-sentinel SIGPIPE (`|| true` on grep|head in template + 0022 embed; real 5000-line regression test, suite 149→150); install.sh dangling-legacy-symlink cleanup; UPGRADING.md path clarification; 0022/`/update` flow accepted as defense-in-depth. Record: 30-CODEX-REVIEW.md.
+- **Shipped to gate:** suite PASS 150 + drift PASS; **PR #68 opened** (breaking title); local tag **v2.0.0 created (NOT pushed)**.
 
 ## Decisions
-- Ran waves SEQUENTIALLY without worktree isolation — work targets a SIBLING repo, so claude-workflow worktrees don't apply (memory `repo-split-wave-isolation`).
-- Patched 0022 in place (not a follow-up migration) because v0.11.1 shipped with ZERO consumers — the immutability/hash contract only bites once a consumer applies a migration, so amending what 0022 installs was safe.
-- Treated 29-CONTEXT.md as authority over the stale ROADMAP line `0022 to_version: 0.11.0` — codex HIGH-1 decoupled the axes: obs product=0.11.0, migration consumer=1.21.0, drift compares MIGRATIONS_VERSION marker. Implementation + verification used 1.21.0.
-- code_review_gate: NOT run as a no-op — claude-workflow's phase diff is docs-only; the real code is in the sibling repo. Plan peer-review (codex) already done in planning; verifier deep-checked the obs code.
+- Ran executors sequentially WITHOUT worktrees — single plan per wave + cross-wave file overlap (run-tests.sh, SKILL.md, CHANGELOG) means worktrees add merge risk to the drift invariant for zero parallelism gain.
+- Codex fixes = no version bump (pre-release bugfixes to unshipped 2.0.0, per `versioning-tracks-migrations`).
+- 3 untracked root scratch docs (FIX-0017-ENGINE.md, RESEARCH-cron-monitor-flush-fxsa.md, SPLIT-02-…md) left untracked — content mirrored in phase dirs; excluded from PR. Decide at merge (gitignore/archive/delete).
 
 ## Files modified
-- Created sibling repo `~/Sourcecode/agenticapps/agenticapps-observability` (live on GitHub, v0.11.0 tagged).
-- claude-workflow (branch `plan-29-split-02`): `.planning/phases/29-.../29-0{1..5}-SUMMARY.md`, `29-VERIFICATION.md`, `.planning/ROADMAP.md`, `.planning/STATE.md`. NO source changes (copy-out only).
+- All under `.planning/phases/30-split-03-claude-workflow-2-0-0-follow-up/` (SUMMARYs/REVIEW/VERIFICATION/CODEX-REVIEW) + the source changes listed above. Git: 05e9afc..HEAD (12 commits + fix 4d97066 + codex-record).
 
 ## Next session: start here
-Phase 29 is COMPLETE, verified, merged to main (PR #67), and code-reviewed; obs is live at **v0.11.1** (M-1/M-2 fixed). Nothing from Phase 29 is outstanding. First action: proceed to **Phase 30 (SPLIT-03)** — `/gsd-discuss-phase 30` or `/gsd-plan-phase 30`: delete `add-observability/` from claude-workflow, repoint migration 0011, ship claude-workflow 2.0.0, fix #58 (Stop-hook nag). Note the local main has unrelated feature branches (programmatic-hooks, go-impeccable, etc.) untouched this session.
+**AT THE FINAL HUMAN-VERIFY SHIP GATE.** Awaiting user approval to: (1) merge PR #68, (2) `git push origin v2.0.0`, (3) `git -C ~/.claude/skills/agenticapps-workflow pull` (local-scaffolder-clone, per memory). On "approved": merge, push tag, then run `node ~/.claude/get-shit-done/bin/gsd-tools.cjs phase complete 30` to mark the phase complete + update ROADMAP/STATE/REQUIREMENTS, then `/gsd-progress`. If changes requested instead: address, re-run suite (must stay PASS≥150 + drift PASS), update PR.
 
 ## Open questions
-- `agenticapps-shared` and `agenticapps-observability` are both PRIVATE. If obs gains external consumers, make shared public (+ confirm the submodule URL is reachable). FIX-0017-ENGINE (4 XFAIL 0017 fixtures) is a deferred obs follow-up, tracked, travels with migration 0017.
-- The 3 untracked root docs (`SPLIT-02-...md`, `RESEARCH-cron-monitor-flush-fxsa.md`, `FIX-0017-ENGINE.md`) are still untracked — content mirrored into the phase dir; decide commit/gitignore/archive.
-- Branch decision for `plan-29-split-02` planning commits (merge-to-main) still open.
+- Cross-repo coupling: agenticapps-observability must stay present/live (it is, v0.11.1). The `add-observability` alias retention window (through obs 0.12.0) is the compatibility bridge for immutable-migration old-name refs.
+- The 3 untracked root scratch docs — final disposition decision deferred to merge time.

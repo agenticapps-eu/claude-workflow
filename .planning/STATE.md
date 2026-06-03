@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.19.0
 milestone_name: migration
-status: executing
-stopped_at: 30-03-PLAN.md Tasks 1-2 complete (ref cleanup + install.sh skill-pair drop + docs/UPGRADING.md + CHANGELOG [2.0.0]); Task 3 ship gate PENDING orchestrator checkpoint (suite PASS 149/FAIL 0, drift PASS 2.0.0)
-last_updated: "2026-06-03T10:30:00.000Z"
+status: verifying
+stopped_at: 30-03-PLAN.md Tasks 1-2 complete (ref cleanup + install.sh skill-pair drop + docs/UPGRADING.md + CHANGELOG [2.0.0]); commits 13258c3, 8a7dccd. Task 3 ship gate PENDING orchestrator checkpoint (suite PASS 149/FAIL 0, drift PASS 2.0.0).
+last_updated: "2026-06-03T11:43:57.762Z"
 last_activity: 2026-06-03
 progress:
   total_phases: 6
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 25
-  completed_plans: 24
-  percent: 96
+  completed_plans: 25
+  percent: 100
 ---
 
 # Project State
@@ -27,8 +27,8 @@ See: .planning/ROADMAP.md (single-row stub, 2026-05-31 — Phase 25 + Phase 26 p
 ## Current Position
 
 Milestone: repo-split (cooling-off WAIVED 2026-06-02)
-Phase: 30 (split-03-claude-workflow-2-0-0-follow-up) — EXECUTING
-Plan: 3 of 3 (Tasks 1-2 done; Task 3 ship gate pending)
+Phase: 30
+Plan: Not started
 Status: 30-03 partial — Tasks 1-2 committed (13258c3, 8a7dccd); Task 3 (checkpoint:human-verify ship gate) pending orchestrator /gsd-review + human approval
 
   - /gsd-review done: gemini LOW, codex HIGH (caught 4 structural blind-spots the same-LLM checker missed). All findings A1-A7 in 28-REVIEWS.md.
