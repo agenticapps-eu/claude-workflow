@@ -1241,6 +1241,158 @@ test_migration_0011() {
 }
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Migration 0022 — Observability repoint + Phase Sentinel hook (v1.20.0 -> 2.0.0)
+# WORKFLOW — verify body specific to migration 0022 content; stays in claude-workflow
+# ─────────────────────────────────────────────────────────────────────────────
+# Same fixture-runner shape as 0011/0014: each fixture builds a sandboxed $HOME
+# (with or without the separately-installed `observability` skill) plus a
+# project skeleton at v1.20.0 with a prompt-type Stop hook + an `observability:`
+# CLAUDE.md block. verify.sh asserts the migration's POSITIVE idempotency anchors
+# and pre-flight behave as expected for that state (command hook present,
+# ^version: 2.0.0 present, `skill: observability` present, exit-3 abort message
+# when the obs skill is absent).
+
+test_migration_0022() {
+  echo ""
+  echo "${YELLOW}━━━ Migration 0022 — Observability repoint + Phase Sentinel hook ━━━${RESET}"
+
+  local fixtures="$REPO_ROOT/migrations/test-fixtures/0022"
+
+  if [ ! -d "$fixtures" ]; then
+    echo "  ${RED}SKIP${RESET}: fixtures directory missing"
+    SKIP=$((SKIP+1))
+    return
+  fi
+
+  # Sanity-check that migration 0022's file itself exists. Until the GREEN
+  # commit lands the migration body, this fails — the RED state TDD requires.
+  local migration_file="$REPO_ROOT/migrations/0022-observability-repoint-phase-sentinel.md"
+  if [ ! -f "$migration_file" ]; then
+    echo "  ${RED}✗${RESET} migration file missing: $migration_file — RED state"
+    FAIL=$((FAIL+1))
+    return
+  fi
+
+  run_0022_fixture() {
+    local fixname="$1"
+    local fixdir="$fixtures/$fixname"
+    local tmp; tmp="$(mktemp -d -t "migration-0022-${fixname}-XXXXXX")"
+    local fake_home="$tmp/home"
+    mkdir -p "$fake_home"
+
+    if [ -x "$fixdir/setup.sh" ]; then
+      (
+        cd "$tmp" && \
+        HOME="$fake_home" REPO_ROOT="$REPO_ROOT" FIXTURES_ROOT="$fixtures" \
+          "$fixdir/setup.sh" >/dev/null 2>&1
+      ) || {
+        echo "  ${RED}✗${RESET} $fixname — setup.sh failed"
+        FAIL=$((FAIL+1))
+        rm -rf "$tmp"
+        return
+      }
+    fi
+
+    local verify_out verify_exit
+    verify_out=$(
+      cd "$tmp" && \
+      HOME="$fake_home" REPO_ROOT="$REPO_ROOT" \
+        bash "$fixdir/verify.sh" 2>&1
+    )
+    verify_exit=$?
+
+    local expected_exit
+    expected_exit=$(tr -d '\n' < "$fixdir/expected-exit")
+    if [ "$verify_exit" != "$expected_exit" ]; then
+      echo "  ${RED}✗${RESET} $fixname — verify exit $verify_exit, expected $expected_exit"
+      echo "      verify output:"
+      printf '%s\n' "$verify_out" | sed 's/^/        /' | head -10
+      FAIL=$((FAIL+1))
+      rm -rf "$tmp"
+      return
+    fi
+
+    echo "  ${GREEN}✓${RESET} $fixname"
+    PASS=$((PASS+1))
+    rm -rf "$tmp"
+  }
+
+  for fix in "$fixtures"/[0-9]*-*/; do
+    local name
+    name="$(basename "${fix%/}")"
+    run_0022_fixture "$name"
+  done
+}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase Sentinel hook (GH #58 / D-07) — deterministic Stop gate exit-code cases
+# WORKFLOW — inline test (no fixture dir): runs the template hook under a temp
+#   CLAUDE_PROJECT_DIR across 3 cases and asserts exit 0/0/2.
+# ─────────────────────────────────────────────────────────────────────────────
+# Cases:
+#   1. no checklist.md                          -> exit 0 (allow)
+#   2. checklist.md, all items checked          -> exit 0 (allow)
+#   3. checklist.md, >=1 unchecked `- [ ]` item -> exit 2 (block) + prints item
+
+test_phase_sentinel() {
+  echo ""
+  echo "${YELLOW}━━━ Phase Sentinel hook — deterministic Stop gate (GH #58) ━━━${RESET}"
+
+  local hook="$REPO_ROOT/templates/.claude/hooks/phase-sentinel.sh"
+  if [ ! -x "$hook" ]; then
+    echo "  ${RED}✗${RESET} hook missing or not executable: $hook — RED state"
+    FAIL=$((FAIL+1))
+    return
+  fi
+
+  run_sentinel_case() {
+    local casename="$1" expected="$2" setup_fn="$3"
+    local tmp; tmp="$(mktemp -d -t "phase-sentinel-${casename}-XXXXXX")"
+    mkdir -p "$tmp/.planning/current-phase"
+    "$setup_fn" "$tmp"
+    local out exit_code
+    out=$(CLAUDE_PROJECT_DIR="$tmp" bash "$hook" 2>&1)
+    exit_code=$?
+    if [ "$exit_code" != "$expected" ]; then
+      echo "  ${RED}✗${RESET} $casename — exit $exit_code, expected $expected"
+      printf '%s\n' "$out" | sed 's/^/        /' | head -5
+      FAIL=$((FAIL+1))
+      rm -rf "$tmp"
+      return
+    fi
+    echo "  ${GREEN}✓${RESET} $casename (exit $exit_code)"
+    PASS=$((PASS+1))
+    rm -rf "$tmp"
+  }
+
+  # Case 1 — no checklist.md present -> allow (exit 0)
+  _setup_no_checklist() { :; }
+  run_sentinel_case "no-checklist" 0 _setup_no_checklist
+
+  # Case 2 — checklist with all items checked -> allow (exit 0)
+  _setup_all_checked() {
+    cat > "$1/.planning/current-phase/checklist.md" <<'EOF_CK'
+# Checklist
+- [x] task one done
+- [x] task two done
+EOF_CK
+  }
+  run_sentinel_case "all-checked" 0 _setup_all_checked
+
+  # Case 3 — checklist with >=1 unchecked item -> block (exit 2)
+  _setup_unchecked() {
+    cat > "$1/.planning/current-phase/checklist.md" <<'EOF_CK'
+# Checklist
+- [x] task one done
+- [ ] task two NOT done
+EOF_CK
+  }
+  run_sentinel_case "unchecked-blocks" 2 _setup_unchecked
+}
+
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Migration 0014 — Inject spec §11 canonical block (closes spec 0.4.0 §11)
@@ -1567,6 +1719,14 @@ fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "0011" ]; then
   test_migration_0011
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "0022" ]; then
+  test_migration_0022
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "phase-sentinel" ]; then
+  test_phase_sentinel
 fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "0014" ]; then
