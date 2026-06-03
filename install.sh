@@ -46,6 +46,17 @@ LINKS=(
 
 mkdir -p "$SKILLS_DIR"
 
+# Legacy cleanup (claude-workflow 2.0.0 / SPLIT-03): observability moved to the separate
+# agenticapps-observability repo and the bundled add-observability/ subdir was deleted, so the
+# add-observability skill-pair is no longer installed here. An add-observability symlink from a
+# pre-2.0.0 install now dangles. Remove it ONLY if it is a symlink whose target is missing — a valid
+# alias created by the obs repo's own install.sh (target exists) is left untouched.
+legacy_obs_link="$SKILLS_DIR/add-observability"
+if [ -L "$legacy_obs_link" ] && [ ! -e "$legacy_obs_link" ]; then
+  rm -f "$legacy_obs_link"
+  echo "  ⊘ removed dangling legacy symlink: add-observability (observability now installs separately)"
+fi
+
 echo "Installing AgenticApps workflow skills"
 echo "  Scaffolder: $SCAFFOLDER"
 echo "  Skills dir: $SKILLS_DIR"

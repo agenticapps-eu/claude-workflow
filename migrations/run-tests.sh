@@ -1390,6 +1390,22 @@ EOF_CK
 EOF_CK
   }
   run_sentinel_case "unchecked-blocks" 2 _setup_unchecked
+
+  # Case 4 — huge unchecked list (grep output exceeds the ~64KB pipe buffer) -> still
+  # block (exit 2). Regression for the SIGPIPE bug (codex review, SPLIT-03): when grep's
+  # matched output overflows the pipe buffer, `head -5` closes the pipe early, grep dies
+  # on SIGPIPE, and under `set -euo pipefail` the hook exited 141 before reaching `exit 2`.
+  # The line count/length here is deliberately large enough to overflow the buffer; the
+  # earlier small unchecked cases fit in the buffer and do NOT exercise this path.
+  _setup_many_unchecked() {
+    {
+      echo "# Checklist"
+      for i in $(seq 1 5000); do
+        echo "- [ ] task $i NOT done — padding text to push matched output past the pipe buffer"
+      done
+    } > "$1/.planning/current-phase/checklist.md"
+  }
+  run_sentinel_case "many-unchecked-blocks-sigpipe" 2 _setup_many_unchecked
 }
 
 

@@ -38,8 +38,11 @@ If you are below 1.21.0, advance to the 1.21.0 baseline first.
   `agenticapps-observability`).
 - New migration `0022` repoints the observability install reference, replaces the
   Stop-hook Phase Sentinel with a deterministic shell hook (#58), and carries
-  `to_version: 2.0.0` — bumping `skill/SKILL.md` to `2.0.0` and resolving the
-  prior 1.20.0 (skill) / 1.21.0 (tag) skew.
+  `to_version: 2.0.0` — bumping your project-local
+  `.claude/skills/agentic-apps-workflow/SKILL.md` to `2.0.0` and resolving the
+  prior 1.20.0 (skill) / 1.21.0 (tag) skew. (In the claude-workflow repo itself the
+  same release bumps the source `skill/SKILL.md`; downstream projects only have the
+  hyphenated installed-skill file.)
 
 ### What downstream projects must do
 
