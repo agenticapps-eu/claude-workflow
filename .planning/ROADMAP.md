@@ -188,9 +188,9 @@ Plans:
 - [x] 29-04-PLAN.md — Wave 4 (TDD): migration 0022 — explicit-flush cron-monitor (3 stacks) + queue-monitor (2 stacks) + #61 types.d.ts + ADR-0036; preserve narrowed generic
 - [x] 29-05-PLAN.md — Wave 5: verify obs green (0019/0021/0022 + drift + history + dual-skill) + claude-workflow 186/4 guard + tag v0.11.0 (checkpoint: ship)
 
-### Phase 30: SPLIT-03 — claude-workflow 2.0.0 follow-up (planned)
+### Phase 30: SPLIT-03 — claude-workflow 2.0.0 follow-up
 
-**Goal:** Post-split cleanup: `add-observability`→`observability` alias (2-minor deprecation window), reference cleanup, ship `claude-workflow 2.0.0` (split = breaking-change rationale), fix #58 (Stop-hook nag). **Blocked on Phase 29.**
+**Goal:** Post-split cleanup: delete `add-observability/` + the moved migrations/fixtures/ADRs from claude-workflow, repoint the observability install path, manage the `add-observability`→`observability` alias deprecation window, write the downstream upgrade story, ship `claude-workflow 2.0.0` (split = breaking-change rationale), and fix #58 (Stop-hook nag). **Unblocked — Phase 29 complete (obs v0.11.1 live).**
 
 ## Progress
 
