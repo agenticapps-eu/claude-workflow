@@ -2,10 +2,10 @@
 # install.sh — make the AgenticApps Claude Workflow skills discoverable.
 #
 # Claude Code's skill loader scans ~/.claude/skills/<name>/SKILL.md (one level
-# deep). This repo nests skills in subdirectories (skill/, setup/, update/,
-# add-observability/) for logical grouping, so the loader doesn't find them by
-# default. This script symlinks each skill subdirectory out to its canonical
-# discoverable path.
+# deep). This repo nests skills in subdirectories (skill/, setup/, update/)
+# for logical grouping, so the loader doesn't find them by default. This
+# script symlinks each skill subdirectory out to its canonical discoverable
+# path.
 #
 # Run this once after cloning the scaffolder, and again after every `git pull`
 # that adds new skill subdirectories. Idempotent — safe to re-run any time.
@@ -42,10 +42,20 @@ LINKS=(
   "skill agentic-apps-workflow"
   "setup setup-agenticapps-workflow"
   "update update-agenticapps-workflow"
-  "add-observability add-observability"
 )
 
 mkdir -p "$SKILLS_DIR"
+
+# Legacy cleanup (claude-workflow 2.0.0 / SPLIT-03): observability moved to the separate
+# agenticapps-observability repo and the bundled add-observability/ subdir was deleted, so the
+# add-observability skill-pair is no longer installed here. An add-observability symlink from a
+# pre-2.0.0 install now dangles. Remove it ONLY if it is a symlink whose target is missing — a valid
+# alias created by the obs repo's own install.sh (target exists) is left untouched.
+legacy_obs_link="$SKILLS_DIR/add-observability"
+if [ -L "$legacy_obs_link" ] && [ ! -e "$legacy_obs_link" ]; then
+  rm -f "$legacy_obs_link"
+  echo "  ⊘ removed dangling legacy symlink: add-observability (observability now installs separately)"
+fi
 
 echo "Installing AgenticApps workflow skills"
 echo "  Scaffolder: $SCAFFOLDER"
@@ -111,6 +121,5 @@ echo "Slash commands now available in any Claude Code session:"
 echo "  /agentic-apps-workflow         the workflow itself (auto-triggers on code tasks)"
 echo "  /setup-agenticapps-workflow    bootstrap a fresh project"
 echo "  /update-agenticapps-workflow   apply pending migrations to an installed project"
-echo "  /add-observability             greenfield observability scaffold (init) + brownfield scan + apply"
 echo ""
-echo "Verify discovery with: ls -la $SKILLS_DIR | grep -E '(agentic|setup|update)-?(apps-)?workflow|add-observability'"
+echo "Verify discovery with: ls -la $SKILLS_DIR | grep -E '(agentic|setup|update)-?(apps-)?workflow'"

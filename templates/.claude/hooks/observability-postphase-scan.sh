@@ -4,10 +4,10 @@
 # Migration 0018 (workflow v1.17.0). Wired into the GSD post-phase chain
 # (.planning/config.json → hooks.post_phase.observability_scan), alongside the
 # spec_review / code_quality_review / qa gates. On phase completion it runs the
-# add-observability delta scan against the phase-base commit and WARNS (never
+# observability delta scan against the phase-base commit and WARNS (never
 # blocks) when this phase introduced new high-confidence §10 gaps.
 #
-# ADVISORY BY DESIGN — issue #50. The scan is LLM-driven today (add-observability
+# ADVISORY BY DESIGN — issue #50. The scan is LLM-driven today (observability
 # is at implements_spec 0.3.2; the deterministic Node scanner port is unshipped),
 # so a hard gate would add per-phase LLM cost + nondeterminism. This hook ALWAYS
 # exits 0; promote it to blocking only once the deterministic scanner lands.
@@ -30,11 +30,11 @@ export OBS_POSTPHASE_SCAN_ACTIVE=1
 [ -d .planning ] || exit 0
 
 # 2. Enforcement adopted? EXPLICIT no-op when no baseline (acceptance criterion):
-#    a project that hasn't run `/add-observability` has nothing to delta against.
+#    a project that hasn't run `/observability` has nothing to delta against.
 if [ ! -f .observability/baseline.json ]; then
   echo "ℹ️  observability post-phase scan: no .observability/baseline.json — project"
   echo "    has not adopted §10.9 enforcement; skipping. Adopt with:"
-  echo "      claude -p \"/add-observability scan --update-baseline\""
+  echo "      claude -p \"/observability scan --update-baseline\""
   exit 0
 fi
 
@@ -66,10 +66,10 @@ esac
 # 4. Run the delta scan headlessly. If the claude CLI isn't on PATH, print the
 #    command for the operator to run by hand and stop (still exit 0).
 if command -v claude >/dev/null 2>&1; then
-  claude -p "/add-observability scan --since-commit $PHASE_BASE" >/dev/null 2>&1 || true
+  claude -p "/observability scan --since-commit $PHASE_BASE" >/dev/null 2>&1 || true
 else
   echo "ℹ️  observability post-phase scan: 'claude' CLI not found — run the delta scan manually:"
-  echo "      claude -p \"/add-observability scan --since-commit $PHASE_BASE\""
+  echo "      claude -p \"/observability scan --since-commit $PHASE_BASE\""
   exit 0
 fi
 
@@ -93,7 +93,7 @@ if [ "$GAPS" -gt 0 ]; then
   echo "(details in $DELTA). Advisory only — the phase is NOT blocked."
   echo ""
   echo "→ Review and apply the high-confidence findings:"
-  echo "      claude -p \"/add-observability scan-apply --confidence high\""
+  echo "      claude -p \"/observability scan-apply --confidence high\""
 fi
 
 exit 0

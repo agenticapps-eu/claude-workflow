@@ -120,7 +120,7 @@ Verification evidence I will produce: {list}
     enforcement (`.observability/baseline.json` present), run
     `.claude/hooks/observability-postphase-scan.sh`. It delta-scans the
     phase diff and WARNS when the phase introduced new high-confidence §10
-    gaps, pointing at `/add-observability scan-apply --confidence high`.
+    gaps, pointing at `/observability scan-apply --confidence high`.
     Advisory only — never blocks the phase (ADR-0027). No-op without a baseline.
 
 ### Finishing Hooks (feature branch ready to merge)

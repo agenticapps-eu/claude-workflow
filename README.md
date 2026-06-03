@@ -75,8 +75,9 @@ git clone https://github.com/agenticapps-eu/claude-workflow.git ~/.claude/skills
 
 # REQUIRED: register the skills with Claude Code's loader.
 # This creates symlinks so /setup-agenticapps-workflow,
-# /update-agenticapps-workflow, /agentic-apps-workflow, and
-# /add-observability are discoverable.
+# /update-agenticapps-workflow, and /agentic-apps-workflow
+# are discoverable. (Observability is now a separate install —
+# see docs/UPGRADING.md.)
 ~/.claude/skills/agenticapps-workflow/install.sh
 
 # Copy the global CLAUDE.md additions
@@ -147,12 +148,6 @@ agenticapps-workflow/
                             # from baseline forward
   update/SKILL.md           # /update-agenticapps-workflow — applies pending
                             # migrations to an installed project
-  add-observability/        # /add-observability — greenfield scaffold (init)
-    SKILL.md                # + brownfield audit (scan) + apply with consent
-    init/INIT.md            # (registered as a top-level skill by install.sh)
-    scan/SCAN.md
-    scan-apply/APPLY.md
-    templates/              # per-stack wrapper / middleware / policy
   migrations/               # Versioned migration files
     README.md               # Format spec
     0000-baseline.md        # v1.2.0 starting state
@@ -163,9 +158,14 @@ agenticapps-workflow/
   docs/                     # ENFORCEMENT-PLAN.md + ADRs
 ```
 
-After `./install.sh`, all four skills are discoverable as slash commands:
-`/agentic-apps-workflow`, `/setup-agenticapps-workflow`,
-`/update-agenticapps-workflow`, and `/add-observability`.
+After `./install.sh`, all three skills are discoverable as slash commands:
+`/agentic-apps-workflow`, `/setup-agenticapps-workflow`, and
+`/update-agenticapps-workflow`.
+
+Observability is no longer shipped by this scaffolder. As of
+claude-workflow 2.0.0 it lives in the separate
+[`agenticapps-observability`](https://github.com/agenticapps-eu/agenticapps-observability)
+repo and installs independently — see [docs/UPGRADING.md](docs/UPGRADING.md).
 
 ## Hook execution order
 

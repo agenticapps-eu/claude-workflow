@@ -94,7 +94,7 @@
       },
       "observability_scan": {
         "enabled": true,
-        "skill": "add-observability:scan",
+        "skill": "observability:scan",
         "trigger": ".observability/baseline.json present (project adopted §10.9 enforcement)",
         "evidence": ".observability/delta.json; advisory warning when counts.high_confidence_gaps > 0",
         "programmatic_hook": ".claude/hooks/observability-postphase-scan.sh",

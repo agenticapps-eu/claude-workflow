@@ -1170,15 +1170,12 @@ test_migration_0011() {
     return
   fi
 
-  # Sanity-check that the scaffolder ships the scan/SCAN.md the migration
-  # references. The enforcement/observability.yml.example is NOT installed
-  # by this migration (local-only enforcement) so we don't need to check it.
-  local scaffolder_scan="$REPO_ROOT/add-observability/scan/SCAN.md"
-  if [ ! -f "$scaffolder_scan" ]; then
-    echo "  ${RED}✗${RESET} scaffolder source missing: $scaffolder_scan — RED state"
-    FAIL=$((FAIL+1))
-    return
-  fi
+  # NOTE (SPLIT-03): observability moved to agenticapps-observability, so the
+  # scaffolder no longer ships add-observability/scan/SCAN.md inside this repo.
+  # The 0011 migration's verify only checks project-local state, not the
+  # scaffolder source, so the fixture sandbox uses an inline stub SCAN.md
+  # (created in run_0011_fixture below). The old scaffolder-presence sanity
+  # check has been removed.
 
   run_0011_fixture() {
     local fixname="$1"
@@ -1188,11 +1185,13 @@ test_migration_0011() {
     mkdir -p "$fake_home"
 
     # The scaffolder-side files the migration references must live under
-    # $HOME/.claude/skills/agenticapps-workflow/ in the sandbox. Pre-create
-    # with the REAL scan/SCAN.md from this branch so fixtures referring to
-    # the scan procedure see the actual shipped file.
+    # $HOME/.claude/skills/agenticapps-workflow/ in the sandbox. Observability
+    # moved to agenticapps-observability (SPLIT-03), so the scaffolder no longer
+    # ships scan/SCAN.md inside this repo — create an inline stub instead. The
+    # path is NON-hyphenated to match migration 0011's requires.verify path
+    # (~/.claude/skills/agenticapps-workflow/add-observability/scan/SCAN.md).
     mkdir -p "$fake_home/.claude/skills/agenticapps-workflow/add-observability/scan"
-    cp "$scaffolder_scan" "$fake_home/.claude/skills/agenticapps-workflow/add-observability/scan/SCAN.md"
+    printf '%s\n' '# SCAN (stub — observability moved to agenticapps-observability)' > "$fake_home/.claude/skills/agenticapps-workflow/add-observability/scan/SCAN.md"
 
     if [ -x "$fixdir/setup.sh" ]; then
       (
@@ -1241,21 +1240,24 @@ test_migration_0011() {
   done
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Migration 0012 — Slash-command discovery wire-up
-# WORKFLOW — verify body specific to migration 0012 content; stays in claude-workflow
-# ─────────────────────────────────────────────────────────────────────────────
-# Same state-comparison pattern as 0011. Each fixture builds a sandboxed
-# $HOME with the scaffolder skill tree, a per-project workflow SKILL.md
-# at v1.10.0, and a fixture-specific $HOME/.claude/skills/add-observability
-# state. verify.sh asserts pre-flight + step idempotency checks return
-# what they should for that state.
 
-test_migration_0012() {
+# ─────────────────────────────────────────────────────────────────────────────
+# Migration 0022 — Observability repoint + Phase Sentinel hook (v1.20.0 -> 2.0.0)
+# WORKFLOW — verify body specific to migration 0022 content; stays in claude-workflow
+# ─────────────────────────────────────────────────────────────────────────────
+# Same fixture-runner shape as 0011/0014: each fixture builds a sandboxed $HOME
+# (with or without the separately-installed `observability` skill) plus a
+# project skeleton at v1.20.0 with a prompt-type Stop hook + an `observability:`
+# CLAUDE.md block. verify.sh asserts the migration's POSITIVE idempotency anchors
+# and pre-flight behave as expected for that state (command hook present,
+# ^version: 2.0.0 present, `skill: observability` present, exit-3 abort message
+# when the obs skill is absent).
+
+test_migration_0022() {
   echo ""
-  echo "${YELLOW}━━━ Migration 0012 — Slash-command discovery wire-up ━━━${RESET}"
+  echo "${YELLOW}━━━ Migration 0022 — Observability repoint + Phase Sentinel hook ━━━${RESET}"
 
-  local fixtures="$REPO_ROOT/migrations/test-fixtures/0012"
+  local fixtures="$REPO_ROOT/migrations/test-fixtures/0022"
 
   if [ ! -d "$fixtures" ]; then
     echo "  ${RED}SKIP${RESET}: fixtures directory missing"
@@ -1263,26 +1265,21 @@ test_migration_0012() {
     return
   fi
 
-  # Sanity-check that the scaffolder ships the add-observability/SKILL.md
-  # the migration's Step 2 verify references via the symlink.
-  local scaffolder_skill="$REPO_ROOT/add-observability/SKILL.md"
-  if [ ! -f "$scaffolder_skill" ]; then
-    echo "  ${RED}✗${RESET} scaffolder source missing: $scaffolder_skill — RED state"
+  # Sanity-check that migration 0022's file itself exists. Until the GREEN
+  # commit lands the migration body, this fails — the RED state TDD requires.
+  local migration_file="$REPO_ROOT/migrations/0022-observability-repoint-phase-sentinel.md"
+  if [ ! -f "$migration_file" ]; then
+    echo "  ${RED}✗${RESET} migration file missing: $migration_file — RED state"
     FAIL=$((FAIL+1))
     return
   fi
 
-  run_0012_fixture() {
+  run_0022_fixture() {
     local fixname="$1"
     local fixdir="$fixtures/$fixname"
-    local tmp; tmp="$(mktemp -d -t "migration-0012-${fixname}-XXXXXX")"
+    local tmp; tmp="$(mktemp -d -t "migration-0022-${fixname}-XXXXXX")"
     local fake_home="$tmp/home"
     mkdir -p "$fake_home"
-
-    # The scaffolder-side files the migration references live at
-    # $HOME/.claude/skills/agenticapps-workflow/add-observability/. The
-    # fixture's common-setup.sh handles the SKILL.md stub directly (kept
-    # in-sandbox for hermeticity, just like 0011's common-setup).
 
     if [ -x "$fixdir/setup.sh" ]; then
       (
@@ -1324,100 +1321,94 @@ test_migration_0012() {
   for fix in "$fixtures"/[0-9]*-*/; do
     local name
     name="$(basename "${fix%/}")"
-    run_0012_fixture "$name"
+    run_0022_fixture "$name"
   done
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Migration 0013 — Auto-init + stale-vendored cleanup (closes cparx F1)
-# WORKFLOW — verify body specific to migration 0013 content; stays in claude-workflow
-# ─────────────────────────────────────────────────────────────────────────────
-# Same state-comparison pattern as 0011/0012. Each fixture builds a sandboxed
-# $HOME with the scaffolder skill tree + a stub init/INIT.md (the migration's
-# requires.verify checks for the latter), a per-project workflow SKILL.md
-# at v1.11.0 (or v1.12.0 for re-apply), and a fixture-specific project-local
-# .claude/skills/add-observability state + CLAUDE.md observability metadata.
-# verify.sh asserts pre-flight + step idempotency checks return what they
-# should for that state.
 
-test_migration_0013() {
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase Sentinel hook (GH #58 / D-07) — deterministic Stop gate exit-code cases
+# WORKFLOW — inline test (no fixture dir): runs the template hook under a temp
+#   CLAUDE_PROJECT_DIR across 3 cases and asserts exit 0/0/2.
+# ─────────────────────────────────────────────────────────────────────────────
+# Cases:
+#   1. no checklist.md                          -> exit 0 (allow)
+#   2. checklist.md, all items checked          -> exit 0 (allow)
+#   3. checklist.md, >=1 unchecked `- [ ]` item -> exit 2 (block) + prints item
+
+test_phase_sentinel() {
   echo ""
-  echo "${YELLOW}━━━ Migration 0013 — Auto-init + stale-vendored cleanup ━━━${RESET}"
+  echo "${YELLOW}━━━ Phase Sentinel hook — deterministic Stop gate (GH #58) ━━━${RESET}"
 
-  local fixtures="$REPO_ROOT/migrations/test-fixtures/0013"
-
-  if [ ! -d "$fixtures" ]; then
-    echo "  ${RED}SKIP${RESET}: fixtures directory missing"
-    SKIP=$((SKIP+1))
-    return
-  fi
-
-  # Sanity-check that the scaffolder ships the init/INIT.md the migration's
-  # Step 2 chains into. (We use a STUB INIT.md inside the sandbox to keep
-  # tests hermetic, but the real file must exist in the scaffolder repo for
-  # `requires.verify` to mean anything.)
-  local scaffolder_init="$REPO_ROOT/add-observability/init/INIT.md"
-  if [ ! -f "$scaffolder_init" ]; then
-    echo "  ${RED}✗${RESET} scaffolder source missing: $scaffolder_init — RED state"
+  local hook="$REPO_ROOT/templates/.claude/hooks/phase-sentinel.sh"
+  if [ ! -x "$hook" ]; then
+    echo "  ${RED}✗${RESET} hook missing or not executable: $hook — RED state"
     FAIL=$((FAIL+1))
     return
   fi
 
-  run_0013_fixture() {
-    local fixname="$1"
-    local fixdir="$fixtures/$fixname"
-    local tmp; tmp="$(mktemp -d -t "migration-0013-${fixname}-XXXXXX")"
-    local fake_home="$tmp/home"
-    mkdir -p "$fake_home"
-
-    # The scaffolder-side files the migration references live under
-    # $HOME/.claude/skills/agenticapps-workflow/. The fixture's common-setup.sh
-    # populates the stub layout directly (kept in-sandbox for hermeticity,
-    # same as 0011/0012).
-
-    if [ -x "$fixdir/setup.sh" ]; then
-      (
-        cd "$tmp" && \
-        HOME="$fake_home" REPO_ROOT="$REPO_ROOT" FIXTURES_ROOT="$fixtures" \
-          "$fixdir/setup.sh" >/dev/null 2>&1
-      ) || {
-        echo "  ${RED}✗${RESET} $fixname — setup.sh failed"
-        FAIL=$((FAIL+1))
-        rm -rf "$tmp"
-        return
-      }
-    fi
-
-    local verify_out verify_exit
-    verify_out=$(
-      cd "$tmp" && \
-      HOME="$fake_home" REPO_ROOT="$REPO_ROOT" \
-        bash "$fixdir/verify.sh" 2>&1
-    )
-    verify_exit=$?
-
-    local expected_exit
-    expected_exit=$(tr -d '\n' < "$fixdir/expected-exit")
-    if [ "$verify_exit" != "$expected_exit" ]; then
-      echo "  ${RED}✗${RESET} $fixname — verify exit $verify_exit, expected $expected_exit"
-      echo "      verify output:"
-      printf '%s\n' "$verify_out" | sed 's/^/        /' | head -10
+  run_sentinel_case() {
+    local casename="$1" expected="$2" setup_fn="$3"
+    local tmp; tmp="$(mktemp -d -t "phase-sentinel-${casename}-XXXXXX")"
+    mkdir -p "$tmp/.planning/current-phase"
+    "$setup_fn" "$tmp"
+    local out exit_code
+    out=$(CLAUDE_PROJECT_DIR="$tmp" bash "$hook" 2>&1)
+    exit_code=$?
+    if [ "$exit_code" != "$expected" ]; then
+      echo "  ${RED}✗${RESET} $casename — exit $exit_code, expected $expected"
+      printf '%s\n' "$out" | sed 's/^/        /' | head -5
       FAIL=$((FAIL+1))
       rm -rf "$tmp"
       return
     fi
-
-    echo "  ${GREEN}✓${RESET} $fixname"
+    echo "  ${GREEN}✓${RESET} $casename (exit $exit_code)"
     PASS=$((PASS+1))
     rm -rf "$tmp"
   }
 
-  for fix in "$fixtures"/[0-9]*-*/; do
-    local name
-    name="$(basename "${fix%/}")"
-    run_0013_fixture "$name"
-  done
+  # Case 1 — no checklist.md present -> allow (exit 0)
+  _setup_no_checklist() { :; }
+  run_sentinel_case "no-checklist" 0 _setup_no_checklist
+
+  # Case 2 — checklist with all items checked -> allow (exit 0)
+  _setup_all_checked() {
+    cat > "$1/.planning/current-phase/checklist.md" <<'EOF_CK'
+# Checklist
+- [x] task one done
+- [x] task two done
+EOF_CK
+  }
+  run_sentinel_case "all-checked" 0 _setup_all_checked
+
+  # Case 3 — checklist with >=1 unchecked item -> block (exit 2)
+  _setup_unchecked() {
+    cat > "$1/.planning/current-phase/checklist.md" <<'EOF_CK'
+# Checklist
+- [x] task one done
+- [ ] task two NOT done
+EOF_CK
+  }
+  run_sentinel_case "unchecked-blocks" 2 _setup_unchecked
+
+  # Case 4 — huge unchecked list (grep output exceeds the ~64KB pipe buffer) -> still
+  # block (exit 2). Regression for the SIGPIPE bug (codex review, SPLIT-03): when grep's
+  # matched output overflows the pipe buffer, `head -5` closes the pipe early, grep dies
+  # on SIGPIPE, and under `set -euo pipefail` the hook exited 141 before reaching `exit 2`.
+  # The line count/length here is deliberately large enough to overflow the buffer; the
+  # earlier small unchecked cases fit in the buffer and do NOT exercise this path.
+  _setup_many_unchecked() {
+    {
+      echo "# Checklist"
+      for i in $(seq 1 5000); do
+        echo "- [ ] task $i NOT done — padding text to push matched output past the pipe buffer"
+      done
+    } > "$1/.planning/current-phase/checklist.md"
+  }
+  run_sentinel_case "many-unchecked-blocks-sigpipe" 2 _setup_many_unchecked
 }
+
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Migration 0014 — Inject spec §11 canonical block (closes spec 0.4.0 §11)
@@ -1610,110 +1601,6 @@ test_migration_0015() {
   done
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Migration 0017 — Adopt Axiom logs destination on existing v0.4.x wrappers
-# WORKFLOW — verify body specific to migration 0017 content; stays in claude-workflow
-# ─────────────────────────────────────────────────────────────────────────────
-# UNLIKE the idempotency-only migrations (0014/0015), 0017 ships an executable
-# apply engine (templates/.claude/scripts/migrate-0017-axiom-destination.sh)
-# that owns the HIGH-RISK pieces: wrapper discovery, content-hash hand-modified
-# detection, the all-clean gate, refuse + .observability-0017.patch generation,
-# and the safe-root apply. The harness therefore runs the engine END-TO-END per
-# fixture (like 0005/0006/0010 run their scripts) rather than only probing
-# idempotency checks.
-#
-# Each fixture: setup.sh builds a sandboxed downstream project (v1.15.0) with
-# specific wrapper roots; verify.sh invokes the engine and asserts the full
-# behaviour (files written / NOT written, .patch produced, CLAUDE.md block,
-# version bump), returning its own exit code which is compared to expected-exit.
-#
-# RED gate: until the migration markdown AND the apply engine both land (GREEN
-# commit), the sanity checks below FAIL — the TDD discipline the phase requires.
-
-test_migration_0017() {
-  echo ""
-  echo "${YELLOW}━━━ Migration 0017 — Adopt Axiom logs destination ━━━${RESET}"
-
-  local fixtures="$REPO_ROOT/migrations/test-fixtures/0017"
-
-  if [ ! -d "$fixtures" ]; then
-    echo "  ${RED}SKIP${RESET}: fixtures directory missing"
-    SKIP=$((SKIP+1))
-    return
-  fi
-
-  # Sanity: the apply engine the fixtures invoke must exist + be executable.
-  local engine="$REPO_ROOT/templates/.claude/scripts/migrate-0017-axiom-destination.sh"
-  if [ ! -x "$engine" ]; then
-    echo "  ${RED}✗${RESET} apply engine missing/non-executable: $engine — RED state"
-    FAIL=$((FAIL+1))
-    return
-  fi
-
-  # Sanity: migration 0017 markdown itself exists (RED until GREEN commit).
-  local migration_file="$REPO_ROOT/migrations/0017-add-axiom-logs-destination.md"
-  if [ ! -f "$migration_file" ]; then
-    echo "  ${RED}✗${RESET} migration file missing: $migration_file — RED state"
-    FAIL=$((FAIL+1))
-    return
-  fi
-
-  # Sanity: known-wrapper-hashes.json exists and is valid JSON.
-  local hashes="$fixtures/known-wrapper-hashes.json"
-  if ! jq -e . < "$hashes" >/dev/null 2>&1; then
-    echo "  ${RED}✗${RESET} known-wrapper-hashes.json missing or invalid JSON — RED state"
-    FAIL=$((FAIL+1))
-    return
-  fi
-
-  run_0017_fixture() {
-    local fixname="$1"
-    local fixdir="$fixtures/$fixname"
-    local tmp; tmp="$(mktemp -d -t "migration-0017-${fixname}-XXXXXX")"
-
-    if [ -x "$fixdir/setup.sh" ]; then
-      (
-        cd "$tmp" && \
-        REPO_ROOT="$REPO_ROOT" FIXTURES_ROOT="$fixtures" \
-          "$fixdir/setup.sh" >/dev/null 2>&1
-      ) || {
-        echo "  ${RED}✗${RESET} $fixname — setup.sh failed"
-        FAIL=$((FAIL+1))
-        rm -rf "$tmp"
-        return
-      }
-    fi
-
-    local verify_out verify_exit
-    verify_out=$(
-      cd "$tmp" && \
-      REPO_ROOT="$REPO_ROOT" \
-        bash "$fixdir/verify.sh" 2>&1
-    )
-    verify_exit=$?
-
-    local expected_exit
-    expected_exit=$(tr -d '\n' < "$fixdir/expected-exit")
-    if [ "$verify_exit" != "$expected_exit" ]; then
-      echo "  ${RED}✗${RESET} $fixname — verify exit $verify_exit, expected $expected_exit"
-      echo "      verify output:"
-      printf '%s\n' "$verify_out" | sed 's/^/        /' | head -15
-      FAIL=$((FAIL+1))
-      rm -rf "$tmp"
-      return
-    fi
-
-    echo "  ${GREEN}✓${RESET} $fixname"
-    PASS=$((PASS+1))
-    rm -rf "$tmp"
-  }
-
-  for fix in "$fixtures"/[0-9]*-*/; do
-    local name
-    name="$(basename "${fix%/}")"
-    run_0017_fixture "$name"
-  done
-}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Preflight-correctness audit (Phase 13)
@@ -1783,338 +1670,9 @@ test_migration_0016() {
   rm -rf "$tmp"
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# meta.yaml ↔ adapter role-table consistency (Phase 21 / P4.3)
-# WORKFLOW — checks observability-specific meta.yaml/registry role tables;
-#   these are tied to this repo's add-observability templates, not generic infra
-# ─────────────────────────────────────────────────────────────────────────────
-#
-# `init` (add-observability/init/INIT.md) is an agent-followed markdown runbook,
-# not an executable binary, so there is no `add-observability init` command a
-# shell fixture can invoke. The automatable backstop for Phase 1.5's
-# destination role assignment is this consistency check: every stack's
-# meta.yaml `destinations.roles_supported` MUST exactly match that stack's
-# wrapper adapter role table (`ADAPTER_SUPPORTED_ROLES` for TS,
-# `adapterSupportedRoles` for Go). init reads `roles_supported` to validate
-# `--destinations` fail-closed; the wrapper's runtime `resolveConfig` reads the
-# adapter table. If they drift, init would accept/reject overrides differently
-# from the wrapper — this test makes that drift a failure.
 
-# Extract "sentry=errors,logs;axiom=logs,analytics" from a TS registry.ts
-# ADAPTER_SUPPORTED_ROLES block or a Go adapterSupportedRoles map.
-# WORKFLOW — helper for test_meta_destinations_consistency; parses observability-specific adapter tables
-_roles_from_adapter() {
-  local file="$1"
-  # Scope to the role table ONLY (not the ADAPTER_FACTORIES map, which also has
-  # sentry:/axiom: keys). TS: ADAPTER_SUPPORTED_ROLES with [...] arrays;
-  # Go: adapterSupportedRoles with {...} maps.
-  #   TS:  sentry: ["errors", "logs"],   axiom: ["logs", "analytics"],
-  #   Go:  destSentry: {RoleErrors, RoleLogs},  destAxiom: {RoleLogs, RoleAnalytics},
-  awk '
-    function emit(dest, body,   n, parts, i, role, out) {
-      gsub(/[][{}"]/, "", body); gsub(/[ \t]/, "", body)
-      gsub(/Role/, "", body)            # Go: RoleErrors -> Errors
-      n = split(body, parts, ","); out = ""
-      for (i = 1; i <= n; i++) { role = tolower(parts[i]); if (role != "") out = out (out==""?"":",") role }
-      print dest "=" out
-    }
-    # Start ONLY at the declaration line (TS `const ... = {`, Go `var ... = map...{`),
-    # not at comment mentions of the constant name elsewhere in the file.
-    /(const ADAPTER_SUPPORTED_ROLES|var adapterSupportedRoles).*\{[ \t]*$/ { in_tbl = 1; next }
-    in_tbl && /^[ \t]*}/                            { in_tbl = 0 }
-    in_tbl && /^[ \t]*(sentry|destSentry)[ \t]*:/   { sub(/^[^:]*:/, ""); emit("sentry", $0) }
-    in_tbl && /^[ \t]*(axiom|destAxiom)[ \t]*:/     { sub(/^[^:]*:/, ""); emit("axiom",  $0) }
-  ' "$file" | sort | tr '\n' ';'
-}
 
-# Extract "sentry=errors,logs;axiom=logs,analytics" from a meta.yaml
-# destinations.roles_supported block.
-# WORKFLOW — helper for test_meta_destinations_consistency; parses observability-specific meta.yaml
-_roles_from_meta() {
-  local file="$1"
-  awk '
-    /^destinations:/            { in_d = 1; next }
-    in_d && /^[^[:space:]]/     { in_d = 0; in_r = 0 }      # left the top-level block
-    in_d && /roles_supported:/  { in_r = 1; next }
-    in_r && /^[^[:space:]]/     { in_r = 0 }
-    in_r && /^[ \t]+(sentry|axiom)[ \t]*:/ {
-      line = $0
-      split(line, kv, ":"); dest = kv[1]; gsub(/[ \t]/, "", dest)
-      body = substr(line, index(line, ":") + 1)
-      # strip trailing inline comment, brackets, quotes, whitespace
-      sub(/#.*/, "", body); gsub(/[]["]/, "", body); gsub(/[ \t]/, "", body)
-      n = split(body, parts, ","); out = ""
-      for (i = 1; i <= n; i++) { r = tolower(parts[i]); if (r != "") out = out (out==""?"":",") r }
-      print dest "=" out
-    }
-  ' "$file" | sort | tr '\n' ';'
-}
 
-test_meta_destinations_consistency() {
-  echo ""
-  echo "${YELLOW}━━━ Phase 21 / P4 — meta.yaml ↔ adapter role-table consistency ━━━${RESET}"
-
-  local tdir="$REPO_ROOT/add-observability/templates"
-  # stack -> adapter role-table source file (TS registry.ts / Go destinations.go)
-  local stacks="ts-cloudflare-worker ts-cloudflare-pages ts-supabase-edge ts-react-vite go-fly-http"
-
-  for s in $stacks; do
-    local meta="$tdir/$s/meta.yaml"
-    local adapter=""
-    if [ -f "$tdir/$s/destinations/registry.ts" ]; then
-      adapter="$tdir/$s/destinations/registry.ts"
-    elif [ -f "$tdir/$s/destinations.go" ]; then
-      adapter="$tdir/$s/destinations.go"
-    fi
-
-    if [ ! -f "$meta" ]; then
-      echo "  ${RED}✗${RESET} $s: meta.yaml missing"; FAIL=$((FAIL+1)); continue
-    fi
-    if [ -z "$adapter" ]; then
-      echo "  ${RED}✗${RESET} $s: adapter role-table source not found"; FAIL=$((FAIL+1)); continue
-    fi
-
-    local meta_roles adapter_roles
-    meta_roles="$(_roles_from_meta "$meta")"
-    adapter_roles="$(_roles_from_adapter "$adapter")"
-
-    # Expected canonical shape (guards against the awk silently emitting "").
-    local expected="axiom=logs,analytics;sentry=errors,logs;"
-    if [ "$meta_roles" != "$expected" ]; then
-      echo "  ${RED}✗${RESET} $s: meta roles_supported = '$meta_roles' (want '$expected')"
-      FAIL=$((FAIL+1)); continue
-    fi
-    if [ "$meta_roles" = "$adapter_roles" ]; then
-      echo "  ${GREEN}✓${RESET} $s: roles_supported matches adapter table ($meta_roles)"
-      PASS=$((PASS+1))
-    else
-      echo "  ${RED}✗${RESET} $s: meta '$meta_roles' != adapter '$adapter_roles'"
-      FAIL=$((FAIL+1))
-    fi
-  done
-}
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Migration 0018 — Post-phase observability scan hook (advisory)
-# WORKFLOW — verify body specific to migration 0018 content; stays in claude-workflow
-# ─────────────────────────────────────────────────────────────────────────────
-# Like 0014/0015 this is an idempotency-only migration (no apply engine). The
-# fixtures probe the three steps' idempotency checks on pre-apply (01) and
-# post-apply (02) states. PLUS a direct advisory-contract smoke test of the
-# shipped template hook: it MUST exit 0 outside a GSD project AND without a
-# baseline (the no-op-but-explicit acceptance criterion).
-
-test_migration_0018() {
-  echo ""
-  echo "${YELLOW}━━━ Migration 0018 — Post-phase observability scan hook (advisory) ━━━${RESET}"
-
-  local fixtures="$REPO_ROOT/migrations/test-fixtures/0018"
-  local migration_file="$REPO_ROOT/migrations/0018-postphase-observability-hook.md"
-  local hook="$REPO_ROOT/templates/.claude/hooks/observability-postphase-scan.sh"
-
-  # Sanity (RED until the GREEN commit lands all three artifacts).
-  if [ ! -f "$migration_file" ]; then
-    echo "  ${RED}✗${RESET} migration file missing: $migration_file — RED state"; FAIL=$((FAIL+1)); return
-  fi
-  if [ ! -x "$hook" ]; then
-    echo "  ${RED}✗${RESET} hook template missing/non-executable: $hook — RED state"; FAIL=$((FAIL+1)); return
-  fi
-  if ! jq -e '.hooks.post_phase.observability_scan' "$REPO_ROOT/templates/config-hooks.json" >/dev/null 2>&1; then
-    echo "  ${RED}✗${RESET} config-hooks.json missing post_phase.observability_scan — RED state"; FAIL=$((FAIL+1)); return
-  fi
-
-  # Advisory contract: never exits non-zero.
-  local smoke; smoke="$(mktemp -d -t migration-0018-smoke-XXXXXX)"
-  ( cd "$smoke" && bash "$hook" >/dev/null 2>&1 ); local rc_outside=$?
-  ( cd "$smoke" && mkdir -p .planning && bash "$hook" >/dev/null 2>&1 ); local rc_nobaseline=$?
-  rm -rf "$smoke"
-  if [ "$rc_outside" -eq 0 ] && [ "$rc_nobaseline" -eq 0 ]; then
-    echo "  ${GREEN}✓${RESET} hook is advisory — exit 0 outside GSD and without a baseline"
-    PASS=$((PASS+1))
-  else
-    echo "  ${RED}✗${RESET} hook must always exit 0 (outside=$rc_outside, no-baseline=$rc_nobaseline)"
-    FAIL=$((FAIL+1))
-  fi
-
-  if [ ! -d "$fixtures" ]; then
-    echo "  ${RED}SKIP${RESET}: fixtures directory missing"; SKIP=$((SKIP+1)); return
-  fi
-
-  run_0018_fixture() {
-    local fixname="$1"
-    local fixdir="$fixtures/$fixname"
-    local tmp; tmp="$(mktemp -d -t "migration-0018-${fixname}-XXXXXX")"
-
-    if [ -x "$fixdir/setup.sh" ]; then
-      ( cd "$tmp" && REPO_ROOT="$REPO_ROOT" FIXTURES_ROOT="$fixtures" "$fixdir/setup.sh" >/dev/null 2>&1 ) || {
-        echo "  ${RED}✗${RESET} $fixname — setup.sh failed"; FAIL=$((FAIL+1)); rm -rf "$tmp"; return
-      }
-    fi
-
-    local verify_out verify_exit
-    verify_out=$( cd "$tmp" && REPO_ROOT="$REPO_ROOT" bash "$fixdir/verify.sh" 2>&1 )
-    verify_exit=$?
-
-    local expected_exit; expected_exit=$(tr -d '\n' < "$fixdir/expected-exit")
-    if [ "$verify_exit" != "$expected_exit" ]; then
-      echo "  ${RED}✗${RESET} $fixname — verify exit $verify_exit, expected $expected_exit"
-      printf '%s\n' "$verify_out" | sed 's/^/        /' | head -10
-      FAIL=$((FAIL+1)); rm -rf "$tmp"; return
-    fi
-
-    echo "  ${GREEN}✓${RESET} $fixname"; PASS=$((PASS+1)); rm -rf "$tmp"
-  }
-
-  for fix in "$fixtures"/[0-9]*-*/; do
-    local name; name="$(basename "${fix%/}")"
-    run_0018_fixture "$name"
-  done
-}
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Migration 0019 — Sentry Crons withCronMonitor + healthz snippets
-# WORKFLOW — verify body specific to migration 0019 content; stays in claude-workflow
-# ─────────────────────────────────────────────────────────────────────────────
-# Same harness shape as test_migration_0017 / 0018: per-fixture setup.sh
-# materialises a synthetic v1.17.0 project; per-fixture verify.sh invokes the
-# 0019 apply engine, asserts engine exit code + post-state, and exits 0/non-0.
-# expected-exit is the verify.sh exit code (0 across all current fixtures —
-# refuse-path fixtures still exit 0 from verify.sh once they have confirmed
-# the engine itself exited 2).
-test_migration_0019() {
-  echo ""
-  echo "${YELLOW}━━━ Migration 0019 — Sentry Crons + healthz (additive) ━━━${RESET}"
-
-  local fixtures="$REPO_ROOT/migrations/test-fixtures/0019"
-
-  if [ ! -d "$fixtures" ]; then
-    echo "  ${RED}SKIP${RESET}: fixtures directory missing"
-    SKIP=$((SKIP+1))
-    return
-  fi
-
-  # Sanity: the apply engine the fixtures invoke must exist + be executable.
-  local engine="$REPO_ROOT/templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh"
-  if [ ! -x "$engine" ]; then
-    echo "  ${RED}✗${RESET} apply engine missing/non-executable: $engine — RED state"
-    FAIL=$((FAIL+1))
-    return
-  fi
-
-  # Sanity: migration 0019 markdown itself exists (RED until GREEN commit).
-  local migration_file="$REPO_ROOT/migrations/0019-sentry-crons-and-healthz.md"
-  if [ ! -f "$migration_file" ]; then
-    echo "  ${RED}✗${RESET} migration file missing: $migration_file — RED state"
-    FAIL=$((FAIL+1))
-    return
-  fi
-
-  run_0019_fixture() {
-    local fixname="$1"
-    local fixdir="$fixtures/$fixname"
-    local tmp; tmp="$(mktemp -d -t "migration-0019-${fixname}-XXXXXX")"
-
-    if [ -x "$fixdir/setup.sh" ]; then
-      (
-        cd "$tmp" && \
-        REPO_ROOT="$REPO_ROOT" FIXTURES_ROOT="$fixtures" \
-          "$fixdir/setup.sh" >/dev/null 2>&1
-      ) || {
-        echo "  ${RED}✗${RESET} $fixname — setup.sh failed"
-        FAIL=$((FAIL+1))
-        rm -rf "$tmp"
-        return
-      }
-    fi
-
-    local verify_out verify_exit
-    verify_out=$(
-      cd "$tmp" && \
-      REPO_ROOT="$REPO_ROOT" \
-        bash "$fixdir/verify.sh" 2>&1
-    )
-    verify_exit=$?
-
-    local expected_exit
-    expected_exit=$(tr -d '\n' < "$fixdir/expected-exit")
-    if [ "$verify_exit" != "$expected_exit" ]; then
-      echo "  ${RED}✗${RESET} $fixname — verify exit $verify_exit, expected $expected_exit"
-      echo "      verify output:"
-      printf '%s\n' "$verify_out" | sed 's/^/        /' | head -15
-      FAIL=$((FAIL+1))
-      rm -rf "$tmp"
-      return
-    fi
-
-    echo "  ${GREEN}✓${RESET} $fixname"
-    PASS=$((PASS+1))
-    rm -rf "$tmp"
-  }
-
-  for fix in "$fixtures"/[0-9]*-*/; do
-    local name
-    name="$(basename "${fix%/}")"
-    run_0019_fixture "$name"
-  done
-}
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Migration 0021 — re-rev cron-monitor + add queue-monitor (v1.19.0→1.20.0)
-# WORKFLOW — verify body specific to migration 0021 content; stays in claude-workflow
-# ─────────────────────────────────────────────────────────────────────────────
-
-test_migration_0021() {
-  echo
-  echo "${YELLOW}━━━ Migration 0021 — re-rev cron-monitor + add queue-monitor (v1.19.0→1.20.0) ━━━${RESET}"
-
-  local fixtures="$REPO_ROOT/migrations/test-fixtures/0021"
-  if [ ! -d "$fixtures" ]; then
-    echo "${YELLOW}  SKIP — no fixtures dir${RESET}"
-    SKIP=$((SKIP + 1))
-    return
-  fi
-  local engine="$REPO_ROOT/templates/.claude/scripts/migrate-0021-with-cron-and-queue-updates.sh"
-  if [ ! -f "$engine" ]; then
-    echo "${YELLOW}  SKIP — no engine yet (RED — Plan 05 ships it)${RESET}"
-    SKIP=$((SKIP + 1))
-    return
-  fi
-  local migration_file="$REPO_ROOT/migrations/0021-with-cron-and-queue-updates.md"
-  if [ ! -f "$migration_file" ]; then
-    echo "${YELLOW}  SKIP — no migration doc yet (RED)${RESET}"
-    SKIP=$((SKIP + 1))
-    return
-  fi
-
-  run_0021_fixture() {
-    local fixname="$1"
-    local dir="$fixtures/$fixname"
-    [ -d "$dir" ] || { echo "  ${RED}MISSING fixture dir: $fixname${RESET}"; FAIL=$((FAIL+1)); return; }
-    local tmp; tmp="$(mktemp -d -t "migration-0021-${fixname}-XXXXXX")"
-    (
-      cd "$tmp"
-      FIXTURES_ROOT="$fixtures" REPO_ROOT="$REPO_ROOT" bash "$dir/setup.sh"
-      FIXTURES_ROOT="$fixtures" REPO_ROOT="$REPO_ROOT" bash "$dir/verify.sh"
-    )
-    local rc=$?
-    rm -rf "$tmp"
-    if [ "$rc" -eq 0 ]; then
-      echo "  ${GREEN}PASS${RESET} $fixname"
-      PASS=$((PASS + 1))
-    else
-      echo "  ${RED}FAIL${RESET} $fixname"
-      FAIL=$((FAIL + 1))
-    fi
-  }
-
-  for fixname in \
-      01-fresh-1.19.0-apply \
-      02-callbot-shape-dirty-refuse \
-      03-already-1.20.0-skip \
-      04-callbot-shape-strict-env-typecheck; do
-    run_0021_fixture "$fixname"
-  done
-}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # F4 — SKILL.md version drift test (D-06 / G4)
@@ -2143,196 +1701,6 @@ test_skill_md_version_matches_latest_migration_to_version() {
   fi
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# F3 — SIGTERM split-trap + path-validated --pause-between-passes (R-rev-2)
-# Verifies:
-#   Case 1 — SIGTERM mid-apply: engine exits 143, no half-written files.
-#   Case 2 — silent-on-success: EXIT trap emits NO "cleanup" output on exit 0.
-#   Case 3 — no secret leak: SIGTERM stderr has no SENTRY_DSN/API_KEY/TOKEN.
-#   Case 4 — path validation: /etc/passwd rejected (exit 2), allow-listed OK.
-# WORKFLOW — tests the specific migrate-0019-sentry-crons-and-healthz.sh engine;
-#   hardcoded to migration 0019's apply script path; stays in claude-workflow
-# ─────────────────────────────────────────────────────────────────────────────
-
-test_sigterm_mid_apply_preserves_state() {
-  echo ""
-  echo "${YELLOW}━━━ F3 SIGTERM split-trap + --pause-between-passes ━━━${RESET}"
-
-  local ENGINE="$REPO_ROOT/templates/.claude/scripts/migrate-0019-sentry-crons-and-healthz.sh"
-  local TEMPLATES="$REPO_ROOT/add-observability/templates"
-
-  # ── Shared project setup helper ─────────────────────────────────────────────
-  _setup_sigterm_project() {
-    local dir="$1"
-    mkdir -p "$dir/.claude/skills/agentic-apps-workflow"
-    cat > "$dir/.claude/skills/agentic-apps-workflow/SKILL.md" <<'EOF'
----
-name: agentic-apps-workflow
-version: 1.17.0
-implements_spec: 0.4.0
-description: synthetic test fixture for migration 0019
----
-EOF
-    local wroot="$dir/src/lib/observability"
-    mkdir -p "$wroot"
-    cp "$TEMPLATES/ts-cloudflare-worker/lib-observability.ts" "$wroot/lib-observability.ts"
-    cp "$TEMPLATES/ts-cloudflare-worker/middleware.ts"        "$wroot/middleware.ts"
-  }
-
-  # ── Case 4 — path validation (cheapest; no signal needed) ──────────────────
-  # 4a. /etc/passwd must be rejected with exit 2 + expected error message.
-  local bad_stderr; bad_stderr=$(mktemp)
-  local bad_exit
-  set +e
-  bash "$ENGINE" --pause-between-passes /etc/passwd 2>"$bad_stderr"
-  bad_exit=$?
-  set -e
-  if [ "$bad_exit" -ne 2 ]; then
-    echo "  ${RED}✗${RESET} path validation: expected exit 2 for /etc/passwd, got $bad_exit"
-    FAIL=$((FAIL+1))
-    rm -f "$bad_stderr"
-    return
-  fi
-  if ! grep -q "test-only flag with non-allow-listed path" "$bad_stderr"; then
-    echo "  ${RED}✗${RESET} path validation: expected 'test-only flag with non-allow-listed path' in stderr"
-    FAIL=$((FAIL+1))
-    rm -f "$bad_stderr"
-    return
-  fi
-  rm -f "$bad_stderr"
-
-  # 4b. With TMPDIR unset: /etc/passwd still rejected (${TMPDIR:-/tmp} default used).
-  local bad_exit2
-  set +e
-  ( unset TMPDIR; bash "$ENGINE" --pause-between-passes /etc/passwd >/dev/null 2>&1 )
-  bad_exit2=$?
-  set -e
-  if [ "$bad_exit2" -ne 2 ]; then
-    echo "  ${RED}✗${RESET} path validation (TMPDIR unset): expected exit 2, got $bad_exit2"
-    FAIL=$((FAIL+1))
-    return
-  fi
-
-  # 4c. Allow-listed TMPDIR path: engine must NOT emit the path-validation error.
-  #     (Engine may still exit non-zero for other reasons — e.g. all-clean gate —
-  #     when run without --project-dir pointing at a clean sandbox. What matters is
-  #     the absence of the path-validation rejection message in stderr.)
-  local allowed_sig="${TMPDIR:-/tmp}/sigterm-test-pathcheck"
-  local allowed_stderr; allowed_stderr=$(mktemp)
-  set +e
-  bash "$ENGINE" --pause-between-passes "$allowed_sig" >/dev/null 2>"$allowed_stderr"
-  set -e
-  if grep -q "test-only flag with non-allow-listed path" "$allowed_stderr"; then
-    echo "  ${RED}✗${RESET} path validation: allow-listed TMPDIR path incorrectly rejected (path-validation message present)"
-    FAIL=$((FAIL+1))
-    rm -f "$allowed_stderr"
-    return
-  fi
-  rm -f "$allowed_stderr"
-
-  # 4d. Allow-listed fixture prefix: no path-validation rejection message.
-  local fixture_sig="$REPO_ROOT/migrations/test-fixtures/0019/06-multi-root-mixed-clean-dirty-refuses-all/sigterm-foo"
-  local fixture_stderr; fixture_stderr=$(mktemp)
-  set +e
-  bash "$ENGINE" --pause-between-passes "$fixture_sig" >/dev/null 2>"$fixture_stderr"
-  set -e
-  if grep -q "test-only flag with non-allow-listed path" "$fixture_stderr"; then
-    echo "  ${RED}✗${RESET} path validation: allow-listed fixture path incorrectly rejected (path-validation message present)"
-    FAIL=$((FAIL+1))
-    rm -f "$fixture_stderr"
-    return
-  fi
-  rm -f "$fixture_stderr"
-
-  # ── Case 2 — silent-on-success (EXIT trap must emit nothing on exit 0) ──────
-  local clean_dir; clean_dir=$(mktemp -d "${TMPDIR:-/tmp}/sigterm-test-clean-XXXX")
-  _setup_sigterm_project "$clean_dir"
-  local normal_stderr; normal_stderr=$(mktemp)
-  local normal_exit
-  set +e
-  bash "$ENGINE" --templates-dir "$TEMPLATES" --project-dir "$clean_dir" \
-    >/dev/null 2>"$normal_stderr"
-  normal_exit=$?
-  set -e
-  if [ "$normal_exit" -ne 0 ]; then
-    echo "  ${RED}✗${RESET} silent-on-success: normal run expected exit 0, got $normal_exit"
-    FAIL=$((FAIL+1))
-    rm -rf "$clean_dir"; rm -f "$normal_stderr"
-    return
-  fi
-  if grep -q "cleanup" "$normal_stderr"; then
-    echo "  ${RED}✗${RESET} silent-on-success: EXIT trap leaked 'cleanup' output on exit 0 (codex HIGH-2)"
-    echo "      stderr was:"
-    sed 's/^/        /' "$normal_stderr" | head -10
-    FAIL=$((FAIL+1))
-    rm -rf "$clean_dir"; rm -f "$normal_stderr"
-    return
-  fi
-  rm -rf "$clean_dir"; rm -f "$normal_stderr"
-
-  # ── Case 1 + 3 — SIGTERM: exit 143 + no secrets in cleanup output ───────────
-  local sig_dir; sig_dir=$(mktemp -d "${TMPDIR:-/tmp}/sigterm-test-XXXX")
-  local SIG="$sig_dir/sigterm-test-signal"
-  _setup_sigterm_project "$sig_dir"
-
-  local sigterm_stderr; sigterm_stderr=$(mktemp)
-  bash "$ENGINE" --templates-dir "$TEMPLATES" --project-dir "$sig_dir" \
-    --pause-between-passes "$SIG" \
-    >/dev/null 2>"$sigterm_stderr" &
-  local ENGINE_PID=$!
-
-  # Wait up to 10 seconds for the signal file to appear.
-  local i
-  for i in $(seq 1 50); do
-    [ -f "$SIG" ] && break
-    sleep 0.2
-  done
-
-  if [ ! -f "$SIG" ]; then
-    echo "  ${RED}✗${RESET} SIGTERM: engine never reached pause (signal file absent after 10s)"
-    kill -9 "$ENGINE_PID" 2>/dev/null || true
-    wait "$ENGINE_PID" 2>/dev/null || true
-    FAIL=$((FAIL+1))
-    rm -rf "$sig_dir"; rm -f "$sigterm_stderr"
-    return
-  fi
-
-  kill -TERM "$ENGINE_PID" 2>/dev/null || true
-  local engine_exit
-  set +e
-  wait "$ENGINE_PID"
-  engine_exit=$?
-  set -e
-
-  # Case 1: SIGTERM must produce exit 143.
-  if [ "$engine_exit" -ne 143 ]; then
-    echo "  ${RED}✗${RESET} SIGTERM: expected exit 143, got $engine_exit"
-    FAIL=$((FAIL+1))
-    rm -rf "$sig_dir"; rm -f "$sigterm_stderr"
-    return
-  fi
-
-  # Case 1b: no half-written cron-monitor.ts.
-  if find "$sig_dir" -name "cron-monitor.ts" -type f | grep -q .; then
-    echo "  ${RED}✗${RESET} SIGTERM: cron-monitor.ts found (half-written after SIGTERM)"
-    FAIL=$((FAIL+1))
-    rm -rf "$sig_dir"; rm -f "$sigterm_stderr"
-    return
-  fi
-
-  # Case 3: no secrets in cleanup output (T-23-05).
-  if grep -qE "(SENTRY_DSN|API_KEY|TOKEN)=" "$sigterm_stderr"; then
-    echo "  ${RED}✗${RESET} T-23-05: secret variable leaked in SIGTERM stderr"
-    FAIL=$((FAIL+1))
-    rm -rf "$sig_dir"; rm -f "$sigterm_stderr"
-    return
-  fi
-
-  rm -rf "$sig_dir"; rm -f "$sigterm_stderr"
-
-  echo "  ${GREEN}PASS${RESET}: test-sigterm-mid-apply-preserves-state"
-  PASS=$((PASS+1))
-}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Dispatcher
@@ -2369,12 +1737,12 @@ if [ -z "$FILTER" ] || [ "$FILTER" = "0011" ]; then
   test_migration_0011
 fi
 
-if [ -z "$FILTER" ] || [ "$FILTER" = "0012" ]; then
-  test_migration_0012
+if [ -z "$FILTER" ] || [ "$FILTER" = "0022" ]; then
+  test_migration_0022
 fi
 
-if [ -z "$FILTER" ] || [ "$FILTER" = "0013" ]; then
-  test_migration_0013
+if [ -z "$FILTER" ] || [ "$FILTER" = "phase-sentinel" ]; then
+  test_phase_sentinel
 fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "0014" ]; then
@@ -2389,28 +1757,8 @@ if [ -z "$FILTER" ] || [ "$FILTER" = "0016" ]; then
   test_migration_0016
 fi
 
-if [ -z "$FILTER" ] || [ "$FILTER" = "0017" ]; then
-  test_migration_0017
-fi
-
-if [ -z "$FILTER" ] || [ "$FILTER" = "0018" ]; then
-  test_migration_0018
-fi
-
-if [ -z "$FILTER" ] || [ "$FILTER" = "0019" ]; then
-  test_migration_0019
-fi
-
-if [ -z "$FILTER" ] || [ "$FILTER" = "0021" ]; then
-  test_migration_0021
-fi
-
 if [ -z "$FILTER" ] || [ "$FILTER" = "preflight" ]; then
   test_preflight_verify_paths
-fi
-
-if [ -z "$FILTER" ] || [ "$FILTER" = "destinations" ]; then
-  test_meta_destinations_consistency
 fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "test-skill-md-version-matches-latest-migration-to-version" ]; then
@@ -2421,15 +1769,6 @@ if [ -z "$FILTER" ] || [ "$FILTER" = "test-skill-md-version-matches-latest-migra
     test_skill_md_version_matches_latest_migration_to_version
   elif [ -n "$FILTER" ]; then
     echo "${YELLOW}SKIP${RESET}: test-skill-md-version-matches-latest-migration-to-version (function not yet defined)"
-    SKIP=$((SKIP+1))
-  fi
-fi
-
-if [ -z "$FILTER" ] || [ "$FILTER" = "test-sigterm-mid-apply-preserves-state" ]; then
-  if declare -F test_sigterm_mid_apply_preserves_state >/dev/null 2>&1; then
-    test_sigterm_mid_apply_preserves_state
-  elif [ -n "$FILTER" ]; then
-    echo "${YELLOW}SKIP${RESET}: test-sigterm-mid-apply-preserves-state (function not yet defined)"
     SKIP=$((SKIP+1))
   fi
 fi

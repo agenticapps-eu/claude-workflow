@@ -188,9 +188,16 @@ Plans:
 - [x] 29-04-PLAN.md — Wave 4 (TDD): migration 0022 — explicit-flush cron-monitor (3 stacks) + queue-monitor (2 stacks) + #61 types.d.ts + ADR-0036; preserve narrowed generic
 - [x] 29-05-PLAN.md — Wave 5: verify obs green (0019/0021/0022 + drift + history + dual-skill) + claude-workflow 186/4 guard + tag v0.11.0 (checkpoint: ship)
 
-### Phase 30: SPLIT-03 — claude-workflow 2.0.0 follow-up (planned)
+### Phase 30: SPLIT-03 — claude-workflow 2.0.0 follow-up
 
-**Goal:** Post-split cleanup: `add-observability`→`observability` alias (2-minor deprecation window), reference cleanup, ship `claude-workflow 2.0.0` (split = breaking-change rationale), fix #58 (Stop-hook nag). **Blocked on Phase 29.**
+**Goal:** Post-split cleanup: delete `add-observability/` + the moved migrations/fixtures/ADRs from claude-workflow, repoint the observability install path, manage the `add-observability`→`observability` alias deprecation window, write the downstream upgrade story, ship `claude-workflow 2.0.0` (split = breaking-change rationale), and fix #58 (Stop-hook nag). **Unblocked — Phase 29 complete (obs v0.11.1 live).**
+
+**Plans:** 2/3 plans complete (30-03 Tasks 1-2 done; Task 3 ship gate pending)
+
+Plans:
+- [x] 30-01-PLAN.md — Wave 1: delete add-observability/ tree + 7 moved migrations/fixtures/scripts + 6 obs ADRs; write 7 tombstones; strip 8 obs-dependent test bodies + 0011 sanity check (suite green, drift PASS, SKILL.md stays 1.20.0) — D-01
+- [x] 30-02-PLAN.md — Wave 2: phase-sentinel.sh template + Stop-block swap (#58); migration 0022 (repoint to observability skill, abort-if-absent, to_version 2.0.0, #58 fold-in); SKILL.md → 2.0.0; 0022 + phase-sentinel test bodies (drift GREEN at 2.0.0) — D-02/D-03/D-04/D-07
+- [~] 30-03-PLAN.md — Wave 3: Tasks 1-2 DONE (reference cleanup D-05 incl config-hooks.json L97 → observability:scan + install.sh skill-pair DROP; docs/UPGRADING.md D-06 + CHANGELOG [2.0.0]; commits 13258c3, 8a7dccd; suite PASS 149, drift PASS 2.0.0). Task 3 ship gate (CHANGELOG already in, /gsd-review, tag v2.0.0, breaking PR — human-verify checkpoint) PENDING orchestrator — D-04/D-05/D-06
 
 ## Progress
 
@@ -201,4 +208,4 @@ Plans:
 | 27. 1.21.0 stable baseline (SPLIT-00 gate) | 6/6 | Complete    | 2026-06-02 |
 | 28. SPLIT-01 — agenticapps-shared extraction | 3/3 | Complete    | 2026-06-02 |
 | 29. SPLIT-02 — agenticapps-observability extraction | 5/5 | Complete    | 2026-06-03 |
-| 30. SPLIT-03 — claude-workflow 2.0.0 follow-up | 0/? | Blocked on 29 | — |
+| 30. SPLIT-03 — claude-workflow 2.0.0 follow-up | 2/3 (30-03 Tasks 1-2 done; Task 3 ship gate pending) | In Progress|  |

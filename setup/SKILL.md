@@ -221,12 +221,13 @@ set up under v1.2.0–v1.7.0 and inherited the inlined block. See ADR 0021.
   already-installed workflow.
 - `agentic-apps-workflow` — the workflow itself; this skill installs the
   project's local copy of it.
-- `add-observability` — observability scaffold (`init`) + brownfield
-  audit (`scan`) + apply with consent (`scan-apply`). Registered as a
-  top-level slash-discoverable skill by `install.sh` (v1.11.0+). The
-  scaffolder ships the skill at `add-observability/` and `install.sh`
-  symlinks it to `~/.claude/skills/add-observability/` so
-  `/add-observability` is invocable from any Claude Code session.
+- `observability` — observability scaffold (`init`) + brownfield
+  audit (`scan`) + apply with consent (`scan-apply`). As of
+  claude-workflow 2.0.0 this skill is no longer shipped by this
+  scaffolder; it lives in the separate
+  `agenticapps-observability` repo and installs independently
+  (`/observability` becomes invocable once that repo's `install.sh`
+  has run). See `docs/UPGRADING.md`.
 
 ## Migration to this refactor
 
