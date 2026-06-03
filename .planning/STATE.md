@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.19.0
 milestone_name: migration
 status: executing
-stopped_at: Phase 30 context gathered
-last_updated: "2026-06-03T07:32:47.502Z"
+stopped_at: Completed 30-01-PLAN.md (deletion wave; suite green PASS 143/FAIL 0; SKILL.md still 1.20.0)
+last_updated: "2026-06-03T09:45:55.528Z"
 last_activity: 2026-06-03
 progress:
   total_phases: 6
   completed_phases: 5
-  total_plans: 22
-  completed_plans: 22
-  percent: 100
+  total_plans: 25
+  completed_plans: 23
+  percent: 92
 ---
 
 # Project State
@@ -22,14 +22,14 @@ See: .planning/PROJECT.md
 See: .planning/ROADMAP.md (single-row stub, 2026-05-31 — Phase 25 + Phase 26 placeholder only)
 
 **Core value:** Spec-first, migration-driven workflow scaffolder for AgenticApps projects.
-**Current focus:** Phase 29 — split-02-agenticapps-observability
+**Current focus:** Phase 30 — split-03-claude-workflow-2-0-0-follow-up
 
 ## Current Position
 
 Milestone: repo-split (cooling-off WAIVED 2026-06-02)
-Phase: 30
-Plan: Not started
-Status: Executing Phase 29
+Phase: 30 (split-03-claude-workflow-2-0-0-follow-up) — EXECUTING
+Plan: 2 of 3
+Status: Ready to execute
 
   - /gsd-review done: gemini LOW, codex HIGH (caught 4 structural blind-spots the same-LLM checker missed). All findings A1-A7 in 28-REVIEWS.md.
   - Replanned with --reviews; gsd-plan-checker re-check = VERIFICATION PASSED (A1-A7 covered, no regression). Plans committed `d1e67ba`.
@@ -76,6 +76,7 @@ Recent decisions affecting current work:
 - [Phase 28-split-01-agenticapps-shared]: A4 gitlink pin: superproject gitlink SHA equals 28-02 recorded release SHA 1f5d543bc6ca080ab6e3ba188df33cf3d193e3d4 (verified via git ls-files -s, NOT git describe)
 - [Phase 28-split-01-agenticapps-shared]: A1: setup_fixture stays as WORKFLOW wrapper in run-tests.sh; calls shared extract_to and layers workflow-specific template paths + 1.3.0 special-case
 - [Phase 28-split-01-agenticapps-shared]: A3: install.sh always runs sync+update when .gitmodules exists; stale gitlink advance proven
+- [Phase 30]: 30-01: 0020 IS tombstoned (D-01/Pitfall 4); SKILL.md stays 1.20.0 this wave (0021 tombstone to_version 1.20.0 keeps drift GREEN); new green baseline PASS 143 FAIL 0 (was 186/4); add-observability tree + 6 obs ADRs deleted, all obs-presence-verified
 
 ### Roadmap Evolution
 
@@ -93,7 +94,7 @@ None tracked yet — todo system not initialized at project level.
 
 ## Session Continuity
 
-Last session: 2026-06-03T07:32:47.499Z
-Stopped at: Phase 30 context gathered
-Resume file: .planning/phases/30-split-03-claude-workflow-2-0-0-follow-up/30-CONTEXT.md
+Last session: 2026-06-03T09:45:44.569Z
+Stopped at: Completed 30-01-PLAN.md (deletion wave; suite green PASS 143/FAIL 0; SKILL.md still 1.20.0)
+Resume file: None
 Next action: `/gsd-execute-phase 28`. Execution acts on TWO repos: Wave 1 (28-01,28-02) autonomous on `~/Sourcecode/agenticapps/agenticapps-shared` — carve lib (helpers/fixture-runner[extract_to only]/preflight/drift-test), broadened standalone suite, ADR-0035 amendment, record release SHA, tag v1.0.0. Wave 2 (28-03) autonomous:false on claude-workflow feature branch `split-01-agenticapps-shared` — submodule pin by gitlink SHA, run-tests.sh source-and-keep refactor (setup_fixture rebuilt as wrapper), install.sh existing-clone fix, GSD before/after diff, PR; then human-verify checkpoint (fresh-clone test + /gsd-review on diff). HARD GATE: suite stays PASS=186 FAIL=4 exactly.
