@@ -152,9 +152,41 @@ Plans:
 - [x] 28-02-PLAN.md -- Wave 1 (after 01): agenticapps-shared standalone test suite + _example fixture + CHANGELOG provenance + commit & tag v1.0.0
 - [x] 28-03-PLAN.md -- Wave 2: claude-workflow consumes submodule pinned to v1.0.0; run-tests.sh sources lib (186/4 preserved); install.sh init; CHANGELOG; PR (checkpoint: review/merge)
 
-### Phase 29: SPLIT-02 — extract observability to `agenticapps-observability` (planned)
+### Phase 29: SPLIT-02 — extract observability to `agenticapps-observability`
 
-**Goal:** Extract `add-observability/` → new repo `agenticapps-eu/agenticapps-observability`; rename skill `add-observability` → `observability` (starts 0.11.0); fold deferred obs fixes into its first migration (cron-flush backport per `RESEARCH-cron-monitor-flush-fxsa.md`, #61 `buildMonitorConfig`/fixture fix, queue-monitor.ts race audit). Consumes `agenticapps-shared` as submodule. Plan doc: `SPLIT-02-agenticapps-observability.md`. **Blocked on Phase 28.**
+**Goal:** Extract `add-observability/` → new repo `agenticapps-eu/agenticapps-observability` WITH git history (`git filter-repo`); rename skill `add-observability` → `observability` (starts 0.11.0, Option A dual-symlink alias retained 0.11.0+0.12.0); consume `agenticapps-shared` as a submodule @v1.0.0; fold three deferred obs fixes into a NEW migration **0022** that supersedes 0021 (cron-flush backport per `RESEARCH-cron-monitor-flush-fxsa.md`, #61 `buildMonitorConfig`/types.d.ts fix, queue-monitor.ts race audit) preserving the narrowed strict-Env generic (ADR-0032/SC5); verify the new repo green (0019=13, 0021=4, 0022 green, drift PASS, history preserved) and tag obs **v0.11.0**. **This is the NEW-REPO side ONLY** — claude-workflow stays fully working (COPIED out via scratch-clone filter-repo); its baseline stays `PASS=186 FAIL=4`. The breaking cleanup (delete `add-observability/`, repoint 0011, claude-workflow 2.0.0, fix #58) is Phase 30.
+
+**Depends on:** Phase 28 (`aa1d60f`, agenticapps-shared v1.0.0 / SHA `1f5d543` baseline)
+**Canonical refs:**
+- Context: `.planning/phases/29-split-02-agenticapps-observability/29-CONTEXT.md` (LOCKED scope, decisions, Phase 29/30 boundary)
+- Research: `.planning/phases/29-split-02-agenticapps-observability/29-RESEARCH.md` (migration-ownership audit RESOLVED — 8 move/0011 stays; drift-path pitfall; security domain)
+- Validation: `.planning/phases/29-split-02-agenticapps-observability/29-VALIDATION.md`
+- Plan doc: `SPLIT-02-agenticapps-observability.md` (A–H exec plan); cron-flush draft: `RESEARCH-cron-monitor-flush-fxsa.md`
+- SPLIT-01 precedent: `.planning/phases/28-split-01-agenticapps-shared/28-VERIFICATION.md`
+
+**Planner-resolved decisions (2026-06-02):**
+- Migration 0022 `to_version: 0.11.0` (obs version) — makes the obs drift test pass (only the latest migration's to_version matters; Pitfall 3 Option B).
+- 0017 MOVES (overrides SPLIT-02 doc line 122) — engine sources `add-observability/templates/`; its 4 known-failing fixtures (02/06/10/11) travel as a documented obs follow-up (FIX-0017 deferred).
+- Flush fix scope: cron-monitor cf-worker + cf-pages + supabase-edge; queue-monitor cf-worker + cf-pages only (supabase-edge has no queue-monitor, VERIFIED). fxsa `CronMonitorConfigInput` function-form LEFT OUT (separable).
+
+**Success Criteria** (what must be TRUE):
+  1. `agenticapps-eu/agenticapps-observability` exists (private) at v0.11.0; `vendor/agenticapps-shared` submodule pinned at gitlink SHA `1f5d543`
+  2. The observability tree moved WITH history — `git log --follow` works on SKILL.md, `migrations/scripts/migrate-0019.sh`, and a fixture (3+ files); 8 migrations moved, 0011 + ADR-0035 stayed
+  3. Skill renamed `observability` 0.11.0; legacy `add-observability` alias resolves; `install.sh` creates both symlinks with clobber-guard
+  4. Migration 0022 (supersedes 0021, immutable) lands the cron-flush + #61 + queue-audit fixes; narrowed strict-Env generic preserved; FXSA-WORKERS-6 marker reconciled; `to_version: 0.11.0`
+  5. obs suite green: `run-tests.sh 0019`=13, `0021`=4, `0022` green, drift PASS; `0017`=7/4 (documented known-failures)
+  6. claude-workflow baseline UNCHANGED at `PASS=186 FAIL=4` (Phase 29 only copied out)
+  7. ASVS L1 security gate satisfied — STRIDE register per plan, zero unmitigated HIGH (no `--force` push, $REPO_ROOT-anchored paths, install.sh clobber-guard)
+  8. obs tagged v0.11.0 + pushed; claude-workflow PR / 2.0.0 ship deferred to Phase 30
+
+**Plans:** 5/5 plans complete
+
+Plans:
+- [x] 29-01-PLAN.md — Wave 1: bootstrap repo (private, MIT) + 0.11.0 skeleton + agenticapps-shared submodule @v1.0.0 (checkpoints: repo-create, first push)
+- [x] 29-02-PLAN.md — Wave 2: extract-with-history via git filter-repo on a scratch clone (8 migrations + ADRs 0029-0034; 0011 stays); merge + push (checkpoint: push)
+- [x] 29-03-PLAN.md — Wave 3: skill rename observability 0.11.0 + legacy alias + dual-symlink install.sh + source-and-keep run-tests.sh shim (obs root SKILL.md drift path)
+- [x] 29-04-PLAN.md — Wave 4 (TDD): migration 0022 — explicit-flush cron-monitor (3 stacks) + queue-monitor (2 stacks) + #61 types.d.ts + ADR-0036; preserve narrowed generic
+- [x] 29-05-PLAN.md — Wave 5: verify obs green (0019/0021/0022 + drift + history + dual-skill) + claude-workflow 186/4 guard + tag v0.11.0 (checkpoint: ship)
 
 ### Phase 30: SPLIT-03 — claude-workflow 2.0.0 follow-up (planned)
 
@@ -168,5 +200,5 @@ Plans:
 | 26. worker-template hardening | 3/3 | Complete (merged PR #60, 46bb394) | 2026-06-01 |
 | 27. 1.21.0 stable baseline (SPLIT-00 gate) | 6/6 | Complete    | 2026-06-02 |
 | 28. SPLIT-01 — agenticapps-shared extraction | 3/3 | Complete    | 2026-06-02 |
-| 29. SPLIT-02 — agenticapps-observability extraction | 0/? | Blocked on 28 | — |
+| 29. SPLIT-02 — agenticapps-observability extraction | 5/5 | Complete    | 2026-06-03 |
 | 30. SPLIT-03 — claude-workflow 2.0.0 follow-up | 0/? | Blocked on 29 | — |

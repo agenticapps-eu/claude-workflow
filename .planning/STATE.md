@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.19.0
 milestone_name: migration
-status: verifying
+status: executing
 stopped_at: "Checkpoint Task 4: PR #65 open — awaiting human verify (fresh-clone + /gsd-review + merge)"
-last_updated: "2026-06-02T18:43:20.344Z"
-last_activity: 2026-06-02
+last_updated: "2026-06-03T05:34:41.285Z"
+last_activity: 2026-06-03
 progress:
   total_phases: 6
-  completed_phases: 4
-  total_plans: 17
-  completed_plans: 17
+  completed_phases: 5
+  total_plans: 22
+  completed_plans: 22
   percent: 100
 ---
 
@@ -22,14 +22,14 @@ See: .planning/PROJECT.md
 See: .planning/ROADMAP.md (single-row stub, 2026-05-31 — Phase 25 + Phase 26 placeholder only)
 
 **Core value:** Spec-first, migration-driven workflow scaffolder for AgenticApps projects.
-**Current focus:** Phase 28 — split-01-agenticapps-shared
+**Current focus:** Phase 29 — split-02-agenticapps-observability
 
 ## Current Position
 
 Milestone: repo-split (cooling-off WAIVED 2026-06-02)
-Phase: 29
+Phase: 30
 Plan: Not started
-Status: Phase complete — ready for verification
+Status: Executing Phase 29
 
   - /gsd-review done: gemini LOW, codex HIGH (caught 4 structural blind-spots the same-LLM checker missed). All findings A1-A7 in 28-REVIEWS.md.
   - Replanned with --reviews; gsd-plan-checker re-check = VERIFICATION PASSED (A1-A7 covered, no regression). Plans committed `d1e67ba`.
@@ -37,7 +37,7 @@ Status: Phase complete — ready for verification
   - (Side fix: patched ~/.claude/get-shit-done/workflows/review.md — codex/claude/gemini invocations now `< /dev/null` + timeout; the stdin-hang that bit /gsd-review 3× across repos. Survives /gsd-update via gsd-local-patches. See memory codex-exec-stdin-hang.)
 
 **Plan shape:** Wave 1 = 28-01 (carve 9 SHARED fns → `agenticapps-shared/migrations/lib/{helpers,fixture-runner,preflight,drift-test}.sh` incl. setup_fixture 4th-arg fix + drift mechanism/policy split) → 28-02 (standalone smoke suite + CHANGELOG provenance + tag v1.0.0). Wave 2 = 28-03 (claude-workflow submodule pin @v1.0.0 + run-tests.sh source-and-keep refactor + install.sh + PR; HARD GATE PASS=186 FAIL=4 exact; autonomous:false checkpoint). **Reconciliation resolved:** baseline is 186/4 (not 190+ green); NO filter-repo needed (all migrate-*.sh are obs-specific → SPLIT-02); every carved artifact is provenance-by-note (D-28b).
-Last activity: 2026-06-02
+Last activity: 2026-06-03
 
 Progress: v1.21.0 milestone shipped+merged (PR #62 `5aff1b1`, tag `v1.21.0`). Lightweight close (no heavy /gsd-complete-milestone ceremony — tag already exists, project uses stub-ROADMAP model, no REQUIREMENTS.md/milestones-archive). Sharing mechanism locked = git submodule. ADR-0035 + run-tests.sh SHARED/WORKFLOW annotations (9 SHARED / 20 WORKFLOW) confirm extraction target = `migrations/run-tests.sh` + framework + fixtures (NOT `bin/gsd-tools.cjs`, which is not in-repo).
 

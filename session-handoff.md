@@ -1,33 +1,26 @@
-# Session Handoff — 2026-06-02
+# Session Handoff — 2026-06-03
 
 ## Accomplished
-- Executed **Phase 28 (SPLIT-01)** end-to-end across two repos — `/gsd-execute-phase 28`.
-- **Wave 1 / 28-01:** carved SHARED migration harness into `agenticapps-shared/migrations/lib/{helpers,fixture-runner,preflight,drift-test}.sh` (A1: only `extract_to` shared, `setup_fixture` stays WORKFLOW; A5: `${STRICT_PREFLIGHT:-0}` set-u safe; D-28d drift mechanism/policy split). ADR-0035 amended (9→8 SHARED). 3 commits in agenticapps-shared.
-- **Wave 1 / 28-02:** standalone suite (12/0) proving extract_to real-ref + preflight strict/non-strict + set-u; CHANGELOG provenance; tagged **v1.0.0** @ `1f5d543` (canonical pin SHA, A4).
-- Pushed `agenticapps-shared` main + v1.0.0 to GitHub (user-authorized release).
-- **Wave 2 / 28-03 (checkpoint plan):** claude-workflow consumes the submodule at `vendor/agenticapps-shared` (gitlink == `1f5d543`); run-tests.sh source-and-keep refactor; setup_fixture wrapper (A1); install.sh A3. **Hard gate held: PASS=186 FAIL=4.** Opened PR #65.
-- **Review:** gstack `/review` + codex cross-model on the diff. 3 edge-case findings → all hardened in `096f35f` (fail-closed lib check, install.sh non-git guard, symlink-safe path). Re-verified 186/4.
-- **Fresh-clone verification** (SC-2) passed: clean `--recurse-submodules` clone runs 186/4 at pinned SHA.
-- **Merged PR #65** (squash `aa1d60f`) to main; deleted feature branch.
-- **Close-out:** gsd-verifier PASS 9/9 → `28-VERIFICATION.md`; ROADMAP/STATE phase 28 complete. Opened **PR #66** (bookkeeping).
+- **Executed Phase 29 (SPLIT-02) end-to-end** via `/gsd-execute-phase 29` — all 5 waves complete, verifier PASSED 8/8. Shipped **`agenticapps-eu/agenticapps-observability` v0.11.0** (live, private repo).
+- Wave 1 (29-01): bootstrapped the repo (private, MIT), 0.11.0 skeleton, `agenticapps-shared` submodule pinned @v1.0.0 (`1f5d543`). Gated repo-create + first push — user-approved.
+- Wave 2 (29-02): `git filter-repo` extract-with-history on a scratch clone → 7 migrations (0012/0013/0017/0018/0019/0020/0021) + 6 ADRs (0029-0034) + all 5 stack templates, `--follow` lineage preserved. 0011 + ADR-0035 stayed in claude-workflow. Gated push — user-approved (fast-forward, skeleton preserved).
+- Wave 3 (29-03): skill rename `add-observability`→`observability` 0.11.0, legacy dual-symlink alias, `install.sh` (clobber-guard), `run-tests.sh` source-and-keep shim, `MIGRATIONS_VERSION=1.20.0`. On feature branch `split-02-rename-and-0022`. 3 documented auto-fixes (missing hook template, migrate-0021 REPO_ROOT, stale TEMPLATES_DIR).
+- Wave 4 (29-04, TDD): migration 0022 — explicit per-checkin flush (cron-monitor ×3 stacks, queue-monitor ×2 CF stacks), #61 types fix (in 0022 fixtures only), ADR-0036 (supersedes ADR-0033 flush point). Consumer axis bumped 1.20.0→1.21.0.
+- Wave 5 (29-05): full suite **PASS=42 XFAIL=4 FAIL=0** (re-run independently by orchestrator AND verifier), drift PASS (1.21.0==1.21.0). PR #1 merged to obs main, tag **v0.11.0** pushed. Gated ship — user-approved full ship.
 
 ## Decisions
-- Wave 1 run sequentially on main tree (no worktree) — 28-02 depends on 28-01's lib AND both write the un-isolated `agenticapps-shared` repo. Worktree isolation would not have helped.
-- Submodule pinned by **gitlink SHA** (A4); tag v1.0.0 is provenance only.
-- Applied all 3 codex review findings before merge (user chose "apply all 3").
-- Close-out docs go via PR #66, not direct-to-main (global rule).
+- Ran waves SEQUENTIALLY without worktree isolation — work targets a SIBLING repo, so claude-workflow worktrees don't apply (memory `repo-split-wave-isolation`).
+- Treated 29-CONTEXT.md as authority over the stale ROADMAP line `0022 to_version: 0.11.0` — codex HIGH-1 decoupled the axes: obs product=0.11.0, migration consumer=1.21.0, drift compares MIGRATIONS_VERSION marker. Implementation + verification used 1.21.0.
+- code_review_gate: NOT run as a no-op — claude-workflow's phase diff is docs-only; the real code is in the sibling repo. Plan peer-review (codex) already done in planning; verifier deep-checked the obs code.
 
 ## Files modified
-- `migrations/run-tests.sh` — sources shared lib + setup_fixture wrapper + policy wrappers + hardening.
-- `install.sh` — submodule sync+update (A3) + non-git guard.
-- `.gitmodules`, `vendor/agenticapps-shared` (gitlink), `CHANGELOG.md`, `docs/decisions/0035-*.md`.
-- `agenticapps-shared` repo: `migrations/lib/*.sh`, `tests/run-tests.sh`, `_example` fixtures, CHANGELOG/README/VERSION, tag v1.0.0.
-- `.planning/`: 28-0{1,2,3}-SUMMARY, 28-VERIFICATION, ROADMAP, STATE.
+- Created sibling repo `~/Sourcecode/agenticapps/agenticapps-observability` (live on GitHub, v0.11.0 tagged).
+- claude-workflow (branch `plan-29-split-02`): `.planning/phases/29-.../29-0{1..5}-SUMMARY.md`, `29-VERIFICATION.md`, `.planning/ROADMAP.md`, `.planning/STATE.md`. NO source changes (copy-out only).
 
 ## Next session: start here
-**Merge PR #66** (close-out bookkeeping) to finalize phase 28 records on main. Then Phase 28 is fully closed. Next roadmap item is **Phase 29 (SPLIT-02)** — extract observability to `agenticapps-observability` (skill rename `add-observability`→`observability`, starts 0.11.0, folds deferred obs fixes incl. `RESEARCH-cron-monitor-flush-fxsa.md`). Begin with `/gsd-plan-phase 29` (CONTEXT lives in `SPLIT-02-agenticapps-observability.md`).
+Phase 29 is COMPLETE and verified; obs v0.11.0 is live. The planning commits are still on branch **`plan-29-split-02`** (not merged to main). First action: decide whether to merge `plan-29-split-02` → main, then either (a) run a **codex code review against the obs repo** (`~/Sourcecode/agenticapps/agenticapps-observability`) — the meaningful review the standard gate couldn't reach — or (b) proceed to **Phase 30 (SPLIT-03)**: delete `add-observability/` from claude-workflow, repoint migration 0011, ship claude-workflow 2.0.0, fix #58.
 
 ## Open questions
-- Optional: `/gsd-secure-phase 28` — low value (bash harness + submodule, no auth/storage/API/LLM surface); skipped by judgment.
-- `agenticapps-shared` is still **private**; go-public + LICENSE deferred until SPLIT-01 verified clean (now is — revisit before SPLIT-02 consumers).
-- Pre-existing untracked root noise (`FIX-0017-ENGINE.md`, `RESEARCH-cron-monitor-flush-fxsa.md`, `SPLIT-02-agenticapps-observability.md`) — decide commit/gitignore/relocate during SPLIT-02 planning.
+- `agenticapps-shared` and `agenticapps-observability` are both PRIVATE. If obs gains external consumers, make shared public (+ confirm the submodule URL is reachable). FIX-0017-ENGINE (4 XFAIL 0017 fixtures) is a deferred obs follow-up, tracked, travels with migration 0017.
+- The 3 untracked root docs (`SPLIT-02-...md`, `RESEARCH-cron-monitor-flush-fxsa.md`, `FIX-0017-ENGINE.md`) are still untracked — content mirrored into the phase dir; decide commit/gitignore/archive.
+- Branch decision for `plan-29-split-02` planning commits (merge-to-main) still open.
