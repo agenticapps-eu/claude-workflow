@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.19.0
 milestone_name: migration
 status: executing
-stopped_at: "Checkpoint Task 4: PR #65 open — awaiting human verify (fresh-clone + /gsd-review + merge)"
-last_updated: "2026-06-03T05:34:41.285Z"
+stopped_at: Phase 30 context gathered
+last_updated: "2026-06-03T07:32:47.502Z"
 last_activity: 2026-06-03
 progress:
   total_phases: 6
@@ -93,7 +93,7 @@ None tracked yet — todo system not initialized at project level.
 
 ## Session Continuity
 
-Last session: 2026-06-02T18:02:53.822Z
-Stopped at: Checkpoint Task 4: PR #65 open — awaiting human verify (fresh-clone + /gsd-review + merge)
-Resume file: None
+Last session: 2026-06-03T07:32:47.499Z
+Stopped at: Phase 30 context gathered
+Resume file: .planning/phases/30-split-03-claude-workflow-2-0-0-follow-up/30-CONTEXT.md
 Next action: `/gsd-execute-phase 28`. Execution acts on TWO repos: Wave 1 (28-01,28-02) autonomous on `~/Sourcecode/agenticapps/agenticapps-shared` — carve lib (helpers/fixture-runner[extract_to only]/preflight/drift-test), broadened standalone suite, ADR-0035 amendment, record release SHA, tag v1.0.0. Wave 2 (28-03) autonomous:false on claude-workflow feature branch `split-01-agenticapps-shared` — submodule pin by gitlink SHA, run-tests.sh source-and-keep refactor (setup_fixture rebuilt as wrapper), install.sh existing-clone fix, GSD before/after diff, PR; then human-verify checkpoint (fresh-clone test + /gsd-review on diff). HARD GATE: suite stays PASS=186 FAIL=4 exactly.
