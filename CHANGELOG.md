@@ -4,6 +4,54 @@ All notable changes to the AgenticApps Claude Workflow scaffolder are
 documented here. The format follows [Keep a Changelog](https://keepachangelog.com/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.0.0] — SPLIT-03: extract observability to agenticapps-observability
+
+**Breaking change.** Observability is no longer shipped by this scaffolder. It
+has been extracted into the separate
+[`agenticapps-observability`](https://github.com/agenticapps-eu/agenticapps-observability)
+repository, which installs and updates independently. See
+[`docs/UPGRADING.md`](docs/UPGRADING.md) for the 1.21.0 → 2.0.0 upgrade path.
+
+### Removed (BREAKING)
+
+- The `add-observability/` skill tree (`init` / `scan` / `scan-apply` and all
+  per-stack templates) is removed from this repository. claude-workflow installs
+  no observability scaffolding. Install `agenticapps-observability` separately
+  (two independent installs — no submodule, no setup chaining).
+- The `add-observability` skill-pair was dropped from `install.sh` (the LINKS
+  array entry, the `/add-observability` help line, and the discovery grep hint).
+
+### Added
+
+- **`docs/UPGRADING.md`** — documents the 1.21.0 → 2.0.0 transition, the
+  supported upgrade floor (1.21.0, the Phase 27 SPLIT-00 baseline), and the
+  `agenticapps-observability` separate-install cross-reference.
+- **Migration `0022`** (`from_version: 1.20.0`, `to_version: 2.0.0`) — repoints
+  the observability install reference from `add-observability` to the canonical
+  `observability` skill (verifies presence, aborts with install instructions if
+  absent — no auto-install), and folds in the #58 deterministic Phase Sentinel
+  hook swap. `0011` is not mutated (immutability contract).
+- **Migration tombstones** for the slots moved to the obs repo (`0012`, `0013`,
+  `0017`, `0018`, `0019`, `0020`, `0021`) — no-op redirect stubs that keep the
+  migration chain contiguous and point downstream at the obs repo.
+
+### Changed
+
+- **#58 — deterministic Phase Sentinel Stop hook.** The Haiku `prompt`-type Stop
+  hook is replaced with `templates/.claude/hooks/phase-sentinel.sh` (a
+  deterministic shell hook: allow stop unless `.planning/current-phase/checklist.md`
+  has unchecked `- [ ]` items). Shipped to new projects via template and to
+  existing projects via the 2.0.0 migration.
+- Forward-looking references in non-immutable files (`README.md`, `install.sh`,
+  `setup/SKILL.md`, `templates/config-hooks.json`,
+  `templates/.claude/hooks/observability-postphase-scan.sh`,
+  `templates/.claude/claude-md/workflow.md`) repointed from `add-observability`
+  to `observability` (slash invocations → `/observability`). Immutable shipped
+  migrations keep their old-name references — the obs repo's `add-observability`
+  alias resolves them at runtime.
+- **`skill/SKILL.md` version → 2.0.0** (migration-coupled with `0022`'s
+  `to_version`), resolving the prior 1.20.0 (skill) / 1.21.0 (tag) skew.
+
 ## [Unreleased] — SPLIT-01: extract shared migration infrastructure to agenticapps-shared
 
 ### Added
