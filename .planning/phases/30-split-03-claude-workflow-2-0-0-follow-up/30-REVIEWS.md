@@ -265,3 +265,17 @@ but its top HIGHs split into (a) genuine, concrete defects the same-LLM plan-che
 `/gsd-plan-phase 30 --reviews` — fold in actionable items 1–6 (3 blockers + 3 hardening), document
 the supported-floor + dismissals for items in the last two sections, then re-verify and re-run
 `/gsd-review` per `gsd-review-non-skippable`.
+
+---
+
+## Re-Review (post-revision, codex focused pass) — 2026-06-03
+
+After folding in the 3 blockers + 3 hardening items, codex re-reviewed the changed surfaces:
+
+1. **install.sh skill-pair DROP** — CONFIRMED (removed from LINKS, not renamed; help echo + grep hint stripped; remaining source subdirs asserted to exist).
+2. **Canonical hyphenated 0022 version-bump path** — CONFIRMED (targets `.claude/skills/agentic-apps-workflow/SKILL.md`, distinguished from the non-hyphenated dev-clone path; verify/acceptance greps target the hyphenated form).
+3. **Wave-1 commit atomicity** — CONFIRMED (deletions + tombstones + run-tests.sh body removals in one atomic commit; SKILL.md held at 1.20.0 → drift green).
+
+**New issues: none. Overall: READY.**
+
+Both reviewers now align: Gemini LOW (ready), Codex READY after fixes. The same-LLM plan-checker independently re-verified the fixes against the live `install.sh` + `0011` files. Residual risk: MEDIUM (irreducible cross-repo coupling on `agenticapps-observability`). Plans are execution-ready.
