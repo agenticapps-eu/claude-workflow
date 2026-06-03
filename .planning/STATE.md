@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.19.0
 milestone_name: migration
 status: executing
-stopped_at: Completed 30-01-PLAN.md (deletion wave; suite green PASS 143/FAIL 0; SKILL.md still 1.20.0)
-last_updated: "2026-06-03T09:45:55.528Z"
+stopped_at: Completed 30-02-PLAN.md (migration 0022 + SKILL.md 2.0.0; drift PASS; suite PASS 149/FAIL 0)
+last_updated: "2026-06-03T09:59:02.051Z"
 last_activity: 2026-06-03
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 25
-  completed_plans: 23
-  percent: 92
+  completed_plans: 24
+  percent: 96
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/ROADMAP.md (single-row stub, 2026-05-31 — Phase 25 + Phase 26 p
 
 Milestone: repo-split (cooling-off WAIVED 2026-06-02)
 Phase: 30 (split-03-claude-workflow-2-0-0-follow-up) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 
   - /gsd-review done: gemini LOW, codex HIGH (caught 4 structural blind-spots the same-LLM checker missed). All findings A1-A7 in 28-REVIEWS.md.
@@ -77,6 +77,8 @@ Recent decisions affecting current work:
 - [Phase 28-split-01-agenticapps-shared]: A1: setup_fixture stays as WORKFLOW wrapper in run-tests.sh; calls shared extract_to and layers workflow-specific template paths + 1.3.0 special-case
 - [Phase 28-split-01-agenticapps-shared]: A3: install.sh always runs sync+update when .gitmodules exists; stale gitlink advance proven
 - [Phase 30]: 30-01: 0020 IS tombstoned (D-01/Pitfall 4); SKILL.md stays 1.20.0 this wave (0021 tombstone to_version 1.20.0 keeps drift GREEN); new green baseline PASS 143 FAIL 0 (was 186/4); add-observability tree + 6 obs ADRs deleted, all obs-presence-verified
+- [Phase 30]: 30-02: migration 0022 supersedes 0011 install step WITHOUT mutating 0011 (byte-unchanged); repoints add-observability -> observability skill; exit-3 abort-if-absent (no auto-install, D-03); folds #58 phase-sentinel hook swap; to_version 2.0.0
+- [Phase 30]: 30-02: 0022 Step 4 version-bump targets CANONICAL hyphenated .claude/skills/agentic-apps-workflow/SKILL.md (per 0011 applies_to + install.sh:42); SKILL.md 1.20.0 -> 2.0.0 bumped atomically with 0022 (Pitfall 3); drift GREEN 2.0.0; new baseline PASS 149 FAIL 0
 
 ### Roadmap Evolution
 
@@ -94,7 +96,7 @@ None tracked yet — todo system not initialized at project level.
 
 ## Session Continuity
 
-Last session: 2026-06-03T09:45:44.569Z
-Stopped at: Completed 30-01-PLAN.md (deletion wave; suite green PASS 143/FAIL 0; SKILL.md still 1.20.0)
+Last session: 2026-06-03T09:58:51.287Z
+Stopped at: Completed 30-02-PLAN.md (migration 0022 + SKILL.md 2.0.0; drift PASS; suite PASS 149/FAIL 0)
 Resume file: None
 Next action: `/gsd-execute-phase 28`. Execution acts on TWO repos: Wave 1 (28-01,28-02) autonomous on `~/Sourcecode/agenticapps/agenticapps-shared` — carve lib (helpers/fixture-runner[extract_to only]/preflight/drift-test), broadened standalone suite, ADR-0035 amendment, record release SHA, tag v1.0.0. Wave 2 (28-03) autonomous:false on claude-workflow feature branch `split-01-agenticapps-shared` — submodule pin by gitlink SHA, run-tests.sh source-and-keep refactor (setup_fixture rebuilt as wrapper), install.sh existing-clone fix, GSD before/after diff, PR; then human-verify checkpoint (fresh-clone test + /gsd-review on diff). HARD GATE: suite stays PASS=186 FAIL=4 exactly.
