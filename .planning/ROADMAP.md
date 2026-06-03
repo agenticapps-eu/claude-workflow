@@ -179,14 +179,14 @@ Plans:
   7. ASVS L1 security gate satisfied — STRIDE register per plan, zero unmitigated HIGH (no `--force` push, $REPO_ROOT-anchored paths, install.sh clobber-guard)
   8. obs tagged v0.11.0 + pushed; claude-workflow PR / 2.0.0 ship deferred to Phase 30
 
-**Plans:** 5 plans (5 sequential waves — sibling-repo, no worktree isolation)
+**Plans:** 5/5 plans complete
 
 Plans:
-- [ ] 29-01-PLAN.md — Wave 1: bootstrap repo (private, MIT) + 0.11.0 skeleton + agenticapps-shared submodule @v1.0.0 (checkpoints: repo-create, first push)
-- [ ] 29-02-PLAN.md — Wave 2: extract-with-history via git filter-repo on a scratch clone (8 migrations + ADRs 0029-0034; 0011 stays); merge + push (checkpoint: push)
-- [ ] 29-03-PLAN.md — Wave 3: skill rename observability 0.11.0 + legacy alias + dual-symlink install.sh + source-and-keep run-tests.sh shim (obs root SKILL.md drift path)
-- [ ] 29-04-PLAN.md — Wave 4 (TDD): migration 0022 — explicit-flush cron-monitor (3 stacks) + queue-monitor (2 stacks) + #61 types.d.ts + ADR-0036; preserve narrowed generic
-- [ ] 29-05-PLAN.md — Wave 5: verify obs green (0019/0021/0022 + drift + history + dual-skill) + claude-workflow 186/4 guard + tag v0.11.0 (checkpoint: ship)
+- [x] 29-01-PLAN.md — Wave 1: bootstrap repo (private, MIT) + 0.11.0 skeleton + agenticapps-shared submodule @v1.0.0 (checkpoints: repo-create, first push)
+- [x] 29-02-PLAN.md — Wave 2: extract-with-history via git filter-repo on a scratch clone (8 migrations + ADRs 0029-0034; 0011 stays); merge + push (checkpoint: push)
+- [x] 29-03-PLAN.md — Wave 3: skill rename observability 0.11.0 + legacy alias + dual-symlink install.sh + source-and-keep run-tests.sh shim (obs root SKILL.md drift path)
+- [x] 29-04-PLAN.md — Wave 4 (TDD): migration 0022 — explicit-flush cron-monitor (3 stacks) + queue-monitor (2 stacks) + #61 types.d.ts + ADR-0036; preserve narrowed generic
+- [x] 29-05-PLAN.md — Wave 5: verify obs green (0019/0021/0022 + drift + history + dual-skill) + claude-workflow 186/4 guard + tag v0.11.0 (checkpoint: ship)
 
 ### Phase 30: SPLIT-03 — claude-workflow 2.0.0 follow-up (planned)
 
@@ -200,5 +200,5 @@ Plans:
 | 26. worker-template hardening | 3/3 | Complete (merged PR #60, 46bb394) | 2026-06-01 |
 | 27. 1.21.0 stable baseline (SPLIT-00 gate) | 6/6 | Complete    | 2026-06-02 |
 | 28. SPLIT-01 — agenticapps-shared extraction | 3/3 | Complete    | 2026-06-02 |
-| 29. SPLIT-02 — agenticapps-observability extraction | 0/5 | Planned | — |
+| 29. SPLIT-02 — agenticapps-observability extraction | 5/5 | Complete    | 2026-06-03 |
 | 30. SPLIT-03 — claude-workflow 2.0.0 follow-up | 0/? | Blocked on 29 | — |
