@@ -192,6 +192,13 @@ Plans:
 
 **Goal:** Post-split cleanup: delete `add-observability/` + the moved migrations/fixtures/ADRs from claude-workflow, repoint the observability install path, manage the `add-observability`→`observability` alias deprecation window, write the downstream upgrade story, ship `claude-workflow 2.0.0` (split = breaking-change rationale), and fix #58 (Stop-hook nag). **Unblocked — Phase 29 complete (obs v0.11.1 live).**
 
+**Plans:** 3 plans
+
+Plans:
+- [ ] 30-01-PLAN.md — Wave 1: delete add-observability/ tree + 7 moved migrations/fixtures/scripts + 6 obs ADRs; write 7 tombstones; strip 8 obs-dependent test bodies + 0011 sanity check (suite green, drift PASS, SKILL.md stays 1.20.0) — D-01
+- [ ] 30-02-PLAN.md — Wave 2: phase-sentinel.sh template + Stop-block swap (#58); migration 0022 (repoint to observability skill, abort-if-absent, to_version 2.0.0, #58 fold-in); SKILL.md → 2.0.0; 0022 + phase-sentinel test bodies (drift GREEN at 2.0.0) — D-02/D-03/D-04/D-07
+- [ ] 30-03-PLAN.md — Wave 3: reference cleanup (D-05, incl config-hooks.json L97) + docs/UPGRADING.md (D-06) + ship 2.0.0 (CHANGELOG, /gsd-review, tag v2.0.0, breaking PR — human-verify checkpoint) — D-04/D-05/D-06
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -201,4 +208,4 @@ Plans:
 | 27. 1.21.0 stable baseline (SPLIT-00 gate) | 6/6 | Complete    | 2026-06-02 |
 | 28. SPLIT-01 — agenticapps-shared extraction | 3/3 | Complete    | 2026-06-02 |
 | 29. SPLIT-02 — agenticapps-observability extraction | 5/5 | Complete    | 2026-06-03 |
-| 30. SPLIT-03 — claude-workflow 2.0.0 follow-up | 0/? | Blocked on 29 | — |
+| 30. SPLIT-03 — claude-workflow 2.0.0 follow-up | 0/3 | Planned    | — |
