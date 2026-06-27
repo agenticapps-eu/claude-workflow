@@ -1,25 +1,54 @@
-# Session Handoff — 2026-06-03 (Phase 30 execution — at ship gate)
+# Session Handoff — 2026-06-22 (cw 0023 injection-guard migration built; PR pending merge)
 
 ## Accomplished
-- **Executed Phase 30 (SPLIT-03) end-to-end** via `/gsd-execute-phase 30` — 3 sequential waves on `plan-30-split-03` (no worktrees; single plan per wave, cross-wave file overlap forces ordering). Executors run on Opus.
-  - **Wave 1 (30-01):** deleted `add-observability/` tree (−33,700 lines) + 7 moved migrations/fixtures/3 engines + 6 obs ADRs (0035 kept); wrote 7 verbatim-versioned tombstones; stripped 8 obs-dependent run-tests.sh bodies + 0011 sanity-check — ONE atomic commit, suite green, SKILL.md stayed 1.20.0 (drift green). Commits 217baec/1229cc9/e900058.
-  - **Wave 2 (30-02):** `phase-sentinel.sh` template + Stop-hook swap (#58); migration **0022** (repoint→`observability`, exit-3 abort-if-absent, to_version 2.0.0, hyphenated bump path); SKILL.md→2.0.0 SAME commit; 0022 + phase-sentinel tests. 0011 byte-unchanged. Commits c5ba2e9/d631127/4211de5/8de5cba.
-  - **Wave 3 (30-03) Tasks 1-2:** install.sh skill-pair DROP + 5 forward-looking files repointed to `observability`; config-hooks.json→observability:scan; docs/UPGRADING.md + CHANGELOG [2.0.0] + README link. Commits 13258c3/8a7dccd/ceeb00a.
-- **Gates:** code-review (gsd-code-reviewer) clean; regression suite green; no schema drift; verifier **16/16** code-side must-haves (D-01–D-07). Reports committed (30-REVIEW.md 6eefca1, 30-VERIFICATION.md).
-- **Codex cross-AI review (Task 3 step 2):** 1 HIGH + 2 MED + 1 LOW. **All resolved** in 4d97066: phase-sentinel SIGPIPE (`|| true` on grep|head in template + 0022 embed; real 5000-line regression test, suite 149→150); install.sh dangling-legacy-symlink cleanup; UPGRADING.md path clarification; 0022/`/update` flow accepted as defense-in-depth. Record: 30-CODEX-REVIEW.md.
-- **Shipped to gate:** suite PASS 150 + drift PASS; **PR #68 opened** (breaking title); local tag **v2.0.0 created (NOT pushed)**.
+- **Chose option A** (cut a real 2.x-axis migration) and built it:
+  `migrations/0023-prompt-injection-defense.md`, `from 2.0.0 -> to 2.1.0`.
+  Pre-flight gates on the `injection-guard` skill being installed (no
+  auto-install; exit-3 abort with obs `install.sh` pointer). Step 1 **delegates**
+  the §14 scaffold to consent-gated `/injection-guard init` (NO inline cp; does
+  NOT call obs `migrate-0023.sh` — wrong version axis). Step 2 bumps the installed
+  workflow version 2.0.0 → 2.1.0.
+- Bumped `skill/SKILL.md` 2.0.0 → 2.1.0 (drift coupling: 0023 is now the
+  highest-numbered migration → its `to_version` is the drift target).
+- Added test fixtures `migrations/test-fixtures/0023/` (01-bump-when-guard-present,
+  02-abort-when-guard-absent, 03-idempotent-reapply) + `test_migration_0023` and a
+  dispatcher entry in `migrations/run-tests.sh`, modeled on 0022.
+- Deleted the stale `ADD-INJECTION-GUARD-MIGRATION.md` brief (superseded by the
+  obs fold-in).
+- **Tests green:** full suite `PASS: 153, FAIL: 0`; drift test PASS; 0023 fixtures
+  3/3. `gitnexus_detect_changes` = low risk, 0 affected execution flows.
 
 ## Decisions
-- Ran executors sequentially WITHOUT worktrees — single plan per wave + cross-wave file overlap (run-tests.sh, SKILL.md, CHANGELOG) means worktrees add merge risk to the drift invariant for zero parallelism gain.
-- Codex fixes = no version bump (pre-release bugfixes to unshipped 2.0.0, per `versioning-tracks-migrations`).
-- 3 untracked root scratch docs (FIX-0017-ENGINE.md, RESEARCH-cron-monitor-flush-fxsa.md, SPLIT-02-…md) left untracked — content mirrored in phase dirs; excluded from PR. Decide at merge (gitignore/archive/delete).
+- **Option A over B/C** — only a `from 2.0.0` migration reaches the fleet; every
+  live project is at 2.0.0 post-SPLIT, so any `< 2.0.0` tombstone is silently skipped.
+- **Delegate, don't inline** — the `injection-guard` skill is the §14 generator;
+  the migration just gates + invokes `/injection-guard init`. Keeps cw decoupled
+  from §14 asset shapes (they live in obs).
+- **Post-check 2 is informational** — if the user declines init's consent gates
+  (e.g. non-LLM project), no `injection_guard:` block is written but the version
+  still bumps. Declined-state is valid, not a failure.
 
 ## Files modified
-- All under `.planning/phases/30-split-03-claude-workflow-2-0-0-follow-up/` (SUMMARYs/REVIEW/VERIFICATION/CODEX-REVIEW) + the source changes listed above. Git: 05e9afc..HEAD (12 commits + fix 4d97066 + codex-record).
+- `migrations/0023-prompt-injection-defense.md` — new migration (the 2.1.0 release)
+- `skill/SKILL.md` — version 2.0.0 → 2.1.0
+- `migrations/run-tests.sh` — `test_migration_0023` + dispatcher entry
+- `migrations/test-fixtures/0023/**` — 3 fixtures + common-setup.sh
+- deleted `ADD-INJECTION-GUARD-MIGRATION.md` (stale brief)
+- (pre-existing, NOT in this commit: `.gitignore` understand-anything ignore line)
 
 ## Next session: start here
-**AT THE FINAL HUMAN-VERIFY SHIP GATE.** Awaiting user approval to: (1) merge PR #68, (2) `git push origin v2.0.0`, (3) `git -C ~/.claude/skills/agenticapps-workflow pull` (local-scaffolder-clone, per memory). On "approved": merge, push tag, then run `node ~/.claude/get-shit-done/bin/gsd-tools.cjs phase complete 30` to mark the phase complete + update ROADMAP/STATE/REQUIREMENTS, then `/gsd-progress`. If changes requested instead: address, re-run suite (must stay PASS≥150 + drift PASS), update PR.
+The 0023 migration is built and tested on branch `feat/0023-prompt-injection-defense`.
+First action: **commit + open the PR** (if not already done this session), then
+merge — that merge IS the claude-workflow 2.1.0 release. After merge, run the
+rollout: (1) refresh the **installed** obs clone
+`~/.claude/skills/agenticapps-observability` (`git pull` + re-run `install.sh`)
+to create the still-missing `~/.claude/skills/injection-guard` symlink — this is
+why 0023's preflight-audit verify currently shows informational FAIL on this host;
+(2) per project run `/update-agenticapps-workflow` (2.0.0→2.1.0) then
+`/injection-guard init`. Downstream factiv hosts (callbot/cparx/fx-signal-agent)
+are a separate cross-family engagement.
 
 ## Open questions
-- Cross-repo coupling: agenticapps-observability must stay present/live (it is, v0.11.1). The `add-observability` alias retention window (through obs 0.12.0) is the compatibility bridge for immutable-migration old-name refs.
-- The 3 untracked root scratch docs — final disposition decision deferred to merge time.
+- README migration index (`migrations/README.md`) is stale (stops at 0012, missing
+  0013–0023). Left as pre-existing debt — not touched to avoid partial-backfill
+  inconsistency. Worth a separate cleanup pass.
