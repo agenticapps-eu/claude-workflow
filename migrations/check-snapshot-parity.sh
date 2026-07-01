@@ -72,16 +72,19 @@ if [ "$have_jq" = 1 ]; then
   for sec in hooks; do
     jq -e ".$sec" "$CFG" >/dev/null 2>&1 && ok "config has .$sec" || bad "config missing .$sec"
   done
-  # End-state invariants confirmed against installed factiv projects:
-  jq -e '.workflow' "$CFG" >/dev/null 2>&1 \
-    && ok "config has .workflow block" \
-    || bad "config missing .workflow block (present in real installs)"
-  # observability skill was renamed observability:* -> add-observability:* —
-  # the bare old name in the snapshot means it lags the chain.
-  if grep -q '"observability:scan"' "$CFG" && ! grep -q '"add-observability:scan"' "$CFG"; then
-    bad "config uses stale 'observability:scan' (end-state is 'add-observability:scan')"
+  # NOTE: `.workflow` is GSD-owned config (research/plan_check/verifier/…),
+  # written by GSD at its own init — NOT part of the AgenticApps snapshot, which
+  # owns only `.hooks`. Setup merges `.hooks` into any GSD-written config. So we
+  # do NOT assert `.workflow` here.
+  #
+  # Observability skill id: 0022 repointed `add-observability` -> `observability`
+  # (the obs repo keeps `add-observability` as an alias). Accept either the
+  # current `observability:scan` or the legacy `add-observability:scan`; fail
+  # only if the scan ref is absent entirely.
+  if grep -q '"observability:scan"' "$CFG" || grep -q '"add-observability:scan"' "$CFG"; then
+    ok "observability scan ref present (current or aliased)"
   else
-    ok "observability skill id is current"
+    bad "config missing an observability scan skill ref"
   fi
 fi
 
