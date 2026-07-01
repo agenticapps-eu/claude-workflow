@@ -243,5 +243,6 @@ make a partially-failed setup safe to resume.
 - `update-agenticapps-workflow` — applies pending migrations to an
   already-installed workflow (the migration path lives here now).
 - `agentic-apps-workflow` — the workflow itself; setup installs the project copy.
-- `bin/build-snapshot.sh` — regenerates `setup/snapshot/` from the migration
-  chain. Run after adding a migration so the drift guard stays green.
+- `bin/build-snapshot.sh` — regenerates `setup/snapshot/` by assembling it
+  deterministically from the maintained sources (`templates/` + `skill/SKILL.md`).
+  Run after adding a migration or editing a template so the drift guard stays green.
