@@ -162,17 +162,44 @@ git commit -m "fix(snapshot): bind multi-ai-review-gate; snapshot is the strippe
 
 ---
 
-### Task 3: Rewrite `bin/build-snapshot.sh` as a deterministic assembler
+### Task 3: Rewrite `bin/build-snapshot.sh` as a deterministic assembler + remove the guard's dead replay delegation
 
 **Files:**
+- Modify: `migrations/check-snapshot-parity.sh` (remove §6 replay delegation)
 - Rewrite: `bin/build-snapshot.sh`
 
-- [ ] **Step 1: Confirm current script references the non-existent apply harness**
+**Why the guard §6 must go:** the guard's `## ── 6.` block delegates to
+`bash "$ROOT/bin/build-snapshot.sh" --check`. The full-replay layer is being
+abandoned (the design). Leaving §6 in place would also create infinite recursion
+once the new `build-snapshot.sh` calls the guard. So §6 is removed; the structural
+checks (§0–§5) are the whole guard. This is also why Task 2 left the guard exiting
+non-zero — §6 was still firing against the broken script.
+
+- [ ] **Step 1: Remove §6 (replay delegation) from `migrations/check-snapshot-parity.sh`**
+
+Delete this entire block:
+```bash
+# ── 6. authoritative full replay parity (if scaffolder installed) ────────────
+if [ -d "${HOME}/.claude/skills/agenticapps-workflow/migrations" ]; then
+  echo "  scaffolder present — running full replay parity (build-snapshot.sh --check)"
+  bash "$ROOT/bin/build-snapshot.sh" --check || fail=1
+else
+  echo "  (scaffolder not installed — structural checks only; run build-snapshot.sh --check for full parity)"
+fi
+```
+Leave the final summary (`echo; if [ "$fail" -ne 0 ]; then … exit 1; fi; echo "PASS"`) intact.
+
+- [ ] **Step 2: Verify the guard is now fully green on its own**
+
+Run: `bash migrations/check-snapshot-parity.sh; echo "exit=$?"`
+Expected: ends with `PASS`, `exit=0`, no `FAIL:` lines, and NO "full replay parity" / "shared apply harness" text.
+
+- [ ] **Step 3: Confirm the old script references the non-existent apply harness**
 
 Run: `grep -n 'apply.sh' bin/build-snapshot.sh`
 Expected: a line invoking `vendor/agenticapps-shared/migrations/lib/apply.sh` (the file that never existed).
 
-- [ ] **Step 2: Replace the script body with a deterministic assembler**
+- [ ] **Step 4: Replace the script body with a deterministic assembler**
 
 Overwrite `bin/build-snapshot.sh` with:
 ```bash
@@ -233,27 +260,31 @@ if [ "$MODE" = "check" ]; then
   fi
 else
   echo "snapshot rebuilt at version $(cat "$SNAP/VERSION")"
+  # End a rebuild by running the structural drift guard (the authority).
+  # (--check does its own diff above; the guard no longer delegates back here,
+  #  so there is no recursion.)
+  bash "$ROOT/migrations/check-snapshot-parity.sh"
 fi
-
-# 5. Always end by running the structural drift guard (the authority).
-bash "$ROOT/migrations/check-snapshot-parity.sh"
 ```
 
-- [ ] **Step 3: Make it executable and run `--check` against the just-materialized snapshot**
+- [ ] **Step 5: Make it executable and run `--check` against the just-materialized snapshot**
 
 Run: `chmod +x bin/build-snapshot.sh && bash bin/build-snapshot.sh --check; echo "exit=$?"`
-Expected: `OK — snapshot matches assembled source.` then the parity check green; `exit=0`. It must NOT print "shared apply harness not found".
+Expected: `OK — snapshot matches assembled source.` and `exit=0`. (`--check` diffs only; it does NOT run the guard.) It must NOT print "shared apply harness not found".
 
-- [ ] **Step 4: Confirm no reference to the non-existent apply harness remains**
+Also confirm a full rebuild reproduces the snapshot and ends green:
+Run: `bash bin/build-snapshot.sh; echo "exit=$?"` then `git status --porcelain setup/snapshot` (expect no changes — the hand-materialized snapshot already matches the assembler) and the trailing guard `PASS` with `exit=0`.
+
+- [ ] **Step 6: Confirm no reference to the non-existent apply harness remains**
 
 Run: `grep -c 'apply.sh' bin/build-snapshot.sh`
 Expected: `0`
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add bin/build-snapshot.sh
-git commit -m "refactor(build-snapshot): deterministic assembler from templates/, drop non-existent apply.sh (#74)"
+git add bin/build-snapshot.sh migrations/check-snapshot-parity.sh
+git commit -m "refactor(build-snapshot): deterministic assembler from templates/; drop non-existent apply.sh + guard replay delegation (#74)"
 ```
 
 ---
