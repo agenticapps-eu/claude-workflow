@@ -1,81 +1,62 @@
 #!/usr/bin/env bash
-# build-snapshot.sh — regenerate setup/snapshot/ by replaying the full
-# migration chain (0000 → latest) into a throwaway fixture, then capturing the
-# resulting project-side artifacts as the snapshot.
+# build-snapshot.sh — regenerate setup/snapshot/ deterministically from the
+# maintained sources (templates/ + skill/SKILL.md). The migration chain cannot
+# be shell-replayed (prose/agent/AskUserQuestion steps — see ADR-0036 and
+# issue #74), so the snapshot is assembled from source, not replayed.
 #
-# This is the ONE step that must run on a host with the scaffolder + GSD +
-# gstack installed, because materializing a 20+ migration end-state requires
-# executing the migrations. Run it after adding/editing any migration so the
-# drift guard (migrations/check-snapshot-parity.sh) stays green.
+#   bash bin/build-snapshot.sh            # rebuild setup/snapshot/ from source
+#   bash bin/build-snapshot.sh --check    # assemble to temp + diff, no write
 #
-# Usage:
-#   bash bin/build-snapshot.sh                 # rebuild snapshot/ from replay
-#   bash bin/build-snapshot.sh --check         # replay + diff, no write (CI-ish)
-#
-# Requires: a working install of this scaffolder at ~/.claude/skills/agenticapps-workflow
-# (the migrations read templates from there) and `git`, `jq`.
-
+# Requires: jq, and a diff supporting --exclude (GNU/BSD). No scaffolder/GSD/gstack/git needed.
 set -uo pipefail
-
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SNAP="$ROOT/setup/snapshot"
-MODE="rebuild"
-[ "${1:-}" = "--check" ] && MODE="check"
+MODE="rebuild"; [ "${1:-}" = "--check" ] && MODE="check"
 
-SCAFFOLDER="${HOME}/.claude/skills/agenticapps-workflow"
-if [ ! -d "$SCAFFOLDER/migrations" ]; then
-  echo "ERROR: scaffolder not installed at $SCAFFOLDER (migrations read templates from there)." >&2
-  echo "       Install it (bash install.sh) before generating the snapshot." >&2
-  exit 1
-fi
+command -v jq >/dev/null || { echo "ERROR: jq required" >&2; exit 1; }
 
-WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
-echo "Replaying migrations into fixture: $WORK"
-( cd "$WORK" && git init -q -b main && git commit -q --allow-empty -m init )
+# Assemble the snapshot into $OUT (either $SNAP for rebuild, or a temp dir).
+OUT="$SNAP"
+if [ "$MODE" = "check" ]; then OUT="$(mktemp -d)"; trap 'rm -rf "$OUT"' EXIT; fi
 
-# Drive the same per-migration apply logic setup used to use, non-interactively.
-# Placeholder substitution uses fixture values so workflow-config.md lands in
-# placeholder form for the snapshot (we re-template it afterward).
-export AAW_NONINTERACTIVE=1
-for m in "$SCAFFOLDER"/migrations/[0-9]*.md; do
-  id="$(basename "$m" .md)"
-  echo "  apply $id"
-  # The migration apply harness lives in the shared submodule; reuse it.
-  if [ -x "$SCAFFOLDER/vendor/agenticapps-shared/migrations/lib/apply.sh" ]; then
-    bash "$SCAFFOLDER/vendor/agenticapps-shared/migrations/lib/apply.sh" "$m" "$WORK" \
-      || { echo "ERROR: migration $id failed to apply non-interactively." >&2; exit 1; }
+mkdir -p "$OUT/hooks" "$OUT/scripts"
+
+# 1. 1:1 source copies (MANIFEST mapping).
+cp "$ROOT/skill/SKILL.md"                              "$OUT/agentic-apps-workflow-SKILL.md"
+cp "$ROOT/templates/workflow-config.md"                "$OUT/workflow-config.md"
+cp "$ROOT/templates/config-hooks.json"                 "$OUT/planning-config.json"
+cp "$ROOT/templates/.claude/claude-md/workflow.md"     "$OUT/claude-md-workflow.md"
+cp "$ROOT/templates/adr-db-security-acceptance.md"     "$OUT/adr-db-security-acceptance.md"
+cp "$ROOT/templates/global-claude-additions.md"        "$OUT/global-claude-additions.md"
+cp "$ROOT"/templates/.claude/hooks/*.sh                "$OUT/hooks/"
+cp "$ROOT"/templates/.claude/scripts/*.sh              "$OUT/scripts/"
+
+# 2. claude-settings.json = template minus template-only annotation keys
+#    (the installed shape). The multi-ai binding lives in the template already.
+jq 'del(._comment, ._enforcement_contract)' \
+  "$ROOT/templates/claude-settings.json" > "$OUT/claude-settings.json"
+
+# 3. claude-md-reference-block.md — the block setup appends to CLAUDE.md.
+#    Preserved from the committed snapshot (it has no templates/ source file).
+[ "$MODE" = "rebuild" ] || cp "$SNAP/claude-md-reference-block.md" "$OUT/claude-md-reference-block.md"
+
+# 4. VERSION stamp from skill/SKILL.md frontmatter.
+awk '/^---$/{f++;next} f==1&&/^version:/{print $2;exit}' \
+  "$ROOT/skill/SKILL.md" > "$OUT/VERSION"
+
+if [ "$MODE" = "check" ]; then
+  # claude-md-reference-block.md and MANIFEST.md are not regenerated; exclude.
+  if diff -ru --exclude=claude-md-reference-block.md --exclude=MANIFEST.md "$SNAP" "$OUT" >/dev/null 2>&1; then
+    echo "OK — snapshot matches assembled source."
   else
-    echo "ERROR: shared apply harness not found. Update the agenticapps-shared submodule." >&2
-    echo "       (git submodule update --init --recursive)" >&2
+    echo "DRIFT — setup/snapshot/ differs from assembled source:"
+    diff -ru --exclude=claude-md-reference-block.md --exclude=MANIFEST.md "$SNAP" "$OUT" | head -40
     exit 1
   fi
-done
-
-# Capture end-state → snapshot layout (mirrors setup/snapshot/MANIFEST.md).
-capture() { # $1 fixture-path  $2 snapshot-relpath
-  local src="$WORK/$1" dst="$SNAP/$2"
-  [ -e "$src" ] || { echo "  MISSING in fixture: $1"; return 1; }
-  if [ "$MODE" = "check" ]; then
-    diff -ru "$dst" "$src" >/dev/null 2>&1 || { echo "  DRIFT: $2"; return 1; }
-  else
-    mkdir -p "$(dirname "$dst")"; cp -R "$src" "$dst"
-  fi
-}
-
-rc=0
-capture ".claude/skills/agentic-apps-workflow/SKILL.md" "agentic-apps-workflow-SKILL.md" || rc=1
-capture ".claude/settings.json"                          "claude-settings.json"          || rc=1
-capture ".planning/config.json"                          "planning-config.json"          || rc=1
-capture ".claude/claude-md/workflow.md"                  "claude-md-workflow.md"          || rc=1
-capture ".claude/hooks"                                  "hooks"                          || rc=1
-capture ".claude/scripts"                                "scripts"                        || rc=1
-
-# Version stamp from the materialized skill.
-if [ "$MODE" = "rebuild" ]; then
-  awk '/^---$/{f++;next} f==1&&/^version:/{print $2;exit}' \
-    "$WORK/.claude/skills/agentic-apps-workflow/SKILL.md" > "$SNAP/VERSION"
+else
   echo "snapshot rebuilt at version $(cat "$SNAP/VERSION")"
+  # End a rebuild by running the structural drift guard (the authority).
+  # (--check does its own diff above; the guard no longer delegates back here,
+  #  so there is no recursion.)
+  bash "$ROOT/migrations/check-snapshot-parity.sh"
 fi
-
-[ "$rc" -ne 0 ] && { echo "FAIL — snapshot differs from replay end-state."; exit 1; }
-echo "OK"

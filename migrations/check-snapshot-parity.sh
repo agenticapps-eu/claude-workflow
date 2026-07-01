@@ -1,21 +1,18 @@
 #!/usr/bin/env bash
 # check-snapshot-parity.sh — drift guard for the snapshot install path.
 #
-# Two layers:
-#   1. Structural shape checks (always runnable, incl. CI without the
-#      scaffolder): JSON validity, version stamp, settings.json hook bindings,
-#      .planning/config.json key shape, hook referential integrity + hashes,
-#      and a set of END-STATE INVARIANTS derived from real installed projects
-#      (factiv) so the seed template can't false-green.
-#   2. Full replay parity (when the scaffolder is installed): delegates to
-#      `bin/build-snapshot.sh --check`, which replays 0000->latest and diffs
-#      every file. This is authoritative.
+# One authoritative layer: the structural checks below.
+#   JSON validity, version stamp, settings.json hook bindings,
+#   .planning/config.json key shape, hook referential integrity + hashes,
+#   and END-STATE INVARIANTS derived from real installed projects (factiv)
+#   so the seed template can't false-green.
+#
+# The snapshot is assembled deterministically from templates/ + skill/SKILL.md
+# by bin/build-snapshot.sh (NOT replayed from the migration chain — replay is
+# impossible; see ADR-0036 / issue #74). These checks need no scaffolder, GSD,
+# agent, or network. A FAIL means real drift that must be fixed.
 #
 # See docs/decisions/0036-snapshot-install.md and setup/snapshot/MANIFEST.md.
-#
-# A FAILURE here on a freshly-seeded snapshot is EXPECTED and correct: it means
-# the snapshot is still raw templates and `bin/build-snapshot.sh` has not yet
-# materialized it from the migration chain.
 
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -106,14 +103,6 @@ grep -rqi 'prompt.injection\|injection-defense' "$SNAP" \
   && ok "0023 prompt-injection present" || bad "missing 0023 prompt-injection (run build-snapshot.sh)"
 grep -rqi 'declare-first\|declare_first' "$SNAP" \
   && ok "0015 ts-declare-first present" || bad "missing 0015 ts-declare-first (run build-snapshot.sh)"
-
-# ── 6. authoritative full replay parity (if scaffolder installed) ────────────
-if [ -d "${HOME}/.claude/skills/agenticapps-workflow/migrations" ]; then
-  echo "  scaffolder present — running full replay parity (build-snapshot.sh --check)"
-  bash "$ROOT/bin/build-snapshot.sh" --check || fail=1
-else
-  echo "  (scaffolder not installed — structural checks only; run build-snapshot.sh --check for full parity)"
-fi
 
 echo
 if [ "$fail" -ne 0 ]; then
