@@ -33,13 +33,16 @@ the project's `.claude/skills/agentic-apps-workflow/SKILL.md`.
 The snapshot can drift from the chain (a migration is added but `snapshot/`
 isn't regenerated). Two mechanisms prevent shipping drift:
 
-- **`bin/build-snapshot.sh`** materializes `snapshot/` by replaying
-  `0000`→latest into a throwaway fixture on a host with the scaffolder + GSD +
-  gstack installed. This is the only step that must run on a real machine — it
-  is inherent: you cannot materialize a 20+ migration end-state without
-  executing the migrations.
-- **`migrations/check-snapshot-parity.sh`** (CI, every PR) replays the chain
-  and diffs the result against `snapshot/`. A mismatch fails the build.
+- **`bin/build-snapshot.sh`** deterministically assembles `snapshot/` from the
+  maintained sources (`templates/` + `skill/SKILL.md`) — a 1:1 copy per the
+  MANIFEST mapping, plus a `jq` transform for `claude-settings.json` (strip
+  template-only annotation keys). The migration chain is **not** shell-replayed:
+  it contains `AskUserQuestion` (0000) and agent-only steps (0023 →
+  `/injection-guard init`), so a deterministic `apply.sh` is infeasible (#74).
+- **`migrations/check-snapshot-parity.sh`** (CI, every PR) is the authoritative
+  guard: structural checks (JSON validity, version stamp, hook bindings, hook
+  presence + hashes, feature markers) that need no scaffolder or agent. A
+  mismatch fails the build.
 
 ## Consequences
 

@@ -155,9 +155,21 @@ c. **Hooks + settings** — copy `$SNAP/claude-settings.json` →
    `.claude/settings.json`, and `$SNAP/hooks/*` → `.claude/hooks/` (chmod +x),
    and `$SNAP/scripts/*` → `.claude/scripts/`.
 
-d. **Planning hooks** — `mkdir -p .planning` and copy `$SNAP/planning-config.json`
-   → `.planning/config.json`. This is the **latest** hooks block (every
-   migration's hook already folded in) — no incremental edits follow.
+d. **Planning hooks** — `mkdir -p .planning` and:
+   - If `.planning/config.json` does **not** exist: copy
+     `$SNAP/planning-config.json` → `.planning/config.json`. (The snapshot owns
+     only `.hooks`; `.workflow` is GSD-owned config written by GSD at its own
+     init — setup must not overwrite it.)
+   - If `.planning/config.json` **does** exist (e.g. GSD already wrote it,
+     including its `.workflow` block): merge the snapshot's `.hooks` into the
+     existing file without clobbering other sections:
+     ```bash
+     jq -s '.[0] * .[1]' .planning/config.json "$SNAP/planning-config.json" > .planning/config.json.tmp \
+       && mv .planning/config.json.tmp .planning/config.json
+     ```
+     (Snapshot second so its `.hooks` wins; `*` deep-merges, preserving a
+     GSD-written `.workflow`.)
+   - In `--dry-run`: show the diff instead of writing.
 
 e. **Vendored CLAUDE.md block + reference** — `mkdir -p .claude/claude-md` and
    copy `$SNAP/claude-md-workflow.md` → `.claude/claude-md/workflow.md`. Then,
