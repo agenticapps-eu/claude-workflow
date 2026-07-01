@@ -41,8 +41,8 @@ isn't regenerated). Two mechanisms prevent shipping drift:
   `/injection-guard init`), so a deterministic `apply.sh` is infeasible (#74).
 - **`migrations/check-snapshot-parity.sh`** (CI, every PR) is the authoritative
   guard: structural checks (JSON validity, version stamp, hook bindings, hook
-  presence + hashes, feature markers) that need no scaffolder or agent. A
-  mismatch fails the build.
+  presence + hashes, version parity vs the latest migration) that need no
+  scaffolder or agent. A mismatch fails the build.
 
 ## Consequences
 
