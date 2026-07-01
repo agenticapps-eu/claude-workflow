@@ -47,49 +47,70 @@ latest end-state.
 Rejected: authoring `apply.sh` (approach A) — infeasible for prose/agent/
 `AskUserQuestion` migrations, and cross-repo.
 
+## Provenance findings (2026-07-01)
+
+Investigation against a real install (factiv cparx) showed the guard was built
+by naïvely diffing factiv's live `.planning/config.json` / `.claude/settings.json`,
+so **two of its four failing assertions are the guard's own bug**, not snapshot
+staleness:
+
+| Guard assertion | Ground truth | Verdict |
+|---|---|---|
+| settings.json binds `multi-ai-review-gate.sh` | cparx has it in **settings.json**; template/snapshot lack it | **RIGHT — real gap** (0005/0016) |
+| no template-only `_comment`/`_enforcement_contract` | cparx settings.json strips them | **RIGHT — snapshot must be the stripped installed shape** |
+| config has `.workflow` block | `.workflow` is **GSD's own config** (`research`/`plan_check`/`verifier`/`code_review`…), written by GSD, not any AgenticApps migration | **WRONG — GSD-owned, not the snapshot's to ship** |
+| `add-observability:scan` (not `observability:scan`) | factiv's value is the **stale pre-0022 ref**; 0022 repointed `add-observability`→`observability`; the guard even states the rename direction inverted | **WRONG — enshrines stale factiv state** |
+
+The AgenticApps snapshot legitimately owns only the `hooks` section of
+`.planning/config.json`; GSD merges `.workflow` at its own init. The forward-
+canonical observability id is `observability:scan` (what the template already
+has).
+
 ## Components
 
-### 1. Materialize the snapshot to green
-Bring every `setup/snapshot/` file to the real latest end-state so
-`check-snapshot-parity.sh` passes with zero FAILs. Known deltas:
+### 1. Fix the guard's two miscalibrated assertions
+In `migrations/check-snapshot-parity.sh`:
+- **Remove the `.workflow` requirement** (§3). Replace with a comment: the
+  snapshot owns only `hooks`; `.workflow` is GSD-owned and merged at GSD init.
+- **Fix the observability assertion** (§3) to accept the current
+  `observability:scan` (pass if `observability:scan` OR `add-observability:scan`
+  present; the obs repo keeps `add-observability` as an alias). Correct the
+  inverted rename comment.
 
-- `claude-settings.json`: add the `multi-ai-review-gate.sh` Stop/PreToolUse
-  binding; remove template-only `_comment` and `_enforcement_contract` keys.
-- `planning-config.json`: add the `.workflow` block; rename `observability:scan`
-  → `add-observability:scan`.
-- Reconcile all other files (hooks, scripts, skill SKILL.md @ 2.1.0,
-  workflow.md, reference block, ADR template, VERSION) against their source of
-  truth; confirm hook presence + hashes and the 0015/0023 feature markers.
+### 2. Fill the two real snapshot gaps (via `templates/`, the source)
+- Add the `multi-ai-review-gate.sh` binding to `templates/claude-settings.json`
+  (its source), matching the shape migration 0005 installs and verified against
+  cparx: a `PreToolUse` entry, `matcher: "Edit|Write|MultiEdit"`, command
+  `$CLAUDE_PROJECT_DIR/.claude/hooks/multi-ai-review-gate.sh`.
+- The snapshot's `claude-settings.json` is the **installed shape**: template
+  settings minus the template-only `_comment`/`_enforcement_contract` keys, plus
+  the binding above. This transform is deterministic (`jq`).
+- All other snapshot files copy 1:1 from their source (`templates/` +
+  `skill/SKILL.md` @ 2.1.0); `planning-config.json` = `templates/config-hooks.json`
+  as-is (keeps `observability:scan`, owns only `hooks`).
 
-Source of truth precedence: the guard's asserted invariants (factiv-derived) →
-`templates/` latest → migration end-state prose. Where `templates/` itself lags,
-fix the snapshot to the end-state the guard/migrations require (do **not** widen
-scope to also re-sync `templates/` unless a snapshot file has no other source).
+### 3. Rewrite `bin/build-snapshot.sh` as a deterministic assembler
+With the guard corrected, the snapshot is fully mechanically derivable — no
+`apply.sh`, no agent. Rewrite `build-snapshot.sh` to:
+- copy each `templates/…` + `skill/SKILL.md` source to its snapshot path per the
+  MANIFEST mapping,
+- produce `claude-settings.json` via the deterministic `jq` transform (strip the
+  two template keys; ensure the multi-ai binding present),
+- stamp `VERSION` from `skill/SKILL.md`,
+- run `check-snapshot-parity.sh` at the end.
+`--check` = assemble into a temp dir and diff against `setup/snapshot/`, no
+write, non-zero on drift. It must reference no non-existent file.
 
-### 2. Fix `bin/build-snapshot.sh`
-Remove the `apply.sh` dependency (it must never reference a non-existent file).
-Repurpose as a **deterministic assembler**: copy the mechanically-sourced
-artifacts from `templates/` + `skill/SKILL.md` into `setup/snapshot/`, stamp
-`VERSION` from `skill/SKILL.md`, then run `check-snapshot-parity.sh` and report
-residual drift for agent/manual attention (the end-state files that aren't
-mechanically derivable). `--check` mode = assemble to a temp dir + diff, no
-write. Exit non-zero on any residual drift.
-
-### 3. Amend docs
+### 4. Amend docs
 - `docs/decisions/0036-snapshot-install.md`: the authoritative guard is the
   CI-runnable structural check, not a shell replay; record that `apply.sh` was
-  rejected as infeasible for prose migrations, and that regeneration is
-  agent-assisted.
+  rejected as infeasible for prose migrations, and that with the guard corrected
+  the snapshot is deterministically assembled from `templates/`.
 - `setup/snapshot/MANIFEST.md`: flip the "⚠️ Seed vs verified" section to
-  **verified**; document the regeneration procedure (component 2 + agent step).
-
-### 4. Strengthen the structural guard (only as needed)
-Ensure `check-snapshot-parity.sh` is comprehensive enough to be authoritative.
-It already checks: required files, VERSION stamp, JSON validity, settings hook
-bindings, planning-config key shape, hook presence + hashes, and 0015/0023
-feature markers. Add any missing end-state invariant surfaced while
-materializing (component 1). Keep it scaffolder-free and network-free so CI runs
-it unchanged.
+  **verified**; document the deterministic regeneration procedure (component 3).
+- `setup/SKILL.md` Step 4d: the snapshot supplies only the `hooks` section;
+  setup must **merge** it into any existing `.planning/config.json` (preserving a
+  GSD-written `.workflow` block), not overwrite the file.
 
 ### 5. CI wiring
 Add `.github/workflows/ci.yml` (the `.github/` dir does not exist yet) running,
