@@ -98,11 +98,21 @@ if command -v sha256sum >/dev/null 2>&1; then
   ( cd "$SNAP/hooks" 2>/dev/null && sha256sum ./*.sh 2>/dev/null | sed 's/^/    /' )
 fi
 
-# ── 5. latest-feature markers (cheap, kept from before) ──────────────────────
-grep -rqi 'prompt.injection\|injection-defense' "$SNAP" \
-  && ok "0023 prompt-injection present" || bad "missing 0023 prompt-injection (run build-snapshot.sh)"
-grep -rqi 'declare-first\|declare_first' "$SNAP" \
-  && ok "0015 ts-declare-first present" || bad "missing 0015 ts-declare-first (run build-snapshot.sh)"
+# ── 5. snapshot is at the latest version ─────────────────────────────────────
+# Real evidence the snapshot reflects every migration through the latest: its
+# VERSION must equal the highest-numbered migration's to_version (the same
+# coupling migrations/run-tests.sh enforces for skill/SKILL.md). The old
+# feature-name greps were a false-green — they matched MANIFEST.md's own prose,
+# and neither 0015 (a user-global symlink) nor 0023 (skill-delegated
+# /injection-guard init) leaves a static string in the project snapshot.
+latest_file="$(ls "$ROOT"/migrations/[0-9][0-9][0-9][0-9]-*.md 2>/dev/null | sort | tail -1)"
+latest_to="$(grep '^to_version:' "$latest_file" 2>/dev/null | awk '{print $2}')"
+snap_ver="$(cat "$SNAP/VERSION" 2>/dev/null)"
+if [ -n "$latest_to" ] && [ "$snap_ver" = "$latest_to" ]; then
+  ok "snapshot VERSION ($snap_ver) == latest migration to_version"
+else
+  bad "snapshot VERSION ($snap_ver) != latest migration to_version ($latest_to)"
+fi
 
 echo
 if [ "$fail" -ne 0 ]; then
