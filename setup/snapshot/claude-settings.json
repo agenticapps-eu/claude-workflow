@@ -24,7 +24,7 @@
         ]
       },
       {
-        "_hook": "Hook 6 — Multi-AI Plan Review Gate (/gsd-review)",
+        "_hook": "Hook 7 — Multi-AI Plan Review Gate (/gsd-review)",
         "matcher": "Edit|Write|MultiEdit",
         "hooks": [
           {

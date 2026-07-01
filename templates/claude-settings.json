@@ -1,5 +1,5 @@
 {
-  "_comment": "Settings template for AgenticApps projects. Merged into the project's .claude/settings.json by /setup-agenticapps-workflow. Adds 4 of the 5 programmatic hooks (Hook 5 lives globally in ~/.claude/settings.json; Hooks 1-4 are project-scoped here).",
+  "_comment": "Settings template for AgenticApps projects. Merged into the project's .claude/settings.json by /setup-agenticapps-workflow. Adds 6 of the 7 programmatic hooks (Hook 5 lives globally in ~/.claude/settings.json; Hooks 1–4, 6–7 are project-scoped here).",
   "_enforcement_contract": "docs/ENFORCEMENT-PLAN.md",
   "hooks": {
     "PreToolUse": [
@@ -26,7 +26,7 @@
         ]
       },
       {
-        "_hook": "Hook 6 — Multi-AI Plan Review Gate (/gsd-review)",
+        "_hook": "Hook 7 — Multi-AI Plan Review Gate (/gsd-review)",
         "matcher": "Edit|Write|MultiEdit",
         "hooks": [
           {
