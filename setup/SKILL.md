@@ -35,10 +35,11 @@ This skill diverges (see `docs/decisions/0036-snapshot-install.md`):
   unchanged: it applies only pending migrations (`from_version >` the
   installed version).
 
-The snapshot is materialized by replaying the whole chain once
-(`bin/build-snapshot.sh`) and kept honest by a drift guard
-(`migrations/check-snapshot-parity.sh`) that CI runs on every PR. So "skip
-replay on fresh install" never ships a stale baseline.
+The snapshot is materialized by `bin/build-snapshot.sh`, which assembles it
+deterministically from the maintained sources (`templates/` + `skill/SKILL.md`) —
+the migration chain is not shell-replayed (see ADR-0036). It is kept honest by a
+drift guard (`migrations/check-snapshot-parity.sh`) that CI runs on every PR, so
+"skip replay on fresh install" never ships a stale baseline.
 
 ## Step 0: Parse flags
 
@@ -229,7 +230,7 @@ Next:
 | Snapshot missing/empty | Error in Step 1; suggest `bash bin/build-snapshot.sh`; exit 1 |
 | Unverified/seed snapshot | Error in Step 1; the drift guard fails → setup refuses (fail-closed) rather than install a stale baseline; run `bin/build-snapshot.sh` first; exit 1 |
 | Unsubstituted placeholder | Post-check fails the install rather than committing `{{...}}` |
-| Stale snapshot | Cannot ship silently — `check-snapshot-parity.sh` fails CI (and now Step 1) if `snapshot/` ≠ replay(0000→latest) |
+| Stale snapshot | Cannot ship silently — `check-snapshot-parity.sh` fails CI (and now Step 1) if `snapshot/` ≠ the deterministic assembly from `templates/` + `skill/SKILL.md` |
 
 ## Idempotency
 
