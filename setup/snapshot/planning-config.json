@@ -1,0 +1,127 @@
+{
+  "hooks": {
+    "_enforcement_contract": "docs/workflow/ENFORCEMENT-PLAN.md",
+    "_note": "These hooks are declarative intent. Enforcement is in CLAUDE.md + .claude/skills/agentic-apps-workflow/SKILL.md via the commitment principle. Orchestrator code does NOT read this block today.",
+    "context_warnings": true,
+    "pre_phase": {
+      "brainstorm_ui": {
+        "enabled": true,
+        "skill": "superpowers:brainstorming",
+        "trigger": "ui_hint_yes || frontend_files_in_scope",
+        "evidence": "CONTEXT.md contains '## Design alternatives'"
+      },
+      "brainstorm_architecture": {
+        "enabled": true,
+        "skill": "superpowers:brainstorming",
+        "trigger": "new_service || new_model || new_integration",
+        "evidence": "RESEARCH.md contains 'Alternatives considered'"
+      },
+      "design_shotgun": {
+        "enabled": true,
+        "skill": "gstack:design-shotgun",
+        "trigger": "ui_hint_yes && no_ui_spec_yet",
+        "evidence": "UI-SPEC.md references variant paths + user's pick"
+      },
+      "design_critique": {
+        "enabled": true,
+        "skill": "impeccable:critique",
+        "trigger": "ui_hint_yes && design_shotgun_completed",
+        "evidence": "UI-SPEC.md cites impeccable critique scores per variant"
+      }
+    },
+    "per_plan": {
+      "tdd_enforcement": {
+        "enabled": true,
+        "skill": "superpowers:test-driven-development",
+        "trigger": "task.tdd == true",
+        "evidence": "atomic test(RED) + feat(GREEN) commit pair per task"
+      },
+      "ui_preview": {
+        "enabled": true,
+        "skill": "gstack:browse",
+        "trigger": "task modifies frontend components",
+        "evidence": "screenshot path in commit message or SUMMARY.md"
+      },
+      "verification_before_done": {
+        "enabled": true,
+        "skill": "superpowers:verification-before-completion",
+        "trigger": "before any TaskUpdate --completed",
+        "evidence": "grep/test/curl/screenshot output posted before status change"
+      }
+    },
+    "pre_execute_gates": {
+      "multi_ai_plan_review": {
+        "enabled": true,
+        "skill": "/gsd-review (slash command from templates/gsd-patches/patches/workflows/review.md)",
+        "trigger": "after /gsd-plan-phase, before any *-PLAN.md task execution",
+        "evidence": "{padded_phase}-REVIEWS.md in phase directory, output from \u22652 reviewer CLIs",
+        "programmatic_hook": ".claude/hooks/multi-ai-review-gate.sh",
+        "override": "GSD_SKIP_REVIEWS=1 env var OR .planning/current-phase/multi-ai-review-skipped sentinel",
+        "rationale": "ADR 0018 \u2014 closes drift observed in cparx phases 04.9\u201305"
+      }
+    },
+    "post_phase": {
+      "spec_review": {
+        "enabled": true,
+        "skill": "gstack:review",
+        "trigger": "always",
+        "evidence": "REVIEW.md in phase directory"
+      },
+      "code_quality_review": {
+        "enabled": true,
+        "skill": "superpowers:requesting-code-review",
+        "trigger": "always, after spec_review",
+        "evidence": "Stage 2 section appended to REVIEW.md"
+      },
+      "security": {
+        "enabled": true,
+        "skill": "gstack:cso",
+        "trigger": "scope matches auth|storage|api|llm",
+        "evidence": "SECURITY.md in phase directory",
+        "sub_gates": [
+          {
+            "skill": "database-sentinel:audit",
+            "trigger": "scope matches supabase|postgres|mongodb",
+            "evidence": "DB-AUDIT.md in phase directory; all High and Critical findings resolved or acknowledged via templates/adr-db-security-acceptance.md; otherwise BLOCKS branch close"
+          }
+        ]
+      },
+      "qa": {
+        "enabled": true,
+        "skill": "gstack:qa",
+        "trigger": "dev server reachable on localhost",
+        "evidence": "QA report linked from VERIFICATION.md"
+      },
+      "observability_scan": {
+        "enabled": true,
+        "skill": "observability:scan",
+        "trigger": ".observability/baseline.json present (project adopted §10.9 enforcement)",
+        "evidence": ".observability/delta.json; advisory warning when counts.high_confidence_gaps > 0",
+        "programmatic_hook": ".claude/hooks/observability-postphase-scan.sh",
+        "blocking": false,
+        "rationale": "ADR-0027 (migration 0018) — advisory delta scan of agent-written code; never blocks (LLM-driven scanner). No-op without a baseline. Promote to blocking once the deterministic scanner ships."
+      }
+    },
+    "finishing": {
+      "branch_close": {
+        "enabled": true,
+        "skill": "superpowers:finishing-a-development-branch",
+        "trigger": "feature branch ready to merge",
+        "evidence": "PR description lists skills + gates + evidence links"
+      },
+      "impeccable_audit": {
+        "enabled": true,
+        "skill": "impeccable:audit",
+        "trigger": "feature touches frontend && branch ready to merge",
+        "evidence": "audit report referenced in PR description; no Red findings unresolved"
+      },
+      "db_pre_launch_audit": {
+        "enabled": true,
+        "skill": "database-sentinel:audit",
+        "scope": "full \u2014 audit every supported backend in the project, not phase-scoped",
+        "trigger": "branch is main && app pre-launch checklist active",
+        "evidence": "Pre-launch DB-AUDIT.md with zero Critical, zero High findings; otherwise BLOCKS launch"
+      }
+    }
+  }
+}

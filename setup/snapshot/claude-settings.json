@@ -1,0 +1,88 @@
+{
+  "_comment": "Settings template for AgenticApps projects. Merged into the project's .claude/settings.json by /setup-agenticapps-workflow. Adds 4 of the 5 programmatic hooks (Hook 5 lives globally in ~/.claude/settings.json; Hooks 1-4 are project-scoped here).",
+  "_enforcement_contract": "docs/ENFORCEMENT-PLAN.md",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "_hook": "Hook 1 — Database Sentinel",
+        "matcher": "Bash|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/database-sentinel.sh",
+            "timeout": 5000
+          }
+        ]
+      },
+      {
+        "_hook": "Hook 2 — Design Shotgun Pre-Flight Gate",
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/design-shotgun-gate.sh",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "_hook": "Hook 4a — Skill Router Audit Log",
+        "matcher": "mcp__skills__.*|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/skill-router-log.sh",
+            "timeout": 5000
+          }
+        ]
+      },
+      {
+        "_hook": "Hook 6 — Normalize CLAUDE.md after Edit/Write (migration 0010)",
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/normalize-claude-md.sh \"$CLAUDE_PROJECT_DIR/CLAUDE.md\"",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "_hook": "Hook 3 — Phase Sentinel (deterministic shell)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/phase-sentinel.sh",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "_hook": "Hook 4b — Session Bootstrap (last 20 skill invocations)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-bootstrap.sh",
+            "timeout": 5000
+          }
+        ]
+      },
+      {
+        "_hook": "Architecture audit check (P4) — nag if last audit > 7 days",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/architecture-audit-check.sh",
+            "timeout": 5000
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -4,17 +4,20 @@ This directory holds **versioned migrations** that bring an installed AgenticApp
 workflow from one version to the next. Every change to the workflow scaffolder
 that affects projects on disk ships as a new migration file here.
 
-The `setup` and `update` skills both consume migrations from this directory:
+The two install flows are split by mechanism (this diverges from core
+ADR-0013 — see `docs/decisions/0036-snapshot-install.md`):
 
-- `setup/SKILL.md` — applies all migrations from `0000-baseline.md` forward to
-  the current version. This is what `/setup-agenticapps-workflow` runs on a
-  fresh project.
+- `setup/SKILL.md` — does **not** replay migrations. It lays down the latest
+  end-state from `setup/snapshot/` and stamps the version. This is what
+  `/setup-agenticapps-workflow` runs on a fresh project.
 - `update/SKILL.md` — applies only **pending** migrations (those with
   `from_version >` the project's installed version). This is what
   `/update-agenticapps-workflow` runs on an existing project.
 
-There is no parallel "setup writes one shape, update writes a different shape"
-code path. Both flows route through the same migration files.
+`0000-baseline.md` is retained as the **parity anchor**: `bin/build-snapshot.sh`
+replays `0000`→latest to materialize `setup/snapshot/`, and
+`migrations/check-snapshot-parity.sh` (CI) asserts the snapshot equals that
+replay so it can never silently drift from the chain.
 
 ---
 
