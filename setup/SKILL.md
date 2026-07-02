@@ -185,6 +185,23 @@ f. **Global additions (scope B/C only)** — append
 g. **ADR template** — copy `$SNAP/adr-db-security-acceptance.md` →
    `templates/adr-db-security-acceptance.md` if absent.
 
+h. **`.gitignore` (commit phase artifacts — ADR-0037)** — the snapshot's
+   `$SNAP/gitignore` is the canonical baseline: it commits `.planning/phases/`
+   and ignores only local/ephemeral paths. Merge, never clobber a project's
+   existing stack ignores:
+   - If `.gitignore` does **not** exist: copy `$SNAP/gitignore` → `.gitignore`.
+   - If `.gitignore` **does** exist: **(1)** strip any whole-tree phases ignore
+     the project may carry (the friction this fixes) —
+     ```bash
+     sed -i.bak -E '/^[[:space:]]*\/?\.planning\/phases\/?[[:space:]]*$/d; /^[[:space:]]*\/?\.planning\/?[[:space:]]*$/d' .gitignore && rm -f .gitignore.bak
+     ```
+     then **(2)** append any managed line from `$SNAP/gitignore` not already
+     present (dedupe by exact line), so the narrow local ignores are ensured
+     without duplicating or reordering the project's own entries.
+   - In `--dry-run`: show the diff instead of writing.
+   - Phase artifacts (`CONTEXT.md`, `PLAN.md`, `VERIFICATION.md`, `REVIEW.md`,
+     `HANDOFF-LOG.md`) MUST remain committed — never re-add `.planning/phases/`.
+
 ## Step 5: Post-checks and commit
 
 Post-checks (fail the install, do not commit, if any fail):
@@ -196,6 +213,8 @@ Post-checks (fail the install, do not commit, if any fail):
 - the snapshot's latest features are present (proves it's not the v1.2.0
   baseline): `grep -rq "prompt.injection\|injection-defense" .claude` and the
   ts-declare-first hook/skill are wired per the manifest
+- `.gitignore` exists and does **not** ignore the `.planning/phases/` tree
+  (ADR-0037): `! grep -qE '^[[:space:]]*/?\.planning/phases/?[[:space:]]*$' .gitignore`
 
 ```bash
 git add -A
@@ -214,6 +233,7 @@ Files created:
   - .planning/config.json                           (hook bindings)
   - .claude/claude-md/workflow.md                   (vendored workflow block)
   - CLAUDE.md                                       (## Workflow reference)
+  - .gitignore                                      (commits .planning/phases/)
   {scope global/both:} ~/.claude/CLAUDE.md          (global additions)
 
 Next:

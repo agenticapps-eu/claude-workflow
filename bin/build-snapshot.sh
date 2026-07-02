@@ -28,6 +28,7 @@ cp "$ROOT/templates/config-hooks.json"                 "$OUT/planning-config.jso
 cp "$ROOT/templates/.claude/claude-md/workflow.md"     "$OUT/claude-md-workflow.md"
 cp "$ROOT/templates/adr-db-security-acceptance.md"     "$OUT/adr-db-security-acceptance.md"
 cp "$ROOT/templates/global-claude-additions.md"        "$OUT/global-claude-additions.md"
+cp "$ROOT/templates/gitignore"                         "$OUT/gitignore"
 cp "$ROOT"/templates/.claude/hooks/*.sh                "$OUT/hooks/"
 cp "$ROOT"/templates/.claude/scripts/*.sh              "$OUT/scripts/"
 
