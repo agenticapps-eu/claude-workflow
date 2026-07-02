@@ -1,21 +1,18 @@
 #!/usr/bin/env bash
 # check-snapshot-parity.sh — drift guard for the snapshot install path.
 #
-# Two layers:
-#   1. Structural shape checks (always runnable, incl. CI without the
-#      scaffolder): JSON validity, version stamp, settings.json hook bindings,
-#      .planning/config.json key shape, hook referential integrity + hashes,
-#      and a set of END-STATE INVARIANTS derived from real installed projects
-#      (factiv) so the seed template can't false-green.
-#   2. Full replay parity (when the scaffolder is installed): delegates to
-#      `bin/build-snapshot.sh --check`, which replays 0000->latest and diffs
-#      every file. This is authoritative.
+# One authoritative layer: the structural checks below.
+#   JSON validity, version stamp, settings.json hook bindings,
+#   .planning/config.json key shape, hook referential integrity + hashes,
+#   and END-STATE INVARIANTS derived from real installed projects (factiv)
+#   so the seed template can't false-green.
+#
+# The snapshot is assembled deterministically from templates/ + skill/SKILL.md
+# by bin/build-snapshot.sh (NOT replayed from the migration chain — replay is
+# impossible; see ADR-0036 / issue #74). These checks need no scaffolder, GSD,
+# agent, or network. A FAIL means real drift that must be fixed.
 #
 # See docs/decisions/0036-snapshot-install.md and setup/snapshot/MANIFEST.md.
-#
-# A FAILURE here on a freshly-seeded snapshot is EXPECTED and correct: it means
-# the snapshot is still raw templates and `bin/build-snapshot.sh` has not yet
-# materialized it from the migration chain.
 
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -72,16 +69,19 @@ if [ "$have_jq" = 1 ]; then
   for sec in hooks; do
     jq -e ".$sec" "$CFG" >/dev/null 2>&1 && ok "config has .$sec" || bad "config missing .$sec"
   done
-  # End-state invariants confirmed against installed factiv projects:
-  jq -e '.workflow' "$CFG" >/dev/null 2>&1 \
-    && ok "config has .workflow block" \
-    || bad "config missing .workflow block (present in real installs)"
-  # observability skill was renamed observability:* -> add-observability:* —
-  # the bare old name in the snapshot means it lags the chain.
-  if grep -q '"observability:scan"' "$CFG" && ! grep -q '"add-observability:scan"' "$CFG"; then
-    bad "config uses stale 'observability:scan' (end-state is 'add-observability:scan')"
+  # NOTE: `.workflow` is GSD-owned config (research/plan_check/verifier/…),
+  # written by GSD at its own init — NOT part of the AgenticApps snapshot, which
+  # owns only `.hooks`. Setup merges `.hooks` into any GSD-written config. So we
+  # do NOT assert `.workflow` here.
+  #
+  # Observability skill id: 0022 repointed `add-observability` -> `observability`
+  # (the obs repo keeps `add-observability` as an alias). Accept either the
+  # current `observability:scan` or the legacy `add-observability:scan`; fail
+  # only if the scan ref is absent entirely.
+  if grep -q '"observability:scan"' "$CFG" || grep -q '"add-observability:scan"' "$CFG"; then
+    ok "observability scan ref present (current or aliased)"
   else
-    ok "observability skill id is current"
+    bad "config missing an observability scan skill ref"
   fi
 fi
 
@@ -98,18 +98,20 @@ if command -v sha256sum >/dev/null 2>&1; then
   ( cd "$SNAP/hooks" 2>/dev/null && sha256sum ./*.sh 2>/dev/null | sed 's/^/    /' )
 fi
 
-# ── 5. latest-feature markers (cheap, kept from before) ──────────────────────
-grep -rqi 'prompt.injection\|injection-defense' "$SNAP" \
-  && ok "0023 prompt-injection present" || bad "missing 0023 prompt-injection (run build-snapshot.sh)"
-grep -rqi 'declare-first\|declare_first' "$SNAP" \
-  && ok "0015 ts-declare-first present" || bad "missing 0015 ts-declare-first (run build-snapshot.sh)"
-
-# ── 6. authoritative full replay parity (if scaffolder installed) ────────────
-if [ -d "${HOME}/.claude/skills/agenticapps-workflow/migrations" ]; then
-  echo "  scaffolder present — running full replay parity (build-snapshot.sh --check)"
-  bash "$ROOT/bin/build-snapshot.sh" --check || fail=1
+# ── 5. snapshot is at the latest version ─────────────────────────────────────
+# Real evidence the snapshot reflects every migration through the latest: its
+# VERSION must equal the highest-numbered migration's to_version (the same
+# coupling migrations/run-tests.sh enforces for skill/SKILL.md). The old
+# feature-name greps were a false-green — they matched MANIFEST.md's own prose,
+# and neither 0015 (a user-global symlink) nor 0023 (skill-delegated
+# /injection-guard init) leaves a static string in the project snapshot.
+latest_file="$(ls "$ROOT"/migrations/[0-9][0-9][0-9][0-9]-*.md 2>/dev/null | sort | tail -1)"
+latest_to="$(grep '^to_version:' "$latest_file" 2>/dev/null | awk '{print $2}')"
+snap_ver="$(cat "$SNAP/VERSION" 2>/dev/null)"
+if [ -n "$latest_to" ] && [ "$snap_ver" = "$latest_to" ]; then
+  ok "snapshot VERSION ($snap_ver) == latest migration to_version"
 else
-  echo "  (scaffolder not installed — structural checks only; run build-snapshot.sh --check for full parity)"
+  bad "snapshot VERSION ($snap_ver) != latest migration to_version ($latest_to)"
 fi
 
 echo

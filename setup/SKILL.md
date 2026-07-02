@@ -9,7 +9,10 @@ description: |
   workflow", "install agenticapps workflow", or "scaffold this project".
   Idempotent — refuses to re-run on a project that already has
   `.claude/skills/agentic-apps-workflow/` and routes to
-  `/update-agenticapps-workflow` instead.
+  `/update-agenticapps-workflow` instead. Fail-closed on an unverified
+  snapshot: refuses to install until the drift guard
+  (`check-snapshot-parity.sh`) passes, so a raw/stale seed can never be laid
+  down silently.
 ---
 
 # Setup AgenticApps Workflow
@@ -32,10 +35,11 @@ This skill diverges (see `docs/decisions/0036-snapshot-install.md`):
   unchanged: it applies only pending migrations (`from_version >` the
   installed version).
 
-The snapshot is materialized by replaying the whole chain once
-(`bin/build-snapshot.sh`) and kept honest by a drift guard
-(`migrations/check-snapshot-parity.sh`) that CI runs on every PR. So "skip
-replay on fresh install" never ships a stale baseline.
+The snapshot is materialized by `bin/build-snapshot.sh`, which assembles it
+deterministically from the maintained sources (`templates/` + `skill/SKILL.md`) —
+the migration chain is not shell-replayed (see ADR-0036). It is kept honest by a
+drift guard (`migrations/check-snapshot-parity.sh`) that CI runs on every PR, so
+"skip replay on fresh install" never ships a stale baseline.
 
 ## Step 0: Parse flags
 
@@ -73,6 +77,31 @@ test -d "$SNAP" || {
   exit 1
 }
 LATEST=$(cat "$SNAP/VERSION")
+
+# Snapshot must be VERIFIED (materialized from the migration chain), not the raw
+# seed. The seed lags the latest migrations and would install a known-incorrect
+# baseline (wrong settings.json keys, missing hook bindings, stale config).
+# Fail closed: run the drift guard and refuse unless it passes. See
+# docs/decisions/0036-snapshot-install.md and setup/snapshot/MANIFEST.md.
+PARITY="$SCAFFOLDER/migrations/check-snapshot-parity.sh"
+if [ ! -x "$PARITY" ]; then
+  echo "ERROR: drift guard not found at $PARITY — cannot verify the snapshot."
+  echo "Refusing to install an unverified snapshot."
+  exit 1
+fi
+if ! _out=$(bash "$PARITY" 2>&1); then
+  echo "ERROR: the setup snapshot is UNVERIFIED — still the raw seed, or drifted"
+  echo "from the migration chain. It has not been materialized by build-snapshot.sh,"
+  echo "so installing it would lay down a known-stale / incorrect baseline."
+  echo ""
+  echo "Fix: materialize it until the drift guard passes, then re-run setup:"
+  echo "  bash $SCAFFOLDER/bin/build-snapshot.sh"
+  echo "To bootstrap now, use a scaffolder checked out at a released tag whose"
+  echo "snapshot is already verified. See docs/decisions/0036-snapshot-install.md."
+  echo ""
+  printf '%s\n' "$_out" | sed 's/^/  parity: /' | head -20
+  exit 1
+fi
 
 # Optional tooling (warn, don't fail)
 command -v claude >/dev/null 2>&1 || echo "WARN: claude CLI not on PATH"
@@ -127,9 +156,21 @@ c. **Hooks + settings** — copy `$SNAP/claude-settings.json` →
    `.claude/settings.json`, and `$SNAP/hooks/*` → `.claude/hooks/` (chmod +x),
    and `$SNAP/scripts/*` → `.claude/scripts/`.
 
-d. **Planning hooks** — `mkdir -p .planning` and copy `$SNAP/planning-config.json`
-   → `.planning/config.json`. This is the **latest** hooks block (every
-   migration's hook already folded in) — no incremental edits follow.
+d. **Planning hooks** — `mkdir -p .planning` and:
+   - If `.planning/config.json` does **not** exist: copy
+     `$SNAP/planning-config.json` → `.planning/config.json`. (The snapshot owns
+     only `.hooks`; `.workflow` is GSD-owned config written by GSD at its own
+     init — setup must not overwrite it.)
+   - If `.planning/config.json` **does** exist (e.g. GSD already wrote it,
+     including its `.workflow` block): merge the snapshot's `.hooks` into the
+     existing file without clobbering other sections:
+     ```bash
+     jq -s '.[0] * .[1]' .planning/config.json "$SNAP/planning-config.json" > .planning/config.json.tmp \
+       && mv .planning/config.json.tmp .planning/config.json
+     ```
+     (Snapshot second so its `.hooks` wins; `*` deep-merges, preserving a
+     GSD-written `.workflow`.)
+   - In `--dry-run`: show the diff instead of writing.
 
 e. **Vendored CLAUDE.md block + reference** — `mkdir -p .claude/claude-md` and
    copy `$SNAP/claude-md-workflow.md` → `.claude/claude-md/workflow.md`. Then,
@@ -187,8 +228,9 @@ Next:
 | Not a git repo | Error in Step 1; suggest `git init`; exit 1 |
 | Already installed | Error in Step 1; route to `/update-agenticapps-workflow`; exit 1 |
 | Snapshot missing/empty | Error in Step 1; suggest `bash bin/build-snapshot.sh`; exit 1 |
+| Unverified/seed snapshot | Error in Step 1; the drift guard fails → setup refuses (fail-closed) rather than install a stale baseline; run `bin/build-snapshot.sh` first; exit 1 |
 | Unsubstituted placeholder | Post-check fails the install rather than committing `{{...}}` |
-| Stale snapshot | Cannot ship silently — `check-snapshot-parity.sh` fails CI if `snapshot/` ≠ replay(0000→latest) |
+| Stale snapshot | Cannot ship silently — `check-snapshot-parity.sh` fails CI (and now Step 1) if `snapshot/` ≠ the deterministic assembly from `templates/` + `skill/SKILL.md` |
 
 ## Idempotency
 
@@ -201,5 +243,6 @@ make a partially-failed setup safe to resume.
 - `update-agenticapps-workflow` — applies pending migrations to an
   already-installed workflow (the migration path lives here now).
 - `agentic-apps-workflow` — the workflow itself; setup installs the project copy.
-- `bin/build-snapshot.sh` — regenerates `setup/snapshot/` from the migration
-  chain. Run after adding a migration so the drift guard stays green.
+- `bin/build-snapshot.sh` — regenerates `setup/snapshot/` by assembling it
+  deterministically from the maintained sources (`templates/` + `skill/SKILL.md`).
+  Run after adding a migration or editing a template so the drift guard stays green.

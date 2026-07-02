@@ -23,19 +23,13 @@ or editing any migration, and the drift guard
 | `adr-db-security-acceptance.md` | `templates/adr-db-security-acceptance.md` | migration `0001` |
 | `VERSION` | stamped into the skill frontmatter | `skill/SKILL.md` `version:` |
 
-## ⚠️ Seed vs verified
+## Verified
 
-This directory was **seeded** from the current `templates/` + `skill/SKILL.md`,
-which are maintained but **lag the last migrations**:
-
-- `0015-add-ts-declare-first-skill` — ts-declare-first wiring
-- `0023-prompt-injection-defense` — §14 prompt-injection contract
-
-Until `bin/build-snapshot.sh` has been run on a host with the scaffolder + GSD
-+ gstack installed (which replays the full chain and overwrites this dir with
-the true end-state), the snapshot is **not yet verified latest**. The drift
-guard will FAIL until parity holds — that failure is the signal to run the
-generator. Do not ship a release with a red drift guard.
+The snapshot is assembled from source by `bin/build-snapshot.sh` (copies from
+`templates/` + `skill/SKILL.md`, plus a `jq` transform for
+`claude-settings.json`) and enforced by `migrations/check-snapshot-parity.sh`
+in CI. To regenerate after changing a migration or template, run
+`bash bin/build-snapshot.sh` and commit the result.
 
 ## Contract
 
