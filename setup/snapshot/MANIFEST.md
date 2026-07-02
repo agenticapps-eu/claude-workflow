@@ -21,6 +21,7 @@ or editing any migration, and the drift guard
 | `scripts/*` | `.claude/scripts/*` | `templates/.claude/scripts/*` |
 | `global-claude-additions.md` | `~/.claude/CLAUDE.md` (scope global/both) | `templates/global-claude-additions.md` |
 | `adr-db-security-acceptance.md` | `templates/adr-db-security-acceptance.md` | migration `0001` |
+| `gitignore` | appended to project `.gitignore` (commits `.planning/phases/`; narrow local ignores only — ADR-0037) | `templates/gitignore` |
 | `VERSION` | stamped into the skill frontmatter | `skill/SKILL.md` `version:` |
 
 ## Verified

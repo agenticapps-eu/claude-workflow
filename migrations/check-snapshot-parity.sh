@@ -30,7 +30,8 @@ echo "  snapshot: $SNAP"
 
 # ── 0. required files + version ──────────────────────────────────────────────
 for f in agentic-apps-workflow-SKILL.md workflow-config.md claude-settings.json \
-         planning-config.json claude-md-workflow.md claude-md-reference-block.md VERSION; do
+         planning-config.json claude-md-workflow.md claude-md-reference-block.md \
+         gitignore VERSION; do
   [ -e "$SNAP/$f" ] && ok "present $f" || bad "missing $f"
 done
 ver="$(cat "$SNAP/VERSION" 2>/dev/null)"; [ -n "$ver" ] && ok "version $ver" || bad "no VERSION"
@@ -112,6 +113,30 @@ if [ -n "$latest_to" ] && [ "$snap_ver" = "$latest_to" ]; then
   ok "snapshot VERSION ($snap_ver) == latest migration to_version"
 else
   bad "snapshot VERSION ($snap_ver) != latest migration to_version ($latest_to)"
+fi
+
+# ── 6. .gitignore policy: phase artifacts are committed (ADR-0037) ────────────
+# The scaffolded .gitignore MUST NOT ignore the .planning/phases tree — phase
+# artifacts (CONTEXT/PLAN/VERIFICATION/REVIEW/HANDOFF-LOG) are the shared
+# cross-host plan and are committed by default. This end-state invariant stops a
+# whole-tree ignore from ever being re-introduced into the seed. Narrow ignores
+# of specific scratch files UNDER the tree (e.g. `.planning/phases/*/.codex-review.md`)
+# are allowed and do not match the whole-tree patterns below.
+GI="$SNAP/gitignore"
+if [ -f "$GI" ]; then
+  if grep -qE '^[[:space:]]*/?\.planning/phases/?[[:space:]]*$' "$GI" \
+     || grep -qE '^[[:space:]]*/?\.planning/?[[:space:]]*$' "$GI" \
+     || grep -qE '^[[:space:]]*/?\.planning/\*' "$GI"; then
+    bad ".gitignore ignores the .planning/phases tree — phase artifacts must be committed (ADR-0037)"
+  else
+    ok ".gitignore does not ignore the .planning/phases tree"
+  fi
+  # Proves it is the canonical baseline (narrow local ignore present), not empty.
+  grep -qE '^[[:space:]]*/?\.claude/worktrees/?[[:space:]]*$' "$GI" \
+    && ok ".gitignore keeps .claude/worktrees local (narrow ignore)" \
+    || bad ".gitignore missing the narrow .claude/worktrees ignore"
+else
+  bad "missing gitignore (canonical scaffolded ignore baseline)"
 fi
 
 echo

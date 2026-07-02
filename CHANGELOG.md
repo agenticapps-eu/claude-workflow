@@ -4,6 +4,46 @@ All notable changes to the AgenticApps Claude Workflow scaffolder are
 documented here. The format follows [Keep a Changelog](https://keepachangelog.com/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.2.0] — Commit phase artifacts (un-ignore `.planning/phases/`)
+
+Phase artifacts under `.planning/phases/<NN>-<slug>/` (CONTEXT/PLAN/VERIFICATION/
+REVIEW/HANDOFF-LOG) are the shared cross-host project plan and are now **committed
+by default**, end to end. Motivated by the dual-host workflow-testbed benchmark
+(rounds 1+2, 2026-07-01/02): scaffolded projects carried a whole-tree
+`.planning/phases/` ignore, so **claude was the only host whose planning evidence
+was not committed** (both rounds); codex needed `git add -f`, opencode un-ignored
+the path mid-run. Root cause: the scaffolder shipped **no `.gitignore` at all**,
+so nothing asserted the policy — the ignore came from the benchmark harness
+baseline and was mis-attributed to "the GSD config." See ADR-0037.
+
+### Added
+
+- **`templates/gitignore` → `setup/snapshot/gitignore`** — a canonical scaffolded
+  `.gitignore` that commits `.planning/phases/` and ignores only local/ephemeral
+  paths (`.claude/worktrees/`, `.planning/current-phase`,
+  `.planning/skill-observations/`, `*.tmp`, and narrow reviewer-scratch files
+  *under* the tree). `setup/SKILL.md` Step 4h lays it down by **appending** to any
+  existing project `.gitignore` (never clobbering stack ignores) and stripping a
+  whole-tree phases ignore if present.
+- **`migrations/0024-commit-planning-phases.md`** (2.1.0 → 2.2.0) — update-only
+  migration that surgically removes a whole-tree `.planning/phases/` /
+  `.planning/` / `.planning/*` ignore from an existing install's `.gitignore`
+  (preserving every other entry), then bumps the version. Fixtures under
+  `migrations/test-fixtures/0024/` (strip-when-ignored, noop-when-narrow-only,
+  idempotent-reapply) wired into `run-tests.sh`.
+- **`check-snapshot-parity.sh` §6** — end-state invariant: the drift guard now
+  FAILs if the snapshot `.gitignore` ever ignores the phases tree, so the policy
+  cannot regress into the seed.
+- **ADR-0037** and a conformance-checklist line in
+  `docs/standards/gsd-binding-and-planning.md` ("MUST NOT gitignore
+  `.planning/phases/`"). `codex-workflow` and `opencode-workflow` must mirror both
+  in their vendored copy.
+
+### Changed
+
+- `bin/build-snapshot.sh` assembles `gitignore` into the snapshot; `MANIFEST.md`
+  documents it. `skill/SKILL.md` version → **2.2.0** (drift-coupled to 0024).
+
 ## [2.0.0] — SPLIT-03: extract observability to agenticapps-observability
 
 **Breaking change.** Observability is no longer shipped by this scaffolder. It

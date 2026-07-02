@@ -1,0 +1,24 @@
+# AgenticApps workflow — canonical project ignores.
+#
+# POLICY (ADR-0037): phase artifacts under `.planning/phases/` are COMMITTED.
+# They are the shared, cross-host project plan (CONTEXT.md, PLAN.md,
+# VERIFICATION.md, REVIEW.md, HANDOFF-LOG.md, …). Do NOT add a
+# `.planning/phases/` (whole-tree) ignore here — it drops the planning evidence
+# other hosts and future sessions rely on. See
+# docs/standards/gsd-binding-and-planning.md and ADR-0037.
+#
+# Only local / ephemeral state is ignored below. This file is a starting
+# baseline the scaffolder appends to any existing project `.gitignore`; add your
+# own stack ignores (node_modules/, dist/, target/, __pycache__/, …) as needed.
+
+# Local / ephemeral working state
+.claude/worktrees/
+.planning/current-phase
+.planning/skill-observations/
+*.tmp
+
+# Raw reviewer scratch (consolidated into <NN>-REVIEWS.md, which IS committed)
+.planning/phases/*/.codex-review.md
+.planning/phases/*/.gemini-review.md
+.planning/phases/*/.claude-review.md
+.planning/phases/*/.review-prompt.md
