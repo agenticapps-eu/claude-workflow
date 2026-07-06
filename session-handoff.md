@@ -1,54 +1,28 @@
-# Session Handoff — 2026-06-22 (cw 0023 injection-guard migration built; PR pending merge)
+# Session Handoff — 2026-07-06 (spec §15 knowledge capture → PR #78, v2.3.0)
 
 ## Accomplished
-- **Chose option A** (cut a real 2.x-axis migration) and built it:
-  `migrations/0023-prompt-injection-defense.md`, `from 2.0.0 -> to 2.1.0`.
-  Pre-flight gates on the `injection-guard` skill being installed (no
-  auto-install; exit-3 abort with obs `install.sh` pointer). Step 1 **delegates**
-  the §14 scaffold to consent-gated `/injection-guard init` (NO inline cp; does
-  NOT call obs `migrate-0023.sh` — wrong version axis). Step 2 bumps the installed
-  workflow version 2.0.0 → 2.1.0.
-- Bumped `skill/SKILL.md` 2.0.0 → 2.1.0 (drift coupling: 0023 is now the
-  highest-numbered migration → its `to_version` is the drift target).
-- Added test fixtures `migrations/test-fixtures/0023/` (01-bump-when-guard-present,
-  02-abort-when-guard-absent, 03-idempotent-reapply) + `test_migration_0023` and a
-  dispatcher entry in `migrations/run-tests.sh`, modeled on 0022.
-- Deleted the stale `ADD-INJECTION-GUARD-MIGRATION.md` brief (superseded by the
-  obs fold-in).
-- **Tests green:** full suite `PASS: 153, FAIL: 0`; drift test PASS; 0023 fixtures
-  3/3. `gitnexus_detect_changes` = low risk, 0 affected execution flows.
+- **Implemented core spec §15 (knowledge capture) in the reference host → PR #78** on branch `feat/knowledge-capture` (commit `f556f63`, base main). Prerequisite (core spec v0.7.0 + core ADR-0017) was already merged in `agenticapps-workflow-core`.
+- **Skill wiring:** `skill/SKILL.md` (+ snapshot copy) gained `## Knowledge Capture — Ritual Tail (spec §15)` — final step of the three rituals (session handoff / plan completion / phase completion); destination read from `.planning/config.json → knowledge_capture` at trigger time; graceful skip (block absent, `enabled:false`, vault folder missing → one info line, never mkdir); 1–5 transferable learnings with write-nothing-if-nothing-qualifies; embedded first-write skeleton; append-only Log + curated Key Learnings; vault-safety rules. Version → **2.3.0**.
+- **Config seeding:** `templates/config-hooks.json` seeds the block with a literal `<repo-name>` placeholder; `setup/SKILL.md` Step 4d resolves it via `basename $(git rev-parse --show-toplevel)` at install time; Step 5 post-checks resolution.
+- **Migration 0025** (2.2.0 → 2.3.0): inserts the block only if missing (user opt-outs/custom notes preserved verbatim; creates config if absent) and appends the section by **extracting it from the scaffolder's `skill/SKILL.md`** (single source of truth — no heredoc duplicate). 4 fixtures (insert-and-wire, preserve-existing-block, idempotent-reapply, create-config-when-absent) + `test_migration_0025` + dispatcher entry in `run-tests.sh`.
+- **Drift guard:** `check-snapshot-parity.sh` §7 (snapshot SKILL carries section + all three triggers + config-routed destination; §6 style) and §3 extension (block shape; placeholder must remain in the SEED). Snapshot rebuilt via `build-snapshot.sh`.
+- **Docs:** ADR-0038 (references core ADR-0017; records that `implements_spec` stays 0.4.0 pending a full conformance audit), standards checklist line, `templates/obsidian-learnings-note.md`, CHANGELOG `[2.3.0]`, MANIFEST rows.
+- **Green:** `run-tests.sh` **160 PASS / 0 FAIL** (incl. 0025 fixtures + version coupling at 2.3.0); `check-snapshot-parity.sh` PASS; `build-snapshot.sh --check` OK; `gitnexus detect_changes` low risk, 0 affected flows.
+- **First live §15 exercise:** created `~/Obsidian/Memex/40-49 Resources/44 Agentic Coding Learnings/claude-workflow.md` from the skeleton with 4 learnings (log entry `2026-07-06 — handoff`, Key Learnings seeded).
 
 ## Decisions
-- **Option A over B/C** — only a `from 2.0.0` migration reaches the fleet; every
-  live project is at 2.0.0 post-SPLIT, so any `< 2.0.0` tombstone is silently skipped.
-- **Delegate, don't inline** — the `injection-guard` skill is the §14 generator;
-  the migration just gates + invokes `/injection-guard init`. Keeps cw decoupled
-  from §14 asset shapes (they live in obs).
-- **Post-check 2 is informational** — if the user declines init's consent gates
-  (e.g. non-LLM project), no `injection_guard:` block is written but the version
-  still bumps. Declined-state is valid, not a failure.
+- **Migration appends by extraction, not heredoc.** Step 2 pulls the section from the scaffolder clone's `skill/SKILL.md` (awk heading→EOF), so migrated installs are byte-identical to fresh snapshot installs; pre-flight aborts on a stale clone. Rejected: 0024-style self-contained duplicate (drifts on every skill edit).
+- **Placeholder stays literal in the seed.** Parity §3 asserts `<repo-name>` is still unresolved in `setup/snapshot/planning-config.json`; setup Step 5 asserts it is resolved in the installed project. Two-sided guard.
+- **`implements_spec` NOT bumped to 0.7.0** — it tracks the last full conformance audit; §§ from 0.5.0/0.6.0 are unaudited in this host. Recorded in ADR-0038.
+- **Skill step, not a hook** — the selectivity bar and Key-Learnings curation are LLM judgment calls; §15 non-requirements explicitly permit skill-step wiring.
 
-## Files modified
-- `migrations/0023-prompt-injection-defense.md` — new migration (the 2.1.0 release)
-- `skill/SKILL.md` — version 2.0.0 → 2.1.0
-- `migrations/run-tests.sh` — `test_migration_0023` + dispatcher entry
-- `migrations/test-fixtures/0023/**` — 3 fixtures + common-setup.sh
-- deleted `ADD-INJECTION-GUARD-MIGRATION.md` (stale brief)
-- (pre-existing, NOT in this commit: `.gitignore` understand-anything ignore line)
+## Files modified (27, +963/−6) — see PR #78
+New: `migrations/0025-knowledge-capture.md`, `migrations/test-fixtures/0025/*` (common-setup + 4 fixtures), `templates/obsidian-learnings-note.md`, `docs/decisions/0038-knowledge-capture.md`. Modified: `skill/SKILL.md`, `setup/SKILL.md`, `templates/config-hooks.json`, `migrations/run-tests.sh`, `migrations/check-snapshot-parity.sh`, `setup/snapshot/{agentic-apps-workflow-SKILL.md,planning-config.json,VERSION,MANIFEST.md}`, `docs/standards/gsd-binding-and-planning.md`, `CHANGELOG.md`.
 
 ## Next session: start here
-The 0023 migration is built and tested on branch `feat/0023-prompt-injection-defense`.
-First action: **commit + open the PR** (if not already done this session), then
-merge — that merge IS the claude-workflow 2.1.0 release. After merge, run the
-rollout: (1) refresh the **installed** obs clone
-`~/.claude/skills/agenticapps-observability` (`git pull` + re-run `install.sh`)
-to create the still-missing `~/.claude/skills/injection-guard` symlink — this is
-why 0023's preflight-audit verify currently shows informational FAIL on this host;
-(2) per project run `/update-agenticapps-workflow` (2.0.0→2.1.0) then
-`/injection-guard init`. Downstream factiv hosts (callbot/cparx/fx-signal-agent)
-are a separate cross-family engagement.
+Watch **PR #78** CI (`migrations-and-snapshot`) → green, then merge to main. After merge: `cd ~/.claude/skills/agenticapps-workflow && git pull --ff-only origin main` to refresh the scaffolder clone (see [[local-scaffolder-clone]]) — **required before any project runs migration 0025**, since Step 2 extracts the section from the clone and its pre-flight aborts on a stale one. Then proceed to Prompt 3 of the rollout: mirror §15 in `codex-workflow` (and later `opencode-workflow`) per ADR-0038's downstream note — config seed + three trigger points + graceful skip, host tag `(codex)`/`(opencode)` in log headings.
 
-## Open questions
-- README migration index (`migrations/README.md`) is stale (stops at 0012, missing
-  0013–0023). Left as pre-existing debt — not touched to avoid partial-backfill
-  inconsistency. Worth a separate cleanup pass.
+## Open questions / loose ends
+- **claude-workflow's own `.planning/config.json` does not carry the `knowledge_capture` block** — this session wrote the vault note per the task prompt, not via config. If the scaffolder repo itself should be opted in, add the block (note: `.../claude-workflow.md`) in a follow-up.
+- **GitNexus FTS v41/v40 build skew persists** (see [[gitnexus-fts-version-skew]]); index also reports stale (last indexed `574eed4`). MCP `detect_changes` works; re-run `node .gitnexus/run.cjs analyze` after merge if needed.
+- Non-blocking: CHANGELOG still has no `[2.1.0]` entry (0023 skipped it); optional backfill.
