@@ -4,6 +4,56 @@ All notable changes to the AgenticApps Claude Workflow scaffolder are
 documented here. The format follows [Keep a Changelog](https://keepachangelog.com/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.3.0] — Knowledge capture into the Obsidian vault (spec §15)
+
+Implements core spec **§15 (knowledge capture)** — the claude host now distills
+1–5 **transferable** learnings into one Obsidian note per repo
+(`~/Obsidian/Memex/40-49 Resources/44 Agentic Coding Learnings/<repo-name>.md`)
+as the final step of three rituals: **session handoff**, **plan completion**,
+**phase completion**. The destination is config-routed (never hardcoded), the
+write never blocks a ritual and is never committed to the repo, and machines
+without the vault skip silently with one info line. See ADR-0038 and core
+ADR-0017 / spec v0.7.0.
+
+### Added
+
+- **`skill/SKILL.md` → "Knowledge Capture — Ritual Tail (spec §15)"** — the
+  wiring for the three trigger points: read
+  `.planning/config.json → knowledge_capture`; graceful skip (block absent,
+  `enabled: false`, or vault parent folder missing — never create it); distill
+  1–5 learnings past the selectivity bar (write nothing if nothing qualifies);
+  create the note from the embedded skeleton on first write; prepend an
+  append-only Log entry; curate Key Learnings to ~10–20 items; report to the
+  user. Vault safety: only the configured note, no secrets/client data.
+- **`knowledge_capture` config block** seeded in `templates/config-hooks.json`
+  → `setup/snapshot/planning-config.json` with a literal `<repo-name>`
+  placeholder; `setup/SKILL.md` Step 4d resolves it to the repo directory name
+  at install time, Step 5 post-checks it.
+- **`templates/obsidian-learnings-note.md`** — canonical first-write skeleton
+  (mirrors the vault-side schema CLAUDE.md).
+- **`migrations/0025-knowledge-capture.md`** (2.2.0 → 2.3.0) — inserts the
+  config block if missing (user opt-outs/custom notes preserved verbatim;
+  creates the config if absent) and appends the ritual-tail section by
+  extracting it from the scaffolder's `skill/SKILL.md` (single source of
+  truth — migrated installs are byte-identical to fresh snapshot installs).
+  Fixtures under `migrations/test-fixtures/0025/` (insert-and-wire,
+  preserve-existing-block, idempotent-reapply, create-config-when-absent)
+  wired into `run-tests.sh`.
+- **`check-snapshot-parity.sh` §7 + §3 extension** — end-state invariants: the
+  snapshot SKILL must carry the ritual-tail section, all three §15 trigger
+  points, and the config-routed destination; the seeded config must keep the
+  block with its `<repo-name>` placeholder.
+- **ADR-0038** and a conformance-checklist line in
+  `docs/standards/gsd-binding-and-planning.md`. `codex-workflow` and
+  `opencode-workflow` must mirror §15 in their own idiom (their own host tag
+  in log-entry headings).
+
+### Changed
+
+- `skill/SKILL.md` version → **2.3.0** (drift-coupled to 0025); snapshot
+  rebuilt (`agentic-apps-workflow-SKILL.md`, `planning-config.json`,
+  `VERSION`); `MANIFEST.md` documents the new block and parity §7.
+
 ## [2.2.0] — Commit phase artifacts (un-ignore `.planning/phases/`)
 
 Phase artifacts under `.planning/phases/<NN>-<slug>/` (CONTEXT/PLAN/VERIFICATION/

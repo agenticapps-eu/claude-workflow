@@ -84,6 +84,18 @@ if [ "$have_jq" = 1 ]; then
   else
     bad "config missing an observability scan skill ref"
   fi
+  # Knowledge capture (spec §15, ADR-0038): block present, enabled boolean, and
+  # the note targets the vault folder with the literal <repo-name> placeholder
+  # still in place — the SEED keeps the placeholder; setup Step 4d resolves it
+  # to the repo directory name at install time.
+  jq -e '.knowledge_capture.enabled | type == "boolean"' "$CFG" >/dev/null 2>&1 \
+    && ok "config has .knowledge_capture.enabled (boolean)" \
+    || bad "config missing .knowledge_capture.enabled boolean (spec §15.2)"
+  if jq -er '.knowledge_capture.note' "$CFG" 2>/dev/null | grep -qF '44 Agentic Coding Learnings/<repo-name>.md'; then
+    ok "config knowledge_capture.note targets the vault with <repo-name> placeholder"
+  else
+    bad "config .knowledge_capture.note must target the vault folder and keep the literal <repo-name> placeholder"
+  fi
 fi
 
 # ── 4. hooks: referential integrity + hashes ─────────────────────────────────
@@ -137,6 +149,29 @@ if [ -f "$GI" ]; then
     || bad ".gitignore missing the narrow .claude/worktrees ignore"
 else
   bad "missing gitignore (canonical scaffolded ignore baseline)"
+fi
+
+# ── 7. knowledge capture (spec §15): the SKILL wires the ritual tail ─────────
+# The snapshot SKILL MUST carry the knowledge-capture step that fires at the
+# three §15 trigger points (session handoff, plan completion, phase completion)
+# and routes the destination through .planning/config.json → knowledge_capture
+# (never a hardcoded path). End-state invariant in the §6 style: the step can
+# never silently drop out of the seed. See ADR-0038 / core ADR-0017.
+SKL="$SNAP/agentic-apps-workflow-SKILL.md"
+if [ -f "$SKL" ]; then
+  grep -q '^## Knowledge Capture — Ritual Tail' "$SKL" \
+    && ok "SKILL carries the knowledge-capture ritual-tail section" \
+    || bad "SKILL missing the '## Knowledge Capture — Ritual Tail' section (spec §15)"
+  for t in "Session handoff" "Plan completion" "Phase completion"; do
+    grep -q "$t" "$SKL" \
+      && ok "SKILL wires §15 trigger: $t" \
+      || bad "SKILL missing §15 trigger point: $t"
+  done
+  grep -q 'knowledge_capture' "$SKL" \
+    && ok "SKILL routes destination via the knowledge_capture config block" \
+    || bad "SKILL does not read .planning/config.json → knowledge_capture (path must be config-routed)"
+else
+  bad "missing agentic-apps-workflow-SKILL.md"
 fi
 
 echo

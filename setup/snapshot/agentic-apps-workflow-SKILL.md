@@ -1,6 +1,6 @@
 ---
 name: agentic-apps-workflow
-version: 2.2.0
+version: 2.3.0
 implements_spec: 0.4.0
 description: |
   Enforces the spec-first development workflow using Superpowers + GSD + gstack
@@ -215,3 +215,75 @@ loophole, and re-run the failed gate.
 5. Route to the right GSD entry point
 6. Invoke the mapped Superpowers skills in order
 7. Update decision log + GSD state at end of session
+
+## Knowledge Capture — Ritual Tail (spec §15)
+
+Transferable learnings must not die in a per-repo `session-handoff.md` that the
+next session overwrites. This step routes them to a cross-repo memory: **one
+Obsidian note per repo** in the operator's vault. It is the FINAL step of three
+rituals — run it AFTER:
+
+1. **Session handoff** — after `session-handoff.md` is written.
+2. **Plan completion** — after the plan is marked complete in `.planning/`.
+3. **Phase completion** — after the phase artifacts are committed.
+
+The vault write is machine-local and MUST NEVER be committed to the repo, and
+it MUST NEVER fail, block, or roll back the ritual that triggered it — on any
+failure, print one warning line and continue.
+
+Procedure:
+
+1. Read `.planning/config.json` → `knowledge_capture`. **Skip** — print at most
+   one info line (`knowledge-capture: skipped (<reason>)`) and continue the
+   ritual — when the block is absent, `enabled` is `false`, or the parent
+   folder of the `note` path does not exist (expand a leading `~` against
+   `$HOME`). NEVER create the parent folder: an absent vault means "not this
+   machine", not "set up the vault".
+2. Distill **1–5 transferable learnings** from the ritual just completed. The
+   bar: a learning qualifies only if it would change how you, another agent,
+   or another host works next time — gotchas whose root cause generalizes,
+   decision rationale with reusable trade-offs, tooling/workflow insights
+   (what made the agent fast or slow), wrong assumptions and what corrected
+   them. Status updates, restatements of the plan, repo facts already in
+   ADRs/handoffs/CHANGELOGs, and filler do NOT qualify. **If nothing clears
+   the bar, write nothing** — no empty log entries, no placeholders.
+3. If the configured note does not exist, create it from this skeleton
+   (canonical copy: `templates/obsidian-learnings-note.md` in the scaffolder;
+   fill `<...>` and dates):
+
+   ```markdown
+   ---
+   type: agentic-learnings
+   repo: <repo-name>
+   path: ~/Sourcecode/<org>/<repo-name>
+   hosts: [claude]
+   created: YYYY-MM-DD
+   updated: YYYY-MM-DD
+   ---
+
+   # <repo-name> — Agentic Coding Learnings
+
+   ## Key Learnings
+   <!-- CURATED. Dedupe, merge, promote from the log, demote stale. ~10–20 items. -->
+
+   ## Log
+   <!-- APPEND-ONLY. Never edit or delete existing entries. Newest first. -->
+   ```
+
+4. Prepend a log entry at the TOP of `## Log` (the section is append-only:
+   never edit or delete existing entries), heading exactly:
+   `### YYYY-MM-DD — <handoff|plan|phase> — <short title> (claude)`,
+   with the learnings as bullets.
+5. Curate `## Key Learnings`: dedupe, merge related items, promote log entries
+   that earned it, demote or remove stale ones. Target ~10–20 highest-value
+   items — each a bolded short title plus one to three sentences carrying the
+   transferable insight, not the status.
+6. Update frontmatter: set `updated:` to today; ensure `claude` is listed in
+   `hosts`.
+7. Report to the user, in one or two lines, what was written (or why the step
+   was skipped).
+
+Vault safety (hard rules): touch ONLY the configured note — never other repos'
+notes, the folder's `CLAUDE.md`, or anything else in the vault. Never write
+secrets, tokens, URLs with embedded credentials, or client-confidential data —
+redact before writing.
