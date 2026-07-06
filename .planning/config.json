@@ -1,5 +1,9 @@
 {
   "workflow": {
     "_auto_chain_active": false
+  },
+  "knowledge_capture": {
+    "enabled": true,
+    "note": "~/Obsidian/Memex/40-49 Resources/44 Agentic Coding Learnings/claude-workflow.md"
   }
 }
