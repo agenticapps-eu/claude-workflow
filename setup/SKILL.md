@@ -170,6 +170,21 @@ d. **Planning hooks** — `mkdir -p .planning` and:
      ```
      (Snapshot second so its `.hooks` wins; `*` deep-merges, preserving a
      GSD-written `.workflow`.)
+   - **Knowledge capture (spec §15)** — the snapshot config seeds a
+     `knowledge_capture` block whose `note` carries a literal `<repo-name>`
+     placeholder. Resolve it now to the actual repo directory name (per §15.2
+     the name is written out literally at configuration time — never
+     substituted at runtime):
+     ```bash
+     REPO_NAME="$(basename "$(git rev-parse --show-toplevel)")"
+     jq --arg name "$REPO_NAME" \
+       '.knowledge_capture.note |= gsub("<repo-name>"; $name)' \
+       .planning/config.json > .planning/config.json.tmp \
+       && mv .planning/config.json.tmp .planning/config.json
+     ```
+     The block references only the operator's vault path — never a
+     claude-workflow path — so the repo stays self-contained. Machines without
+     the vault folder are silent by design (the skill's graceful skip).
    - In `--dry-run`: show the diff instead of writing.
 
 e. **Vendored CLAUDE.md block + reference** — `mkdir -p .claude/claude-md` and
@@ -209,6 +224,10 @@ Post-checks (fail the install, do not commit, if any fail):
 - `.claude/skills/agentic-apps-workflow/SKILL.md` exists; its `version:` reads `$LATEST`
 - `.claude/workflow-config.md` exists with no `{{...}}` left
 - `.planning/config.json` is valid JSON with the `hooks` block
+- `.planning/config.json` carries the `knowledge_capture` block with its
+  `<repo-name>` placeholder resolved:
+  `jq -e '.knowledge_capture.enabled | type == "boolean"' .planning/config.json`
+  and `! grep -qF '<repo-name>' .planning/config.json`
 - `.claude/claude-md/workflow.md` exists and `CLAUDE.md` references it
 - the snapshot's latest features are present (proves it's not the v1.2.0
   baseline): `grep -rq "prompt.injection\|injection-defense" .claude` and the
@@ -230,7 +249,7 @@ Files created:
   - .claude/skills/agentic-apps-workflow/SKILL.md   (workflow skill)
   - .claude/workflow-config.md                      (project config)
   - .claude/settings.json + .claude/hooks/*         (enforcement hooks)
-  - .planning/config.json                           (hook bindings)
+  - .planning/config.json                           (hook bindings + knowledge capture)
   - .claude/claude-md/workflow.md                   (vendored workflow block)
   - CLAUDE.md                                       (## Workflow reference)
   - .gitignore                                      (commits .planning/phases/)

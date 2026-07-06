@@ -11,10 +11,10 @@ or editing any migration, and the drift guard
 
 | Snapshot file | Installed to | Source of truth |
 |---|---|---|
-| `agentic-apps-workflow-SKILL.md` | `.claude/skills/agentic-apps-workflow/SKILL.md` | `skill/SKILL.md` (trigger skill) |
+| `agentic-apps-workflow-SKILL.md` | `.claude/skills/agentic-apps-workflow/SKILL.md` | `skill/SKILL.md` (trigger skill; carries the §15 knowledge-capture ritual tail — parity §7) |
 | `workflow-config.md` | `.claude/workflow-config.md` | `templates/workflow-config.md` (+ placeholder substitution) |
 | `claude-settings.json` | `.claude/settings.json` | `templates/claude-settings.json` |
-| `planning-config.json` | `.planning/config.json` | end-state of `config-hooks.json` after all hook migrations |
+| `planning-config.json` | `.planning/config.json` | end-state of `config-hooks.json` after all hook migrations; includes the `knowledge_capture` block (spec §15) whose `<repo-name>` placeholder setup Step 4d resolves at install time |
 | `claude-md-workflow.md` | `.claude/claude-md/workflow.md` | `templates/.claude/claude-md/workflow.md` |
 | `claude-md-reference-block.md` | appended to `CLAUDE.md` | migration `0000` Step 4b |
 | `hooks/*` | `.claude/hooks/*` | `templates/.claude/hooks/*` |
