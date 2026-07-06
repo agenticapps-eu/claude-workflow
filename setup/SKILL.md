@@ -229,9 +229,11 @@ Post-checks (fail the install, do not commit, if any fail):
   `jq -e '.knowledge_capture.enabled | type == "boolean"' .planning/config.json`
   and `! grep -qF '<repo-name>' .planning/config.json`
 - `.claude/claude-md/workflow.md` exists and `CLAUDE.md` references it
-- the snapshot's latest features are present (proves it's not the v1.2.0
-  baseline): `grep -rq "prompt.injection\|injection-defense" .claude` and the
-  ts-declare-first hook/skill are wired per the manifest
+- the snapshot's latest features are present (proves it's not an old baseline):
+  the spec §15 knowledge-capture ritual tail is in the installed skill —
+  `grep -q '^## Knowledge Capture — Ritual Tail' .claude/skills/agentic-apps-workflow/SKILL.md`
+  (§14 prompt-injection is delegated to the `injection-guard` skill at migration
+  0023, so it is intentionally NOT baked into the snapshot's `.claude` payload)
 - `.gitignore` exists and does **not** ignore the `.planning/phases/` tree
   (ADR-0037): `! grep -qE '^[[:space:]]*/?\.planning/phases/?[[:space:]]*$' .gitignore`
 
