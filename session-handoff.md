@@ -1,3 +1,24 @@
+# Session Handoff — 2026-07-08 (Migration 0026: reindex-not-nudge — SPEC DONE, mid-workflow)
+
+## Status: mid agentic-apps-workflow — spec approved, next gate = writing-plans
+Branch `feat/gitnexus-background-reindex` (off main @ 6957f19, after PR #81 merged the FTS fix below). Spec committed at `3ab9296`.
+
+## Accomplished this segment
+- Chose (with user) to deliver "reindex instead of nudge" as a **claude-workflow per-project migration** — over upstream-to-gitnexus and global-installer options.
+- **Ownership resolved:** gitnexus's *nudge* hook is gitnexus-owned (global `~/.claude/settings.json`, installed by `gitnexus setup`). claude-workflow ships only the gitnexus **MCP** entry (`install-gitnexus.sh` → `$HOME/.claude.json`) + **per-project enforcement hooks** (`setup/snapshot/claude-settings.json`). So the migration ADDS a per-project PostToolUse reindex hook; it does NOT edit gitnexus's global nudge (which self-silences once `lastCommit` catches up).
+- **Spec written + committed:** `docs/superpowers/specs/2026-07-08-gitnexus-background-reindex-design.md`. Migration 0026 (v2.3.0→2.4.0): ships `setup/snapshot/hooks/gitnexus-reindex.cjs` (executable `.cjs`, ported from `~/.gitnexus-hooks/reindex-on-change.cjs`) + one PostToolUse `matcher:"Bash"` entry; fixtures under `test-fixtures/0026`; `check-snapshot-parity.sh` section; ADR-0039; CHANGELOG `[2.4.0]`; MANIFEST.
+
+## Workflow commitment (must honor)
+brainstorming ✓ → **writing-plans (NEXT)** → TDD (migration fixtures RED→GREEN) → verification-before-completion (`run-tests.sh` + `check-snapshot-parity.sh` + `build-snapshot.sh --check`) → `/review` + requesting-code-review (two-stage) → `/cso` (hook spawns a subprocess) → finishing-a-development-branch (PR).
+
+## Next session: start here
+User was at the spec-review gate. If approved → invoke `superpowers:writing-plans` for migration 0026, then implement: (1) engine → `setup/snapshot/hooks/gitnexus-reindex.cjs` + `templates/.claude/hooks/` mirror; (2) PostToolUse entry into `setup/snapshot/claude-settings.json`; (3) `migrations/0026-gitnexus-background-reindex.md` (idempotent, floor 2.3.0→2.4.0); (4) fixtures 01-fresh-insert / 02-idempotent / 03-preserve-existing / 04-engine-present + `run-tests.sh` dispatcher; (5) parity section; (6) ADR-0039 + CHANGELOG + MANIFEST + version bump. Then two-stage review, `/cso`, PR. **AFTER MERGE:** fast-forward `~/.claude/skills/agenticapps-workflow`, then `/update-agenticapps-workflow` per repo.
+
+## Environment (carry-over, still true)
+GitNexus pinned to **1.6.4** globally (FTS-consistent, v40); all 11 indexed repos at v40. `GITNEXUS_INVOCATION=gitnexus` is in `~/.claude/settings.json` (active next session). **Do NOT run `npx gitnexus analyze`** (pulls v42, re-breaks FTS) — use local `gitnexus analyze`. The `~/.gitnexus-hooks/` engine + opencode plugin stay as host-local; this migration is the Claude-host productization.
+
+---
+
 # Session Handoff — 2026-07-08 (GitNexus FTS root-cause fix + freshness hooks)
 
 ## Accomplished
