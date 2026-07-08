@@ -51,6 +51,7 @@ REQUIRED_HOOK_BINDINGS=(
   phase-sentinel.sh
   multi-ai-review-gate.sh
   normalize-claude-md.sh
+  gitnexus-reindex.cjs
 )
 if [ "$have_jq" = 1 ]; then
   bound="$(jq -r '.. | .command? // empty' "$SET" 2>/dev/null)"
@@ -172,6 +173,30 @@ if [ -f "$SKL" ]; then
     || bad "SKILL does not read .planning/config.json → knowledge_capture (path must be config-routed)"
 else
   bad "missing agentic-apps-workflow-SKILL.md"
+fi
+
+echo
+
+# ── 8. gitnexus background reindex (migration 0026): engine + Bash binding ────
+# The snapshot MUST ship the reindex engine (executable, node shebang) and bind
+# it on a PostToolUse Bash matcher. §4's referential-integrity loop is .sh-only,
+# so the .cjs engine needs its own end-state invariant here.
+GNH="$SNAP/hooks/gitnexus-reindex.cjs"
+if [ -f "$GNH" ]; then
+  ok "gitnexus reindex engine present in snapshot"
+  [ -x "$GNH" ] && ok "gitnexus reindex engine is executable" \
+                || bad "gitnexus reindex engine not executable"
+  head -1 "$GNH" | grep -q '^#!/usr/bin/env node' \
+    && ok "gitnexus reindex engine has a node shebang" \
+    || bad "gitnexus reindex engine missing '#!/usr/bin/env node' shebang"
+else
+  bad "missing hooks/gitnexus-reindex.cjs (migration 0026 engine)"
+fi
+if [ "$have_jq" = 1 ]; then
+  jq -e '.hooks.PostToolUse[]? | select(.matcher=="Bash")
+         | .hooks[]?.command? | select(test("gitnexus-reindex"))' "$SET" >/dev/null 2>&1 \
+    && ok "settings binds gitnexus-reindex.cjs on a Bash PostToolUse matcher" \
+    || bad "settings.json does not bind gitnexus-reindex.cjs on a Bash PostToolUse matcher"
 fi
 
 echo

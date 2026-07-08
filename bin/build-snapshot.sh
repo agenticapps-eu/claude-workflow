@@ -30,6 +30,8 @@ cp "$ROOT/templates/adr-db-security-acceptance.md"     "$OUT/adr-db-security-acc
 cp "$ROOT/templates/global-claude-additions.md"        "$OUT/global-claude-additions.md"
 cp "$ROOT/templates/gitignore"                         "$OUT/gitignore"
 cp "$ROOT"/templates/.claude/hooks/*.sh                "$OUT/hooks/"
+cp "$ROOT"/templates/.claude/hooks/*.cjs               "$OUT/hooks/" 2>/dev/null || true
+chmod +x "$OUT"/hooks/*.cjs 2>/dev/null || true
 cp "$ROOT"/templates/.claude/scripts/*.sh              "$OUT/scripts/"
 
 # 2. claude-settings.json = template minus template-only annotation keys
