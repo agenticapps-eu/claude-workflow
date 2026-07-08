@@ -4,6 +4,43 @@ All notable changes to the AgenticApps Claude Workflow scaffolder are
 documented here. The format follows [Keep a Changelog](https://keepachangelog.com/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.4.0] — GitNexus background reindex hook (reindex, not nudge)
+
+Ships a claude-workflow-owned, **per-project** PostToolUse `matcher:"Bash"` hook
+that runs a detached, incremental `gitnexus analyze` after a git commit, so a
+repo's GitNexus index self-heals instead of relying on the agent to act on
+gitnexus's global staleness *nudge*. The two coexist — our hook advances
+`meta.lastCommit` to `HEAD`, so the global nudge self-silences on its next call.
+Nothing global is modified. See ADR-0039.
+
+### Added
+
+- **`templates/.claude/hooks/gitnexus-reindex.cjs`** → `setup/snapshot/hooks/`
+  → `.claude/hooks/gitnexus-reindex.cjs` — the reindex engine (ported from the
+  validated `~/.gitnexus-hooks/reindex-on-change.cjs`, adding `$CLAUDE_PROJECT_DIR`-
+  preferred root resolution). Fail-open (any error exits 0), lock-guarded
+  (`.gitnexus/.reindex.lock`, `O_EXCL`, 10-min stale TTL), writer-pinned
+  (`GITNEXUS_INVOCATION=gitnexus`), kill switch `GITNEXUS_AUTOREINDEX_DISABLED=1`,
+  and a no-op in repos without a `.gitnexus/` directory.
+- **PostToolUse `matcher:"Bash"` entry** in `templates/claude-settings.json`
+  (→ snapshot) binding the engine with a 5s timeout.
+- **`migrations/0026-gitnexus-background-reindex.md`** (2.3.0 → 2.4.0) — copies
+  the engine from the scaffolder snapshot (idempotent — skips if byte-identical),
+  wires the PostToolUse Bash entry if absent (guarded — never duplicates or
+  overwrites a user edit), and bumps the installed version. Fixtures under
+  `migrations/test-fixtures/0026/` (fresh-insert, idempotent-reapply,
+  preserve-existing-posttooluse, engine-present-executable, engine-behaviour).
+- **`docs/decisions/0039-gitnexus-background-reindex.md`** — the per-project-vs-global
+  ownership decision and rejected alternatives (upstream, global installer).
+
+### Changed
+
+- **`bin/build-snapshot.sh`** now copies `templates/.claude/hooks/*.cjs` into the
+  snapshot (and `chmod +x`), not just `*.sh`.
+- **`migrations/check-snapshot-parity.sh`** — `gitnexus-reindex.cjs` added to the
+  required hook bindings (§2) and a new §8 asserts the engine is present,
+  executable, has a node shebang, and is bound on a PostToolUse Bash matcher.
+
 ## [2.3.0] — Knowledge capture into the Obsidian vault (spec §15)
 
 Implements core spec **§15 (knowledge capture)** — the claude host now distills
