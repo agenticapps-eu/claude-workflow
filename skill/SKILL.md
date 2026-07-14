@@ -252,6 +252,19 @@ with rationale. Audited 2026-07-14 (ADR-0040).
   an equivalent consumption mechanism is **proposed but not accepted**, so this
   stands as a real, open delta — not a resolved one. It is disclosed here per
   §09 rather than claimed away.
+- **§04 — a divergent copy ships alongside the canonical block.** §09 item 1 is
+  satisfied: the canonical 13 are byte-identical here, at positions 1–13, in
+  this file — the one carrying `implements_spec`. But the vendored workflow
+  reference installed into every scaffolded project
+  (`.claude/claude-md/workflow.md`, from `templates/`) carries its own 13-flag
+  list under a reworded heading (`### 13 Red Flags — Trigger Automatic STOP →
+  DELETE → RESTART`) with four flags reworded (1, 6, 12, 13 — e.g. `Any "just
+  this once" reasoning` for canonical `"Just this once" reasoning`). That copy
+  is what agents read at runtime. It is not a §09 item-1 violation — the spec
+  binds the block to the host's instruction file, not to every downstream
+  artifact — but it is unreconciled canonical prose and is disclosed rather
+  than left silent. Reconciling it changes the payload of every scaffolded
+  project and needs its own migration; tracked separately.
 
 ## Knowledge Capture — Ritual Tail (spec §15)
 
