@@ -1636,7 +1636,7 @@ test_migration_0026() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# test_migration_0027 — Spec 0.8.0 conformance claim (2.4.0 -> 2.5.0)
+# test_migration_0027 — Spec 0.9.0 conformance claim (2.4.0 -> 2.5.0)
 # WORKFLOW — verify body specific to migration 0027 content; stays in claude-workflow.
 # Same fixture-replay shape as 0025/0026: each fixture's setup.sh builds a
 # sandboxed before state, verify.sh replays the migration's deterministic
@@ -1650,7 +1650,7 @@ test_migration_0026() {
 # ─────────────────────────────────────────────────────────────────────────────
 test_migration_0027() {
   echo ""
-  echo "${YELLOW}━━━ Migration 0027 — Spec 0.8.0 conformance claim ━━━${RESET}"
+  echo "${YELLOW}━━━ Migration 0027 — Spec 0.9.0 conformance claim ━━━${RESET}"
 
   local fixtures="$REPO_ROOT/migrations/test-fixtures/0027"
 
@@ -1660,7 +1660,7 @@ test_migration_0027() {
     return
   fi
 
-  local migration_file="$REPO_ROOT/migrations/0027-spec-0.8.0-conformance.md"
+  local migration_file="$REPO_ROOT/migrations/0027-spec-0.9.0-conformance.md"
   if [ ! -f "$migration_file" ]; then
     echo "  ${RED}✗${RESET} migration file missing: $migration_file — RED state"
     FAIL=$((FAIL+1))

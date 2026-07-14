@@ -1,14 +1,14 @@
 #!/bin/sh
-# Fixture 02 — BEFORE: 0027 ALREADY applied (v2.5.0, claim 0.8.0, section
+# Fixture 02 — BEFORE: 0027 ALREADY applied (v2.5.0, claim 0.9.0, section
 # present, red flags reordered, pointer repointed, dangling hook ref dropped,
 # dead hook already gone). Re-running every step must change nothing.
 set -eu
-SKILL_VERSION=2.5.0 SPEC_CLAIM=0.8.0 RED_FLAGS=fixed . "$FIXTURES_ROOT/common-setup.sh"
+SKILL_VERSION=2.5.0 SPEC_CLAIM=0.9.0 RED_FLAGS=fixed . "$FIXTURES_ROOT/common-setup.sh"
 
 # Splice the real section in from the scaffolder, before the ritual tail —
 # exactly what a first apply would have produced.
 TARGET=.claude/skills/agentic-apps-workflow/SKILL.md
-awk '/^## Spec deltas \(spec 0\.8\.0\)/{f=1}
+awk '/^## Spec deltas \(spec 0\.9\.0\)/{f=1}
      f && /^## Knowledge Capture — Ritual Tail/{exit}
      f' "$REPO_ROOT/skill/SKILL.md" > .section
 

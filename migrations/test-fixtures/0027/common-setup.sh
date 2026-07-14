@@ -10,7 +10,7 @@
 # Each fixture's setup.sh writes its own `.planning/config.json` (or omits it)
 # and its own `.claude/hooks/` + `.claude/settings.json` (or omits them).
 #
-#   SKILL_VERSION=2.5.0 SPEC_CLAIM=0.8.0 RED_FLAGS=fixed . "$FIXTURES_ROOT/common-setup.sh"
+#   SKILL_VERSION=2.5.0 SPEC_CLAIM=0.9.0 RED_FLAGS=fixed . "$FIXTURES_ROOT/common-setup.sh"
 #     -> already-applied state, for the idempotency fixture
 set -eu
 

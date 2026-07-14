@@ -2,7 +2,7 @@
 # Verify migration 0027 on a project with NO .planning/config.json and no hooks
 # (fixture 03): Steps 4 and 5 must no-op silently — and must NOT create a config
 # file or a hooks dir. Steps 1/2/3/6 still complete, so the skill reaches
-# 2.5.0 / 0.8.0 with reordered flags regardless.
+# 2.5.0 / 0.9.0 with reordered flags regardless.
 #
 # The pointer is optional metadata; a project that never had one must not
 # acquire one from a claim-correction migration.
@@ -50,7 +50,7 @@ grep -q '^14\. `/gsd-review` skipped' "$TARGET" \
   || { echo "STEP 1 failed: host flag not at position 14"; exit 1; }
 
 # ── Step 2 (apply) ──────────────────────────────────────────────────────────
-awk '/^## Spec deltas \(spec 0\.8\.0\)/{f=1}
+awk '/^## Spec deltas \(spec 0\.9\.0\)/{f=1}
      f && /^## Knowledge Capture — Ritual Tail/{exit}
      f' "$REPO_ROOT/skill/SKILL.md" > "$TARGET.0027.section"
 awk -v secfile="$TARGET.0027.section" '
@@ -63,13 +63,13 @@ awk -v secfile="$TARGET.0027.section" '
 ' "$TARGET" > "$TARGET.0027.tmp" && mv "$TARGET.0027.tmp" "$TARGET"
 rm -f "$TARGET.0027.section"
 
-[ "$(grep -c '^## Spec deltas (spec 0.8.0)' "$TARGET")" = "1" ] \
+[ "$(grep -c '^## Spec deltas (spec 0.9.0)' "$TARGET")" = "1" ] \
   || { echo "STEP 2 failed: section not inserted exactly once"; exit 1; }
 
 # ── Step 3 (apply) ──────────────────────────────────────────────────────────
-sed -i.0027.bak -E 's/^implements_spec: 0\.4\.0$/implements_spec: 0.8.0/' "$TARGET"
+sed -i.0027.bak -E 's/^implements_spec: 0\.4\.0$/implements_spec: 0.9.0/' "$TARGET"
 rm -f "$TARGET.0027.bak"
-grep -q '^implements_spec: 0.8.0$' "$TARGET" || { echo "STEP 3 failed"; exit 1; }
+grep -q '^implements_spec: 0.9.0$' "$TARGET" || { echo "STEP 3 failed"; exit 1; }
 
 # ── Step 4 (apply) — guarded on the config existing; must no-op ─────────────
 [ -f .planning/config.json ] && \

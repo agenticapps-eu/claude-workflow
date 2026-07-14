@@ -4,16 +4,19 @@ All notable changes to the AgenticApps Claude Workflow scaffolder are
 documented here. The format follows [Keep a Changelog](https://keepachangelog.com/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
-## [2.5.0] — 2026-07-14 — Honest spec 0.8.0 conformance claim
+## [2.5.0] — 2026-07-14 — Honest spec 0.9.0 conformance claim
 
 The conformance **claim** was incoherent, not the implementation.
 `skill/SKILL.md` said `implements_spec: 0.4.0` while the repo shipped §14
 (a 0.6.0 section) and §15 (a 0.7.0 section) wiring; core's ledger row said
 `0.3.0`; and no "Spec deltas" section existed anywhere, which spec §09 requires
 for any unsatisfied requirement — so neither `full` nor `partial` was honestly
-claimable. This release raises the claim to **0.8.0**, brings the §04 red-flag
+claimable. This release raises the claim to **0.9.0**, brings the §04 red-flag
 block in line with the composition rules core 0.8.0 introduced, and makes the
-claim true. See ADR-0040.
+claim true. Core's spec 0.9.0 (upstream commit `9e19eb7`, ADR-0018) also
+amends §08 so that a guarded snapshot install — this host's setup strategy
+since ADR-0036 — is a named-conformant alternative to replay, resolving what
+was drafted as an open §08 delta into a satisfied MUST. See ADR-0040.
 
 ### Fixed
 
@@ -61,13 +64,14 @@ claim true. See ADR-0040.
 
 ### Changed
 
-- **`implements_spec: 0.4.0` → `0.8.0`; `version: 2.4.0` → `2.5.0`** in
-  `skill/SKILL.md`, with a new **"Spec deltas (spec 0.8.0)"** section naming
+- **`implements_spec: 0.4.0` → `0.9.0`; `version: 2.4.0` → `2.5.0`** in
+  `skill/SKILL.md`, with a new **"Spec deltas (spec 0.9.0)"** section naming
   four items per §09: §13's unwired implicit GSD trigger (SHOULD-level; `full`
   preserved), §14's trivial conformance (no LLM prompt-building surface in this
   scaffolder; `full` preserved), §10's delegation to the standalone
   `agenticapps-observability` skill (a satisfied MUST, recorded for clarity),
-  and the §08 divergence.
+  and §08's setup/update equivalence — satisfied via the guarded snapshot
+  install, recorded for clarity the same way §10 is.
 - **`docs/ENFORCEMENT-PLAN.md` is now THE single hook-bindings table** required
   by §09 item 3. All **16** canonical §02 gates each get exactly one row with
   trigger, bound skill, and required evidence. Canonical gate names live in a
@@ -86,7 +90,7 @@ claim true. See ADR-0040.
 
 ### Added
 
-- **`migrations/0027-spec-0.8.0-conformance.md`** (2.4.0 → 2.5.0) — reorders the
+- **`migrations/0027-spec-0.9.0-conformance.md`** (2.4.0 → 2.5.0) — reorders the
   §04 block, inserts the Spec deltas section (extracted from the scaffolder's
   `skill/SKILL.md`, so a migrated install is byte-identical to a fresh snapshot
   install), raises the claim, repoints `_enforcement_contract` + drops the
@@ -104,17 +108,20 @@ claim true. See ADR-0040.
 
 - **§13's implicit GSD trigger is still unwired** — disclosed in the Spec deltas
   section; §13 is SHOULD/MAY throughout, so `full` is preserved.
-- **The §08 delta is real and open.** Core 0.8.0 was a §04 clarification only;
-  `spec/08-migration-format.md` still carries `spec_version: 0.1.0` and says
-  nothing about snapshots or parity guards. An upstream amendment recognising
-  snapshot-plus-parity-guard as an equivalent consumption mechanism is proposed
-  but **not accepted**, so the delta is recorded as open rather than resolved.
+- **The §08 delta is resolved, not open.** It was drafted against core 0.8.0,
+  under which `spec/08-migration-format.md` still carried `spec_version: 0.1.0`
+  and said nothing about snapshots or parity guards, so the delta was recorded
+  as genuinely open. Core has since shipped **spec 0.9.0** (commit `9e19eb7`,
+  ADR-0018), amending §08 to recognize guarded-snapshot install as a
+  named-conformant alternative to replay. This host's `migrations/check-snapshot-parity.sh`
+  guard, run in CI on every change and named in `skill/SKILL.md`, satisfies the
+  amended MUST as written — no longer a gap.
 - **A divergent §04 copy survives in the CLAUDE.md payload.**
   `templates/claude-md-sections.md` and `templates/.claude/claude-md/workflow.md`
   carry their own 13-flag list with a reworded heading and reworded flags. §09
   item 1 binds the canonical block to the host's *primary instruction file*
   (`skill/SKILL.md` — the file carrying `implements_spec`), which is now
-  conformant, so the 0.8.0 claim stands; but those copies are what agents read
+  conformant, so the 0.9.0 claim stands; but those copies are what agents read
   at runtime. Reconciling them needs its own migration.
 
 ### Migration-order note
