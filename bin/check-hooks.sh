@@ -76,12 +76,18 @@ echo "== Event bindings (per hook) =="
 # .hooks[].command) is reported, not silently passed.
 if [ "$HOOK_FILES_OK" -eq 1 ] && [ -n "$HOOK_FILES" ]; then
   for f in $HOOK_FILES; do
+    # Match on the command's exact basename, not a raw substring: e.g.
+    # "database-sentinel.sh" is a substring of "legacy-database-sentinel.sh"
+    # and a plain `contains($f)` would falsely report the former as bound to
+    # whatever event the latter is on. Mirrors the exact-match derivation
+    # used above (line ~45) and the dead-hook check below (line ~143).
     ev=$(jq -r --arg f "$f" '
       [.hooks // {} | to_entries[]
         | .key as $event
         | .value[]?
         | .hooks[]?
-        | select(.command? and (.command | type == "string") and (.command | contains($f)))
+        | select(.command? and (.command | type == "string"))
+        | select((.command | capture("(?<b>[A-Za-z0-9._-]+\\.(sh|cjs))")? | .b) == $f)
         | $event]
       | unique | join(",")
     ' .claude/settings.json 2>/dev/null) || ev=""
