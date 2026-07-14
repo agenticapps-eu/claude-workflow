@@ -25,7 +25,7 @@
       "design_critique": {
         "enabled": true,
         "skill": "impeccable:critique",
-        "trigger": "ui_hint_yes && design_shotgun_completed",
+        "trigger": "ui_hint_yes && ui_spec_exists",
         "evidence": "UI-SPEC.md cites impeccable critique scores per variant"
       }
     },

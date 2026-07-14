@@ -202,6 +202,23 @@ else
   bad "setup/SKILL.md never references spec-mirrors — §11 laid down but never injected"
 fi
 
+# ── 9. design-critique fires on the spec §02 trigger ─────────────────────────
+# §02 triggers design-critique on a UI plan WITH an existing UI-SPEC.md.
+# Gating it on design_shotgun_completed inverts this: shotgun's own trigger is
+# no_ui_spec_yet, so with a UI-SPEC.md present shotgun never fires and critique
+# never fires either — exactly when the spec says it must. See ADR-0040.
+if [ "$have_jq" = 1 ]; then
+  dc="$(jq -r '.hooks.pre_phase.design_critique.trigger // empty' "$CFG")"
+  case "$dc" in
+    *design_shotgun_completed*)
+      bad "design_critique trigger '$dc' is inverted vs spec §02 (never fires when UI-SPEC.md exists)" ;;
+    *ui_spec_exists*)
+      ok "design_critique triggers on an existing UI-SPEC.md (spec §02)" ;;
+    *)
+      bad "design_critique trigger unrecognised: '$dc'" ;;
+  esac
+fi
+
 echo
 
 # ── 8. gitnexus background reindex (migration 0026): engine + Bash binding ────
