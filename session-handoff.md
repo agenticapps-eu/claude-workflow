@@ -1,21 +1,27 @@
-# Session Handoff — 2026-07-08 (Migration 0026: reindex-not-nudge — SPEC DONE, mid-workflow)
+# Session Handoff — 2026-07-08 (Migration 0026 IMPLEMENTED — post-review gates + PR remain)
 
-## Status: mid agentic-apps-workflow — spec approved, next gate = writing-plans
-Branch `feat/gitnexus-background-reindex` (off main @ 6957f19, after PR #81 merged the FTS fix below). Spec committed at `3ab9296`.
+## Status: plan executed + reviewed + verified GREEN. Remaining: /cso, optional cross-AI review, PR.
+Branch `feat/gitnexus-background-reindex` (off main @ 6957f19). All 4 plan tasks done, each task-reviewed clean, whole-branch opus review done (verdict: merge-with-fixtures), the one Important finding FIXED, verification-before-completion GREEN.
 
-## Accomplished this segment
-- Chose (with user) to deliver "reindex instead of nudge" as a **claude-workflow per-project migration** — over upstream-to-gitnexus and global-installer options.
-- **Ownership resolved:** gitnexus's *nudge* hook is gitnexus-owned (global `~/.claude/settings.json`, installed by `gitnexus setup`). claude-workflow ships only the gitnexus **MCP** entry (`install-gitnexus.sh` → `$HOME/.claude.json`) + **per-project enforcement hooks** (`setup/snapshot/claude-settings.json`). So the migration ADDS a per-project PostToolUse reindex hook; it does NOT edit gitnexus's global nudge (which self-silences once `lastCommit` catches up).
-- **Spec written + committed:** `docs/superpowers/specs/2026-07-08-gitnexus-background-reindex-design.md`. Migration 0026 (v2.3.0→2.4.0): ships `setup/snapshot/hooks/gitnexus-reindex.cjs` (executable `.cjs`, ported from `~/.gitnexus-hooks/reindex-on-change.cjs`) + one PostToolUse `matcher:"Bash"` entry; fixtures under `test-fixtures/0026`; `check-snapshot-parity.sh` section; ADR-0039; CHANGELOG `[2.4.0]`; MANIFEST.
+## Accomplished this session
+- **writing-plans** → `docs/superpowers/plans/2026-07-08-gitnexus-background-reindex.md` (78379bf).
+- **subagent-driven-development** — all 4 tasks (fresh implementer + task-reviewer each; all spec ✅ / quality Approved):
+  - T1 (4dfe6df): engine `templates/.claude/hooks/gitnexus-reindex.cjs` (ported + `$CLAUDE_PROJECT_DIR`-preferred root) + fixture 05-engine-behaviour + `test_migration_0026()` in run-tests.sh.
+  - T2 (6ac8d9e): `bin/build-snapshot.sh` copies `.cjs` (+chmod); PostToolUse Bash entry in `templates/claude-settings.json`; snapshot regenerated; parity §2 binding + new §8 (with RED-proof).
+  - T3 (1a44f02): `migrations/0026-...md` + replay fixtures 01–04 + `skill/SKILL.md` 2.3.0→2.4.0 (lockstep) + snapshot rebuild (VERSION 2.4.0).
+  - T4 (c50fe98): ADR-0039, CHANGELOG [2.4.0], MANIFEST.
+- **Final whole-branch review (opus):** no Critical; 1 Important (#1) FIXED at **f4a9f41** — fixture 02 idempotency test was vacuous (else-branch `"x"` never matched `gitnexus-reindex`); now uses the real payload + asserts total PostToolUse length unchanged; load-bearing proof held.
+- **Verification-before-completion GREEN:** `run-tests.sh` exit 0 `PASS:165`; `check-snapshot-parity.sh` PASS; `build-snapshot.sh --check` OK. (Uncounted preflight `FAIL=2` = pre-existing env probes: 0008 curl to a down local server, 0011 local scaffolder-clone file — unrelated.)
 
-## Workflow commitment (must honor)
-brainstorming ✓ → **writing-plans (NEXT)** → TDD (migration fixtures RED→GREEN) → verification-before-completion (`run-tests.sh` + `check-snapshot-parity.sh` + `build-snapshot.sh --check`) → `/review` + requesting-code-review (two-stage) → `/cso` (hook spawns a subprocess) → finishing-a-development-branch (PR).
+## Open review findings (Minor, in .superpowers/sdd/progress.md)
+- **#2 (for /cso):** engine spawns `sh -c 'gitnexus analyze …; rm -f "<lock>"'` with the repo path interpolated into the shell string — low-prob injection if a repo path contains `` ` ``/`$(…)`/`"`. Paths come from git/`CLAUDE_PROJECT_DIR`. Engine is a verbatim port of `~/.gitnexus-hooks/reindex-on-change.cjs`; hardening = argv-form spawn + rm lock from Node. Left for /cso (didn't unilaterally deviate from the plan-mandated verbatim port).
+- #3 10-min TTL reclaim could double-spawn on a >10min analyze (add a comment). #4 fires on every Bash call (inherent). #5 fixtures replay a copy of migration jq (pre-existing pattern, 0025 too).
 
 ## Next session: start here
-User was at the spec-review gate. If approved → invoke `superpowers:writing-plans` for migration 0026, then implement: (1) engine → `setup/snapshot/hooks/gitnexus-reindex.cjs` + `templates/.claude/hooks/` mirror; (2) PostToolUse entry into `setup/snapshot/claude-settings.json`; (3) `migrations/0026-gitnexus-background-reindex.md` (idempotent, floor 2.3.0→2.4.0); (4) fixtures 01-fresh-insert / 02-idempotent / 03-preserve-existing / 04-engine-present + `run-tests.sh` dispatcher; (5) parity section; (6) ADR-0039 + CHANGELOG + MANIFEST + version bump. Then two-stage review, `/cso`, PR. **AFTER MERGE:** fast-forward `~/.claude/skills/agenticapps-workflow`, then `/update-agenticapps-workflow` per repo.
+Remaining workflow-commitment gates: (1) **/cso** — warranted (hook spawns a subprocess + touches storage); focus on finding #2. (2) Optional **cross-AI review** (two-stage / [[gsd-review-non-skippable]]) — note the code already had 4 task reviews + 1 opus whole-branch review; /gsd-review is really a plan gate. (3) **finishing-a-development-branch → PR** (outward-facing — confirm with user first). **AFTER MERGE:** fast-forward `~/.claude/skills/agenticapps-workflow`, then `/update-agenticapps-workflow` per repo.
 
 ## Environment (carry-over, still true)
-GitNexus pinned to **1.6.4** globally (FTS-consistent, v40); all 11 indexed repos at v40. `GITNEXUS_INVOCATION=gitnexus` is in `~/.claude/settings.json` (active next session). **Do NOT run `npx gitnexus analyze`** (pulls v42, re-breaks FTS) — use local `gitnexus analyze`. The `~/.gitnexus-hooks/` engine + opencode plugin stay as host-local; this migration is the Claude-host productization.
+GitNexus pinned to **1.6.4** globally; `GITNEXUS_INVOCATION=gitnexus` in `~/.claude/settings.json`. **Do NOT run `npx gitnexus analyze`** (the stale-index nudge that keeps firing is exactly what this migration eliminates). SDD scratch (briefs/reports/ledger/diffs) under `.superpowers/sdd/` (git-ignored). The `~/.gitnexus-hooks/` engine stays host-local; this migration is the Claude-host productization.
 
 ---
 
