@@ -19,7 +19,7 @@ command -v jq >/dev/null || { echo "ERROR: jq required" >&2; exit 1; }
 OUT="$SNAP"
 if [ "$MODE" = "check" ]; then OUT="$(mktemp -d)"; trap 'rm -rf "$OUT"' EXIT; fi
 
-mkdir -p "$OUT/hooks" "$OUT/scripts"
+mkdir -p "$OUT/hooks" "$OUT/scripts" "$OUT/spec-mirrors"
 
 # 1. 1:1 source copies (MANIFEST mapping).
 cp "$ROOT/skill/SKILL.md"                              "$OUT/agentic-apps-workflow-SKILL.md"
@@ -33,6 +33,12 @@ cp "$ROOT"/templates/.claude/hooks/*.sh                "$OUT/hooks/"
 cp "$ROOT"/templates/.claude/hooks/*.cjs               "$OUT/hooks/" 2>/dev/null || true
 chmod +x "$OUT"/hooks/*.cjs 2>/dev/null || true
 cp "$ROOT"/templates/.claude/scripts/*.sh              "$OUT/scripts/"
+
+# spec-mirrors/ — canonical spec blocks the setup path injects (§11; ADR-0040).
+# The migration path (0014) reads its copy from the $HOME scaffolder clone;
+# the snapshot path reads it from here, so both produce identical CLAUDE.md.
+mkdir -p "$OUT/spec-mirrors"
+cp "$ROOT"/templates/spec-mirrors/*.md "$OUT/spec-mirrors/"
 
 # 2. claude-settings.json = template minus template-only annotation keys
 #    (the installed shape). The multi-ai binding lives in the template already.

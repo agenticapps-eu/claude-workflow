@@ -193,6 +193,57 @@ e. **Vendored CLAUDE.md block + reference** — `mkdir -p .claude/claude-md` and
    `$SNAP/claude-md-reference-block.md` to `CLAUDE.md` (create `CLAUDE.md` if
    missing). Never duplicate the reference.
 
+e2. **§11 canonical block (spec §11 — CLAUDE.md)** — inject the canonical
+   "Coding Discipline" block into `CLAUDE.md` behind a provenance anchor,
+   byte-identical to what migration 0014 produces on the replay path. §11
+   requires the block verbatim in the project's PRIMARY instruction file, so
+   it goes in `CLAUDE.md` itself — not in `.claude/claude-md/workflow.md`.
+
+   Refuse rather than overwrite a hand-pasted block:
+
+   ```bash
+   SPEC11="$SNAP/spec-mirrors/11-coding-discipline-0.4.0.md"
+   PROV='<!-- spec-source: agenticapps-workflow-core@0.4.0 §11 -->'
+   PROV_RE='<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->'
+
+   test -f "$SPEC11" || { echo "ABORT: snapshot missing $SPEC11"; exit 3; }
+
+   if grep -q '^## Coding Discipline (NON-NEGOTIABLE)$' CLAUDE.md \
+      && ! grep -qE "$PROV_RE" CLAUDE.md; then
+     echo "ABORT: CLAUDE.md has a '## Coding Discipline (NON-NEGOTIABLE)' heading"
+     echo "       with no provenance comment — it was hand-pasted outside this"
+     echo "       installer's management. Remove that section and re-run, or add"
+     echo "       the line '$PROV' immediately above the heading to adopt it."
+     exit 3
+   fi
+
+   if ! grep -qE "$PROV_RE" CLAUDE.md; then
+     awk -v prov="$PROV" -v bf="$SPEC11" '
+       function emit(  line) {
+         print prov
+         while ((getline line < bf) > 0) print line
+         close(bf)
+         print ""
+       }
+       BEGIN { done = 0 }
+       !done && /^## / { emit(); done = 1 }
+       { print }
+       END { if (!done) emit() }
+     ' CLAUDE.md > CLAUDE.md.spec11.tmp && mv CLAUDE.md.spec11.tmp CLAUDE.md
+     echo "INFO: injected §11 canonical block into CLAUDE.md"
+   fi
+   ```
+
+   The `END` branch is the fallback for a `CLAUDE.md` with no `## ` heading at
+   all — the block is appended rather than dropped.
+
+   Setup needs only two of migration 0014's three branches: setup refuses to
+   re-run on an installed project (it routes to `/update`), so a CLAUDE.md
+   already carrying OUR provenance anchor is unreachable here. 0014's
+   stale-provenance replace branch is therefore dead code on this path.
+
+   - In `--dry-run`: show the diff instead of writing.
+
 f. **Global additions (scope B/C only)** — append
    `$SNAP/global-claude-additions.md` to `~/.claude/CLAUDE.md`. Skip for
    `per-project`.
@@ -236,6 +287,9 @@ Post-checks (fail the install, do not commit, if any fail):
   0023, so it is intentionally NOT baked into the snapshot's `.claude` payload)
 - `.gitignore` exists and does **not** ignore the `.planning/phases/` tree
   (ADR-0037): `! grep -qE '^[[:space:]]*/?\.planning/phases/?[[:space:]]*$' .gitignore`
+- `CLAUDE.md` carries the §11 canonical block under provenance:
+  `grep -q '<!-- spec-source: agenticapps-workflow-core@0.4.0 §11 -->' CLAUDE.md`
+  and `grep -q '^## Coding Discipline (NON-NEGOTIABLE)$' CLAUDE.md`
 
 ```bash
 git add -A
@@ -253,7 +307,7 @@ Files created:
   - .claude/settings.json + .claude/hooks/*         (enforcement hooks)
   - .planning/config.json                           (hook bindings + knowledge capture)
   - .claude/claude-md/workflow.md                   (vendored workflow block)
-  - CLAUDE.md                                       (## Workflow reference)
+  - CLAUDE.md                                       (§11 block + ## Workflow reference)
   - .gitignore                                      (commits .planning/phases/)
   {scope global/both:} ~/.claude/CLAUDE.md          (global additions)
 

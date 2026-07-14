@@ -175,6 +175,33 @@ else
   bad "missing agentic-apps-workflow-SKILL.md"
 fi
 
+# ── 8. spec §11 canonical block (setup path) ────────────────────────────────
+# §11 mandates the canonical "Coding Discipline" block verbatim in the
+# project's primary instruction file. Migration 0014 injects it on the REPLAY
+# path; since ADR-0036 the SETUP path is the snapshot, which must therefore
+# carry the mirror AND wire the injection — otherwise every fresh install
+# silently loses a canonical-prose block (§09 item 1). See ADR-0040.
+M11_SRC="$ROOT/templates/spec-mirrors/11-coding-discipline-0.4.0.md"
+M11_SNAP="$SNAP/spec-mirrors/11-coding-discipline-0.4.0.md"
+if [ -f "$M11_SNAP" ]; then
+  ok "snapshot ships the §11 canonical mirror"
+  if diff -q "$M11_SRC" "$M11_SNAP" >/dev/null 2>&1; then
+    ok "§11 mirror byte-identical to templates/spec-mirrors/ source"
+  else
+    bad "§11 mirror drifted from templates/spec-mirrors/ (rebuild: bash bin/build-snapshot.sh)"
+  fi
+  grep -q '^## Coding Discipline (NON-NEGOTIABLE)$' "$M11_SNAP" \
+    && ok "§11 mirror carries the canonical heading" \
+    || bad "§11 mirror missing the canonical '## Coding Discipline (NON-NEGOTIABLE)' heading"
+else
+  bad "snapshot missing spec-mirrors/11-coding-discipline-0.4.0.md — §11 never reaches fresh installs"
+fi
+if grep -q 'spec-mirrors' "$ROOT/setup/SKILL.md"; then
+  ok "setup wires the §11 injection step"
+else
+  bad "setup/SKILL.md never references spec-mirrors — §11 laid down but never injected"
+fi
+
 echo
 
 # ── 8. gitnexus background reindex (migration 0026): engine + Bash binding ────
