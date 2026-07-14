@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# check-hooks.sh — verify all 5 programmatic hooks are installed correctly
-# in the current project (project-scoped Hooks 1-4 + global Hook 5).
+# check-hooks.sh — verify every programmatic hook registered in the project's
+# .claude/settings.json is present and executable (and vice versa), plus the
+# global commitment-reinject hook. The expected set is DERIVED from
+# settings.json, never hardcoded — see ADR-0040.
 #
 # Usage: cd <agenticapps-project> && /path/to/scaffolder/bin/check-hooks.sh
 # Exit 0 if all OK; exit 1 if anything missing/misregistered.
@@ -21,14 +23,32 @@ echo "  cwd: $(pwd)"
 echo ""
 
 echo "== Project-scoped (.claude/hooks/) =="
-for h in database-sentinel design-shotgun-gate skill-router-log session-bootstrap; do
-  f=".claude/hooks/${h}.sh"
-  if [ -x "$f" ]; then
-    check_ok "$f present and executable"
-  else
-    check_fail "$f missing or not executable"
-  fi
-done
+# Derive the expected hook set from the project's own settings.json rather than
+# a hardcoded list: a newly registered hook must never escape verification.
+# (multi-ai-review-gate.sh — the plan-review enforcer — was silently unchecked
+# for exactly this reason; ADR-0025 / ADR-0040.)
+if [ -f .claude/settings.json ] && jq empty .claude/settings.json 2>/dev/null; then
+  HOOK_FILES=$(jq -r '
+    [.hooks // {} | .[]? | .[]? | .hooks[]? | select(.command?) | .command]
+    | map(capture("(?<f>[A-Za-z0-9._-]+\\.(sh|cjs))").f) | unique | .[]
+  ' .claude/settings.json)
+else
+  HOOK_FILES=""
+  check_fail ".claude/settings.json missing or invalid JSON — cannot derive hook set"
+fi
+
+if [ -z "$HOOK_FILES" ]; then
+  check_fail "no hooks registered in .claude/settings.json"
+else
+  for f in $HOOK_FILES; do
+    p=".claude/hooks/${f}"
+    if [ -x "$p" ]; then
+      check_ok "$p present and executable (registered)"
+    else
+      check_fail "$p registered in settings.json but missing or not executable"
+    fi
+  done
+fi
 
 echo ""
 echo "== Global (~/.claude/hooks/) =="
@@ -41,30 +61,21 @@ fi
 echo ""
 echo "== Project settings (.claude/settings.json) =="
 if [ -f .claude/settings.json ] && jq empty .claude/settings.json 2>/dev/null; then
-  if jq -e '.hooks.PreToolUse[]? | select(.hooks[].command | contains("database-sentinel"))' .claude/settings.json >/dev/null; then
-    check_ok "Hook 1 (Database Sentinel) registered in PreToolUse"
+  # Every hook file on disk should be registered (the reverse direction).
+  for p in .claude/hooks/*.sh .claude/hooks/*.cjs; do
+    [ -e "$p" ] || continue
+    b=$(basename "$p")
+    if grep -qF "$b" .claude/settings.json; then
+      check_ok "$b registered in settings.json"
+    else
+      check_fail "$b present on disk but NOT registered in settings.json (dead hook)"
+    fi
+  done
+  # The plan-review gate is load-bearing (spec §02 plan-review, ADR-0025).
+  if grep -qF "multi-ai-review-gate" .claude/settings.json; then
+    check_ok "plan-review gate (multi-ai-review-gate) registered"
   else
-    check_fail "Hook 1 (Database Sentinel) NOT registered in PreToolUse"
-  fi
-  if jq -e '.hooks.PreToolUse[]? | select(.hooks[].command | contains("design-shotgun-gate"))' .claude/settings.json >/dev/null; then
-    check_ok "Hook 2 (Design Shotgun Gate) registered in PreToolUse"
-  else
-    check_fail "Hook 2 (Design Shotgun Gate) NOT registered in PreToolUse"
-  fi
-  if jq -e '.hooks.Stop[]? | select(.hooks[].type == "prompt")' .claude/settings.json >/dev/null; then
-    check_ok "Hook 3 (Phase Sentinel) registered in Stop (prompt-type)"
-  else
-    check_fail "Hook 3 (Phase Sentinel) NOT registered in Stop"
-  fi
-  if jq -e '.hooks.PostToolUse[]? | select(.hooks[].command | contains("skill-router-log"))' .claude/settings.json >/dev/null; then
-    check_ok "Hook 4a (Skill Router Log) registered in PostToolUse"
-  else
-    check_fail "Hook 4a (Skill Router Log) NOT registered in PostToolUse"
-  fi
-  if jq -e '.hooks.SessionStart[]? | select(.hooks[].command | contains("session-bootstrap"))' .claude/settings.json >/dev/null; then
-    check_ok "Hook 4b (Session Bootstrap) registered in SessionStart"
-  else
-    check_fail "Hook 4b (Session Bootstrap) NOT registered in SessionStart"
+    check_fail "plan-review gate (multi-ai-review-gate) NOT registered — spec §02 gate unbound"
   fi
 else
   check_fail ".claude/settings.json missing or invalid JSON"
