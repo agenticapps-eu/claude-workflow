@@ -1,7 +1,7 @@
 ---
 name: agentic-apps-workflow
-version: 2.4.0
-implements_spec: 0.4.0
+version: 2.5.0
+implements_spec: 0.8.0
 description: |
   Enforces the spec-first development workflow using Superpowers + GSD + gstack
   for any AgenticApps project. This skill MUST activate whenever Claude is asked
@@ -22,7 +22,7 @@ commit — publicly and in writing — to invoking the right Superpowers, GSD, a
 gstack skills in the right order. Once committed, the commitment principle
 (Cialdini; Wharton GAIL 2025) keeps you consistent with what you said you'd do.
 
-**Authoritative contract:** `docs/workflow/ENFORCEMENT-PLAN.md`. Read it if you
+**Authoritative contract:** `docs/ENFORCEMENT-PLAN.md`. Read it if you
 are unsure which skill gates which step.
 
 ## Step 0 — The Commitment Ritual (NON-NEGOTIABLE)
@@ -163,13 +163,13 @@ design, UX direction) get an ADR at `docs/decisions/NNNN-short-title.md`:
 5. Tests marked for "later" addition
 6. "Just this once" reasoning
 7. Manual testing claimed as verification evidence
-8. `/gsd-review` skipped — no `{phase}-REVIEWS.md` artifact
-9. Two-stage review collapsed into one
-10. Framing discipline as "ritual" or "ceremony"
-11. Keeping pre-written code as "reference" while writing tests
-12. Sunk-cost reasoning about deleting unverified code
-13. Describing discipline as "dogmatic"
-14. "This case is different because..."
+8. Two-stage review collapsed into one
+9. Framing discipline as "ritual" or "ceremony"
+10. Keeping pre-written code as "reference" while writing tests
+11. Sunk-cost reasoning about deleting unverified code
+12. Describing discipline as "dogmatic"
+13. "This case is different because..."
+14. `/gsd-review` skipped — no `{phase}-REVIEWS.md` artifact
 
 ## Pressure-Test Scenarios — Self-Check
 
@@ -203,7 +203,7 @@ grep -c "^- \*\*Evidence" .planning/phases/{padded_phase}-*/VERIFICATION.md
 ```
 
 If any check fails, the phase did NOT honor the enforcement plan. File this as
-a process bug, update `docs/workflow/ENFORCEMENT-PLAN.md` to close the
+a process bug, update `docs/ENFORCEMENT-PLAN.md` to close the
 loophole, and re-run the failed gate.
 
 ## Daily Quick Reference
@@ -215,6 +215,43 @@ loophole, and re-run the failed gate.
 5. Route to the right GSD entry point
 6. Invoke the mapped Superpowers skills in order
 7. Update decision log + GSD state at end of session
+
+## Spec deltas (spec 0.8.0)
+
+Per core spec §09, a host names every requirement it does not satisfy verbatim,
+with rationale. Audited 2026-07-14 (ADR-0040).
+
+- **§13 implicit GSD trigger — not wired.** `ts-declare-first` ships and its
+  explicit trigger works; the §13 implicit trigger (GSD design phase detects a
+  new TypeScript module in a TS-primary project) is not implemented. §13's
+  Conformance section is SHOULD/MAY throughout, and this scaffolder is not
+  itself a TypeScript project (no `package.json`), so `full` is preserved.
+  Tracked for its own phase.
+- **§14 prompt-injection — trivially conformant.** This scaffolder builds no
+  LLM prompts from non-self-authored values, so §14's trigger condition cannot
+  occur; §09 requires only that the host say so. The §14 generator for
+  consuming projects is delegated to the `injection-guard` skill
+  (agenticapps-observability 0.13.0, `implements_spec: 0.6.0`), gated by
+  migration 0023's pre-flight.
+- **§10 observability — delegated, not omitted.** Satisfied via the standalone
+  `agenticapps-observability` skill (0.13.0, `implements_spec: 0.3.2`),
+  consumed through its own install surface. A satisfied MUST per §09, not a
+  delta; recorded here because the skill no longer ships from this repo
+  (removed at 2.0.0, commit 217baec). Migration 0022 fails closed if absent.
+- **§08 setup/update single directory — genuine, open delta.** §08's Conformance
+  section requires migrations be "stored in a single directory consumed by both
+  setup and update flows". ADR-0036 replaced replay-on-setup with a prebuilt
+  snapshot, because the chain contains prose and agent steps that cannot be
+  shell-replayed; setup therefore consumes the snapshot, not the chain. The two
+  paths are held equivalent by `migrations/check-snapshot-parity.sh`, which CI
+  runs on every change. This is a mechanism §08 does not currently contemplate:
+  as of core 0.8.0, `spec/08-migration-format.md` carries `spec_version: 0.1.0`,
+  is unchanged since the spec's initial population, and says nothing about
+  snapshots or parity guards. Core 0.8.0 was a §04 clarification only and did
+  not touch §08. An upstream amendment recognising snapshot-plus-parity-guard as
+  an equivalent consumption mechanism is **proposed but not accepted**, so this
+  stands as a real, open delta — not a resolved one. It is disclosed here per
+  §09 rather than claimed away.
 
 ## Knowledge Capture — Ritual Tail (spec §15)
 

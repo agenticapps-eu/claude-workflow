@@ -31,7 +31,7 @@ See `.claude/skills/agentic-apps-workflow/SKILL.md` for full details.
 
 ## Superpowers Integration Hooks (MANDATORY — NON-NEGOTIABLE)
 
-> **Enforcement contract:** `docs/workflow/ENFORCEMENT-PLAN.md`. Read it before
+> **Enforcement contract:** `docs/ENFORCEMENT-PLAN.md`. Read it before
 > any phase. The hooks below are commitments, not suggestions. Skipping a hook
 > is a protocol violation.
 
@@ -118,10 +118,12 @@ Verification evidence I will produce: {list}
 
 9b. **Observability delta scan (advisory)** — If the project has adopted §10.9
     enforcement (`.observability/baseline.json` present), run
-    `.claude/hooks/observability-postphase-scan.sh`. It delta-scans the
+    `/observability scan --since-commit <phase-base>`. It delta-scans the
     phase diff and WARNS when the phase introduced new high-confidence §10
     gaps, pointing at `/observability scan-apply --confidence high`.
     Advisory only — never blocks the phase (ADR-0027). No-op without a baseline.
+    The scan is provided by the standalone `agenticapps-observability` skill,
+    which owns this surface since 2.0.0 (migration 0018 is a tombstone here).
 
 ### Finishing Hooks (feature branch ready to merge)
 

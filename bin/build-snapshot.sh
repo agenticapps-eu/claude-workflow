@@ -19,6 +19,14 @@ command -v jq >/dev/null || { echo "ERROR: jq required" >&2; exit 1; }
 OUT="$SNAP"
 if [ "$MODE" = "check" ]; then OUT="$(mktemp -d)"; trap 'rm -rf "$OUT"' EXIT; fi
 
+# Prune the wildcard-copied dirs before repopulating them. These three are
+# assembled entirely by `cp templates/... "$OUT/<dir>/"` globs below, so their
+# contents are wholly derived from source. Without the prune, `cp` only ever
+# ADDS: a file deleted from templates/ lingers in the committed snapshot
+# forever, --check reports DRIFT, and a plain rebuild can never converge on a
+# clean tree. (Hit for real when observability-postphase-scan.sh — a hook
+# registered in no settings.json — was removed from the payload at 2.5.0.)
+rm -rf "$OUT/hooks" "$OUT/scripts" "$OUT/spec-mirrors"
 mkdir -p "$OUT/hooks" "$OUT/scripts" "$OUT/spec-mirrors"
 
 # 1. 1:1 source copies (MANIFEST mapping).
