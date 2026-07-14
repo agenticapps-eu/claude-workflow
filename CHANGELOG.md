@@ -20,6 +20,33 @@ was drafted as an open §08 delta into a satisfied MUST. See ADR-0040.
 
 ### Fixed
 
+- **§11's canonical "Coding Discipline" block never reached fresh installs —
+  the only user-visible defect fixed in this release, and why it is a minor
+  (not patch) bump.** `/setup-agenticapps-workflow` (the snapshot path,
+  ADR-0036 — no migration replay) laid down the scaffolder skill, hooks, and
+  config, but never injected the canonical `## Coding Discipline
+  (NON-NEGOTIABLE)` block §11 requires verbatim in the project's primary
+  instruction file — only the *update* path (migration `0014`) did.
+  `setup/snapshot/MANIFEST.md` asserted the snapshot produces the same files a
+  full replay would; on this one file, it didn't. `setup/SKILL.md` now injects
+  the block from `setup/snapshot/spec-mirrors/11-coding-discipline-0.4.0.md`
+  behind a `<!-- spec-source: agenticapps-workflow-core@0.4.0 §11 -->`
+  provenance comment — refusing to overwrite a hand-pasted block rather than
+  clobbering it — and `migrations/check-snapshot-parity.sh` asserts both that
+  the mirror stays byte-identical to its `templates/` source and that setup
+  actually wires the injection.
+- **`design-critique` fired on the wrong condition — inverted vs spec §02.**
+  `templates/config-hooks.json` gated it on `ui_hint_yes &&
+  design_shotgun_completed`, but `design-shotgun`'s own trigger is
+  `no_ui_spec_yet` — the two conditions are mutually exclusive, so critique
+  could never fire once a UI-SPEC.md exists, exactly when §02 requires it to.
+  Corrected to `ui_hint_yes && ui_spec_exists`. Fresh installs get the fix via
+  the snapshot; `migrations/0027-spec-0.9.0-conformance.md` Step 4 now also
+  rewrites an existing install's `.planning/config.json`
+  (`hooks.pre_phase.design_critique.trigger`) when it still carries the
+  inverted literal — surgically (no other hooks key is touched) and
+  idempotently. `migrations/check-snapshot-parity.sh` asserts the corrected
+  trigger on the snapshot side.
 - **§04 red flags violated the 0.8.0 composition rule.** Core spec 0.8.0
   resolved a contradiction in §04 (it had required verbatim reproduction *and*
   permitted host additions — unsatisfiable together) by scoping what "verbatim"
@@ -94,9 +121,10 @@ was drafted as an open §08 delta into a satisfied MUST. See ADR-0040.
   §04 block, inserts the Spec deltas section (extracted from the scaffolder's
   `skill/SKILL.md`, so a migrated install is byte-identical to a fresh snapshot
   install), raises the claim, repoints `_enforcement_contract` + drops the
-  dangling `programmatic_hook`, removes the dead hook, and bumps the version.
-  Each step has an idempotency check and a rollback, plus five hard post-checks.
-  Four fixtures under `migrations/test-fixtures/0027/`, wired as
+  dangling `programmatic_hook` + corrects the inverted `design_critique`
+  trigger, removes the dead hook, and bumps the version.
+  Each step has an idempotency check and a rollback, plus six hard post-checks.
+  Five fixtures under `migrations/test-fixtures/0027/`, wired as
   `test_migration_0027` in `run-tests.sh`.
 
   The dead-hook removal is **fail-safe**: it removes the file only when it is

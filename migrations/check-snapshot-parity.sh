@@ -196,10 +196,10 @@ if [ -f "$M11_SNAP" ]; then
 else
   bad "snapshot missing spec-mirrors/11-coding-discipline-0.4.0.md — §11 never reaches fresh installs"
 fi
-if grep -q 'spec-mirrors' "$ROOT/setup/SKILL.md"; then
+if grep -qF 'spec-source: agenticapps-workflow-core@0.4.0 §11' "$ROOT/setup/SKILL.md"; then
   ok "setup wires the §11 injection step"
 else
-  bad "setup/SKILL.md never references spec-mirrors — §11 laid down but never injected"
+  bad "setup/SKILL.md missing the 'spec-source: agenticapps-workflow-core@0.4.0 §11' provenance anchor — §11 laid down but never injected"
 fi
 
 # ── 9. design-critique fires on the spec §02 trigger ─────────────────────────
@@ -221,7 +221,7 @@ fi
 
 echo
 
-# ── 8. gitnexus background reindex (migration 0026): engine + Bash binding ────
+# ── 10. gitnexus background reindex (migration 0026): engine + Bash binding ──
 # The snapshot MUST ship the reindex engine (executable, node shebang) and bind
 # it on a PostToolUse Bash matcher. §4's referential-integrity loop is .sh-only,
 # so the .cjs engine needs its own end-state invariant here.
