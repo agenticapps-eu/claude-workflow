@@ -175,9 +175,53 @@ else
   bad "missing agentic-apps-workflow-SKILL.md"
 fi
 
+# ── 8. spec §11 canonical block (setup path) ────────────────────────────────
+# §11 mandates the canonical "Coding Discipline" block verbatim in the
+# project's primary instruction file. Migration 0014 injects it on the REPLAY
+# path; since ADR-0036 the SETUP path is the snapshot, which must therefore
+# carry the mirror AND wire the injection — otherwise every fresh install
+# silently loses a canonical-prose block (§09 item 1). See ADR-0040.
+M11_SRC="$ROOT/templates/spec-mirrors/11-coding-discipline-0.4.0.md"
+M11_SNAP="$SNAP/spec-mirrors/11-coding-discipline-0.4.0.md"
+if [ -f "$M11_SNAP" ]; then
+  ok "snapshot ships the §11 canonical mirror"
+  if diff -q "$M11_SRC" "$M11_SNAP" >/dev/null 2>&1; then
+    ok "§11 mirror byte-identical to templates/spec-mirrors/ source"
+  else
+    bad "§11 mirror drifted from templates/spec-mirrors/ (rebuild: bash bin/build-snapshot.sh)"
+  fi
+  grep -q '^## Coding Discipline (NON-NEGOTIABLE)$' "$M11_SNAP" \
+    && ok "§11 mirror carries the canonical heading" \
+    || bad "§11 mirror missing the canonical '## Coding Discipline (NON-NEGOTIABLE)' heading"
+else
+  bad "snapshot missing spec-mirrors/11-coding-discipline-0.4.0.md — §11 never reaches fresh installs"
+fi
+if grep -qF 'spec-source: agenticapps-workflow-core@0.4.0 §11' "$ROOT/setup/SKILL.md"; then
+  ok "setup wires the §11 injection step"
+else
+  bad "setup/SKILL.md missing the 'spec-source: agenticapps-workflow-core@0.4.0 §11' provenance anchor — §11 laid down but never injected"
+fi
+
+# ── 9. design-critique fires on the spec §02 trigger ─────────────────────────
+# §02 triggers design-critique on a UI plan WITH an existing UI-SPEC.md.
+# Gating it on design_shotgun_completed inverts this: shotgun's own trigger is
+# no_ui_spec_yet, so with a UI-SPEC.md present shotgun never fires and critique
+# never fires either — exactly when the spec says it must. See ADR-0040.
+if [ "$have_jq" = 1 ]; then
+  dc="$(jq -r '.hooks.pre_phase.design_critique.trigger // empty' "$CFG")"
+  case "$dc" in
+    *design_shotgun_completed*)
+      bad "design_critique trigger '$dc' is inverted vs spec §02 (never fires when UI-SPEC.md exists)" ;;
+    *ui_spec_exists*)
+      ok "design_critique triggers on an existing UI-SPEC.md (spec §02)" ;;
+    *)
+      bad "design_critique trigger unrecognised: '$dc'" ;;
+  esac
+fi
+
 echo
 
-# ── 8. gitnexus background reindex (migration 0026): engine + Bash binding ────
+# ── 10. gitnexus background reindex (migration 0026): engine + Bash binding ──
 # The snapshot MUST ship the reindex engine (executable, node shebang) and bind
 # it on a PostToolUse Bash matcher. §4's referential-integrity loop is .sh-only,
 # so the .cjs engine needs its own end-state invariant here.

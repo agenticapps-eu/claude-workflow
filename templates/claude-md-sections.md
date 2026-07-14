@@ -38,7 +38,7 @@ See `.claude/skills/agentic-apps-workflow/SKILL.md` for full details.
 
 ### Superpowers Integration Hooks (MANDATORY — NON-NEGOTIABLE)
 
-> **Enforcement contract:** `docs/workflow/ENFORCEMENT-PLAN.md`. Read it before
+> **Enforcement contract:** `docs/ENFORCEMENT-PLAN.md`. Read it before
 > any phase. The hooks below are commitments, not suggestions. Skipping a hook
 > is a protocol violation.
 

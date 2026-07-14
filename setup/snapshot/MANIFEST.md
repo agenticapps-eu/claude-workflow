@@ -22,6 +22,7 @@ or editing any migration, and the drift guard
 | `global-claude-additions.md` | `~/.claude/CLAUDE.md` (scope global/both) | `templates/global-claude-additions.md` |
 | `adr-db-security-acceptance.md` | `templates/adr-db-security-acceptance.md` | migration `0001` |
 | `gitignore` | appended to project `.gitignore` (commits `.planning/phases/`; narrow local ignores only — ADR-0037) | `templates/gitignore` |
+| `spec-mirrors/11-coding-discipline-0.4.0.md` | injected into `CLAUDE.md` behind the `@0.4.0 §11` provenance anchor (byte-identical to migration 0014's output) | `templates/spec-mirrors/11-coding-discipline-0.4.0.md` |
 | `VERSION` | stamped into the skill frontmatter | `skill/SKILL.md` `version:` |
 
 ## Verified

@@ -17,10 +17,12 @@ pending migrations from the workflow scaffolder repo. It is the migration
 runtime — the migrations themselves are content files at
 `~/.claude/skills/agenticapps-workflow/migrations/NNNN-slug.md`.
 
-The companion skill `setup-agenticapps-workflow` uses the same migration
-infrastructure to bootstrap fresh projects (it applies all migrations from
-`0000-baseline.md` forward). There is no parallel "setup writes one shape,
-update writes another" code path.
+The companion skill `setup-agenticapps-workflow` bootstraps fresh projects from
+a prebuilt snapshot rather than replaying this chain (ADR-0036: the chain
+contains prose/agent steps that cannot be shell-replayed). The two paths are
+kept equivalent by `migrations/check-snapshot-parity.sh`, which CI runs on every
+change — that guard, not a shared code path, is what prevents setup and update
+from drifting apart.
 
 ## Step 0: Parse flags
 

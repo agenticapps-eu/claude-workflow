@@ -4,6 +4,162 @@ All notable changes to the AgenticApps Claude Workflow scaffolder are
 documented here. The format follows [Keep a Changelog](https://keepachangelog.com/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.5.0] — 2026-07-14 — Honest spec 0.9.0 conformance claim
+
+The conformance **claim** was incoherent, not the implementation.
+`skill/SKILL.md` said `implements_spec: 0.4.0` while the repo shipped §14
+(a 0.6.0 section) and §15 (a 0.7.0 section) wiring; core's ledger row said
+`0.3.0`; and no "Spec deltas" section existed anywhere, which spec §09 requires
+for any unsatisfied requirement — so neither `full` nor `partial` was honestly
+claimable. This release raises the claim to **0.9.0**, brings the §04 red-flag
+block in line with the composition rules core 0.8.0 introduced, and makes the
+claim true. Core's spec 0.9.0 (upstream commit `9e19eb7`, ADR-0018) also
+amends §08 so that a guarded snapshot install — this host's setup strategy
+since ADR-0036 — is a named-conformant alternative to replay, resolving what
+was drafted as an open §08 delta into a satisfied MUST. See ADR-0040.
+
+### Fixed
+
+- **§11's canonical "Coding Discipline" block never reached fresh installs —
+  the only user-visible defect fixed in this release, and why it is a minor
+  (not patch) bump.** `/setup-agenticapps-workflow` (the snapshot path,
+  ADR-0036 — no migration replay) laid down the scaffolder skill, hooks, and
+  config, but never injected the canonical `## Coding Discipline
+  (NON-NEGOTIABLE)` block §11 requires verbatim in the project's primary
+  instruction file — only the *update* path (migration `0014`) did.
+  `setup/snapshot/MANIFEST.md` asserted the snapshot produces the same files a
+  full replay would; on this one file, it didn't. `setup/SKILL.md` now injects
+  the block from `setup/snapshot/spec-mirrors/11-coding-discipline-0.4.0.md`
+  behind a `<!-- spec-source: agenticapps-workflow-core@0.4.0 §11 -->`
+  provenance comment — refusing to overwrite a hand-pasted block rather than
+  clobbering it — and `migrations/check-snapshot-parity.sh` asserts both that
+  the mirror stays byte-identical to its `templates/` source and that setup
+  actually wires the injection.
+- **`design-critique` fired on the wrong condition — inverted vs spec §02.**
+  `templates/config-hooks.json` gated it on `ui_hint_yes &&
+  design_shotgun_completed`, but `design-shotgun`'s own trigger is
+  `no_ui_spec_yet` — the two conditions are mutually exclusive, so critique
+  could never fire once a UI-SPEC.md exists, exactly when §02 requires it to.
+  Corrected to `ui_hint_yes && ui_spec_exists`. Fresh installs get the fix via
+  the snapshot; `migrations/0027-spec-0.9.0-conformance.md` Step 4 now also
+  rewrites an existing install's `.planning/config.json`
+  (`hooks.pre_phase.design_critique.trigger`) when it still carries the
+  inverted literal — surgically (no other hooks key is touched) and
+  idempotently. `migrations/check-snapshot-parity.sh` asserts the corrected
+  trigger on the snapshot side.
+- **§04 red flags violated the 0.8.0 composition rule.** Core spec 0.8.0
+  resolved a contradiction in §04 (it had required verbatim reproduction *and*
+  permitted host additions — unsatisfiable together) by scoping what "verbatim"
+  binds: host-specific flags MUST be appended **after** the canonical 13
+  (position 14+), which keep positions **1–13** with the listed wording.
+  Core's changelog names this host's violation: `skill/SKILL.md` carried
+  ``/gsd-review` skipped — no `{phase}-REVIEWS.md` artifact`` at position **8**,
+  renumbering canonical 8–13 into 9–14. It now sits at **14**. Core calls this
+  "a reordering, not a rewrite" — the 13 canonical flags were already
+  byte-identical here, so **no flag's wording changed**. The heading stays
+  `## 14 Red Flags — STOP → DELETE → RESTART` (0.8.0 makes the leading count
+  non-normative). Byte-identity of the canonical 13 against
+  `spec/04-red-flags.md` is verified.
+- **`observability-postphase-scan.sh` was a dead hook — removed from this
+  repo's payload.** It shipped to `.claude/hooks/` on **both** install paths but
+  was registered in **no** `settings.json` event, so it never fired as a
+  lifecycle hook; it existed only as `programmatic_hook` metadata in
+  `.planning/config.json`, whose own `_note` says orchestrator code does not
+  read it. Migration `0018` here is a tombstone — the file and its real
+  migration live in `agenticapps-observability`, which has owned this surface
+  since 2.0.0, and `docs/UPGRADING.md` already states this repo ships no
+  observability scaffolding. Because it was registered nowhere, removing it
+  changes **no runtime behavior**. The advisory post-phase scan is unaffected:
+  CLAUDE.md now invokes `/observability scan --since-commit` — the obs skill
+  directly — instead of a file this repo no longer ships. This also un-breaks
+  2.4.0's new dead-hook check, which failed (exit 1) on every fresh install.
+- **`bin/build-snapshot.sh` never pruned deletions.** `hooks/`, `scripts/`, and
+  `spec-mirrors/` are assembled purely by `cp` globs, so the build only ever
+  ADDED: a file deleted from `templates/` lingered in the committed snapshot
+  forever, `--check` reported DRIFT, and a plain rebuild could never converge.
+  The three wholly-generated dirs are now pruned before repopulating. Found by
+  removing the dead hook above.
+- **Dangling `docs/workflow/ENFORCEMENT-PLAN.md` pointer** corrected to
+  `docs/ENFORCEMENT-PLAN.md` across `skill/`, `templates/`, and `setup/`. The
+  path never existed. (Historical references inside `migrations/0005` and prior
+  CHANGELOG entries are left as-is — they are records of what shipped.)
+- **`update/SKILL.md` claimed setup replays the migration chain** ("applies all
+  migrations from `0000-baseline.md` forward … no parallel code path") — false
+  since ADR-0036. It now states that setup installs from a prebuilt snapshot and
+  that `check-snapshot-parity.sh`, not a shared code path, is what keeps the two
+  from drifting.
+
+### Changed
+
+- **`implements_spec: 0.4.0` → `0.9.0`; `version: 2.4.0` → `2.5.0`** in
+  `skill/SKILL.md`, with a new **"Spec deltas (spec 0.9.0)"** section naming
+  four items per §09: §13's unwired implicit GSD trigger (SHOULD-level; `full`
+  preserved), §14's trivial conformance (no LLM prompt-building surface in this
+  scaffolder; `full` preserved), §10's delegation to the standalone
+  `agenticapps-observability` skill (a satisfied MUST, recorded for clarity),
+  and §08's setup/update equivalence — satisfied via the guarded snapshot
+  install, recorded for clarity the same way §10 is.
+- **`docs/ENFORCEMENT-PLAN.md` is now THE single hook-bindings table** required
+  by §09 item 3. All **16** canonical §02 gates each get exactly one row with
+  trigger, bound skill, and required evidence. Canonical gate names live in a
+  `Gate` column with host key names (`multi_ai_plan_review`, `cso`,
+  `code_quality_review`, …) in a separate `Host key` column, so the canonical
+  name is unambiguous. `database-security` is **de-nested into its own row**
+  (§02 forbids merging two gates into one); the two previously missing gates —
+  `impeccable-audit` and `db-pre-launch-audit` — are added; `ts-declare-first`
+  is bound to the `tdd` row per §13's SHOULD. Host extension gates are listed
+  separately and marked as carrying no conformance weight. The stale inline
+  `config.json` JSON dump is replaced by a pointer to `templates/config-hooks.json`
+  — an inline duplicate is the second drifting table this file exists to replace.
+  The programmatic-hooks count is corrected from a stale "5 hooks" to the actual
+  **9 project-scoped + 1 global**, and the GitNexus reindex hook (2.4.0) gets the
+  row it never had.
+
+### Added
+
+- **`migrations/0027-spec-0.9.0-conformance.md`** (2.4.0 → 2.5.0) — reorders the
+  §04 block, inserts the Spec deltas section (extracted from the scaffolder's
+  `skill/SKILL.md`, so a migrated install is byte-identical to a fresh snapshot
+  install), raises the claim, repoints `_enforcement_contract` + drops the
+  dangling `programmatic_hook` + corrects the inverted `design_critique`
+  trigger, removes the dead hook, and bumps the version.
+  Each step has an idempotency check and a rollback, plus six hard post-checks.
+  Five fixtures under `migrations/test-fixtures/0027/`, wired as
+  `test_migration_0027` in `run-tests.sh`.
+
+  The dead-hook removal is **fail-safe**: it removes the file only when it is
+  present AND registered in no event. A project that deliberately wired it keeps
+  it — fixture `04-registered-hook-survives` is the negative twin that proves
+  the migration never deletes a live hook.
+
+### Known gaps
+
+- **§13's implicit GSD trigger is still unwired** — disclosed in the Spec deltas
+  section; §13 is SHOULD/MAY throughout, so `full` is preserved.
+- **The §08 delta is resolved, not open.** It was drafted against core 0.8.0,
+  under which `spec/08-migration-format.md` still carried `spec_version: 0.1.0`
+  and said nothing about snapshots or parity guards, so the delta was recorded
+  as genuinely open. Core has since shipped **spec 0.9.0** (commit `9e19eb7`,
+  ADR-0018), amending §08 to recognize guarded-snapshot install as a
+  named-conformant alternative to replay. This host's `migrations/check-snapshot-parity.sh`
+  guard, run in CI on every change and named in `skill/SKILL.md`, satisfies the
+  amended MUST as written — no longer a gap.
+- **A divergent §04 copy survives in the CLAUDE.md payload.**
+  `templates/claude-md-sections.md` and `templates/.claude/claude-md/workflow.md`
+  carry their own 13-flag list with a reworded heading and reworded flags. §09
+  item 1 binds the canonical block to the host's *primary instruction file*
+  (`skill/SKILL.md` — the file carrying `implements_spec`), which is now
+  conformant, so the 0.9.0 claim stands; but those copies are what agents read
+  at runtime. Reconciling them needs its own migration.
+
+### Migration-order note
+
+This work originally targeted migration `0026` / `2.3.0 → 2.4.0`. The sibling
+`feat/gitnexus-background-reindex` branch landed first and took both that slot
+and 2.4.0, so it rebased to `0027` / `2.4.0 → 2.5.0` — the remedy the plan
+prescribed for whichever branch merged second. Migration 0026 is untouched; both
+harnesses coexist and both pass.
+
 ## [2.4.0] — GitNexus background reindex hook (reindex, not nudge)
 
 Ships a claude-workflow-owned, **per-project** PostToolUse `matcher:"Bash"` hook

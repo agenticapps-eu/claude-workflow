@@ -1,7 +1,7 @@
 ---
 name: agentic-apps-workflow
-version: 2.4.0
-implements_spec: 0.4.0
+version: 2.5.0
+implements_spec: 0.9.0
 description: |
   Enforces the spec-first development workflow using Superpowers + GSD + gstack
   for any AgenticApps project. This skill MUST activate whenever Claude is asked
@@ -22,7 +22,7 @@ commit — publicly and in writing — to invoking the right Superpowers, GSD, a
 gstack skills in the right order. Once committed, the commitment principle
 (Cialdini; Wharton GAIL 2025) keeps you consistent with what you said you'd do.
 
-**Authoritative contract:** `docs/workflow/ENFORCEMENT-PLAN.md`. Read it if you
+**Authoritative contract:** `docs/ENFORCEMENT-PLAN.md`. Read it if you
 are unsure which skill gates which step.
 
 ## Step 0 — The Commitment Ritual (NON-NEGOTIABLE)
@@ -163,13 +163,13 @@ design, UX direction) get an ADR at `docs/decisions/NNNN-short-title.md`:
 5. Tests marked for "later" addition
 6. "Just this once" reasoning
 7. Manual testing claimed as verification evidence
-8. `/gsd-review` skipped — no `{phase}-REVIEWS.md` artifact
-9. Two-stage review collapsed into one
-10. Framing discipline as "ritual" or "ceremony"
-11. Keeping pre-written code as "reference" while writing tests
-12. Sunk-cost reasoning about deleting unverified code
-13. Describing discipline as "dogmatic"
-14. "This case is different because..."
+8. Two-stage review collapsed into one
+9. Framing discipline as "ritual" or "ceremony"
+10. Keeping pre-written code as "reference" while writing tests
+11. Sunk-cost reasoning about deleting unverified code
+12. Describing discipline as "dogmatic"
+13. "This case is different because..."
+14. `/gsd-review` skipped — no `{phase}-REVIEWS.md` artifact
 
 ## Pressure-Test Scenarios — Self-Check
 
@@ -203,7 +203,7 @@ grep -c "^- \*\*Evidence" .planning/phases/{padded_phase}-*/VERIFICATION.md
 ```
 
 If any check fails, the phase did NOT honor the enforcement plan. File this as
-a process bug, update `docs/workflow/ENFORCEMENT-PLAN.md` to close the
+a process bug, update `docs/ENFORCEMENT-PLAN.md` to close the
 loophole, and re-run the failed gate.
 
 ## Daily Quick Reference
@@ -215,6 +215,62 @@ loophole, and re-run the failed gate.
 5. Route to the right GSD entry point
 6. Invoke the mapped Superpowers skills in order
 7. Update decision log + GSD state at end of session
+
+## Spec deltas (spec 0.9.0)
+
+Per core spec §09, a host names every requirement it does not satisfy verbatim,
+with rationale. Audited 2026-07-14 (ADR-0040).
+
+- **§13 implicit GSD trigger — not wired.** `ts-declare-first` ships and its
+  explicit trigger works; the §13 implicit trigger (GSD design phase detects a
+  new TypeScript module in a TS-primary project) is not implemented. §13's
+  Conformance section is SHOULD/MAY throughout, and this scaffolder is not
+  itself a TypeScript project (no `package.json`), so `full` is preserved.
+  Tracked for its own phase.
+- **§14 prompt-injection — trivially conformant.** This scaffolder builds no
+  LLM prompts from non-self-authored values, so §14's trigger condition cannot
+  occur; §09 requires only that the host say so. The §14 generator for
+  consuming projects is delegated to the `injection-guard` skill
+  (agenticapps-observability 0.13.0, `implements_spec: 0.6.0`), gated by
+  migration 0023's pre-flight.
+- **§10 observability — delegated, not omitted.** Satisfied via the standalone
+  `agenticapps-observability` skill (0.13.0, `implements_spec: 0.3.2`),
+  consumed through its own install surface. A satisfied MUST per §09, not a
+  delta; recorded here because the skill no longer ships from this repo
+  (removed at 2.0.0, commit 217baec). Migration 0022 fails closed if absent.
+- **§08 setup/update equivalence — satisfied via guarded snapshot, recorded for
+  clarity.** §08 as amended at core 0.9.0 (upstream ADR-0018) makes the setup
+  flow's *end state* normative, not the mechanism: setup MUST reach an end
+  state equivalent to a full `0000`→latest replay, by either **replay** or
+  **snapshot** (a prebuilt artifact assembled from the same migration sources,
+  PROVIDED a drift guard runs in CI and fails the build when the artifact and
+  the sources disagree). A host choosing snapshot MUST name its guard in its
+  instruction file. This host uses snapshot: ADR-0036 replaced replay-on-setup
+  because the chain contains prose and agent steps that cannot be
+  shell-replayed. The named guard is **`migrations/check-snapshot-parity.sh`**,
+  which runs in CI on every change and proves the snapshot and the
+  `migrations/` sources agree — satisfying the amended §08's naming
+  requirement. Before core 0.9.0 this was recorded as a genuine open delta:
+  `spec/08-migration-format.md` carried `spec_version: 0.1.0` and said nothing
+  about snapshots, so the letter of the pre-amendment text was unmet even
+  though the guarantee it protects (one source of truth for the on-disk shape)
+  was. Core 0.9.0 resolved it by making the guarded-snapshot strategy a named,
+  conformant alternative to replay. A satisfied MUST per §09, not a delta;
+  recorded here — like §10 above — because the mechanism differs from a naive
+  reading of the section, and disclosure keeps the claim auditable.
+- **§04 — a divergent copy ships alongside the canonical block.** §09 item 1 is
+  satisfied: the canonical 13 are byte-identical here, at positions 1–13, in
+  this file — the one carrying `implements_spec`. But the vendored workflow
+  reference installed into every scaffolded project
+  (`.claude/claude-md/workflow.md`, from `templates/`) carries its own 13-flag
+  list under a reworded heading (`### 13 Red Flags — Trigger Automatic STOP →
+  DELETE → RESTART`) with four flags reworded (1, 6, 12, 13 — e.g. `Any "just
+  this once" reasoning` for canonical `"Just this once" reasoning`). That copy
+  is what agents read at runtime. It is not a §09 item-1 violation — the spec
+  binds the block to the host's instruction file, not to every downstream
+  artifact — but it is unreconciled canonical prose and is disclosed rather
+  than left silent. Reconciling it changes the payload of every scaffolded
+  project and needs its own migration; tracked separately.
 
 ## Knowledge Capture — Ritual Tail (spec §15)
 
