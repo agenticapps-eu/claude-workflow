@@ -41,6 +41,28 @@ function git(args, cwd) {
   }).trim();
 }
 
+// Is the process that wrote this lock still running? The lock file holds the
+// writer's PID. `kill(pid, 0)` sends no signal — it just probes liveness:
+// throws ESRCH if the process is gone, EPERM if it exists but is another
+// user's. An unreadable/blank PID is treated as dead (reclaimable). Used to
+// distinguish "the previous reindex crashed" from "the previous reindex is
+// legitimately still running past the TTL".
+function ownerAlive(lock) {
+  let pid;
+  try {
+    pid = parseInt(fs.readFileSync(lock, 'utf8').trim(), 10);
+  } catch {
+    return false; // unreadable lock — treat as dead
+  }
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true; // process exists
+  } catch (e) {
+    return e.code === 'EPERM'; // EPERM = alive but not ours; ESRCH = gone
+  }
+}
+
 // Prefer the host-provided project dir; fall back to the git toplevel of cwd.
 function resolveRoot() {
   const fromEnv = process.env.CLAUDE_PROJECT_DIR;
@@ -88,8 +110,13 @@ function main() {
   const lock = path.join(gnDir, '.reindex.lock');
   try {
     const st = fs.statSync(lock);
-    if (Date.now() - st.mtimeMs < LOCK_TTL_MS) return; // a reindex is in flight
-    fs.unlinkSync(lock); // stale lock — previous run died; reclaim it
+    if (Date.now() - st.mtimeMs < LOCK_TTL_MS) return; // fresh lock — a reindex is in flight
+    // Lock is older than the TTL. Reclaim it ONLY if its owner is actually
+    // gone: a genuine analyze that runs past LOCK_TTL_MS is still holding the
+    // DB, and reclaiming it there would spawn a second analyze racing on the
+    // same SQLite file — the corruption mode the lock exists to prevent.
+    if (ownerAlive(lock)) return;
+    fs.unlinkSync(lock); // owner is dead — reclaim the stale lock
   } catch {
     /* no lock present */
   }
@@ -99,18 +126,25 @@ function main() {
     return; // lost the create race to a sibling hook
   }
 
-  // Detached incremental reindex; the child clears its own lock on exit.
+  // Detached incremental reindex. argv-form spawn — NO shell — so the lock
+  // path is never interpolated into a command string (a repo path containing
+  // a quote, backtick, or $() would otherwise break out of `sh -c`). The lock
+  // is cleared on the child's exit, which fires in this parent before it
+  // returns; unref() keeps the parent off the critical path regardless.
   // GITNEXUS_INVOCATION pins the write to the local build (storage parity).
-  const child = spawn(
-    'sh',
-    ['-c', `gitnexus analyze >/dev/null 2>&1; rm -f "${lock}"`],
-    {
-      cwd: root,
-      detached: true,
-      stdio: 'ignore',
-      env: { ...process.env, GITNEXUS_INVOCATION: 'gitnexus' },
-    },
-  );
+  const child = spawn('gitnexus', ['analyze'], {
+    cwd: root,
+    detached: true,
+    stdio: 'ignore',
+    env: { ...process.env, GITNEXUS_INVOCATION: 'gitnexus' },
+  });
+  child.on('exit', () => {
+    try {
+      fs.unlinkSync(lock);
+    } catch {
+      /* already gone, or reclaimed by a later run — the TTL is the backstop */
+    }
+  });
   child.unref();
 }
 
