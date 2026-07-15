@@ -63,10 +63,18 @@ On replace, emit lines 1..P, then the mirror's bytes, then lines E+1..EOF.
 E is the last *non-blank* line, not `T-1`, because the canonical mirror has
 no trailing blank line, while a real, in-place block is always followed by a
 separator blank line before the next heading or region marker. A region
-ending at `T-1` would capture that separator as part of the compared bytes,
-so the extracted region could never equal the mirror — the idempotency check
-would never report "in sync," and Apply would rewrite the same bytes every
-run without ever converging. Both the idempotency check's `extract_block`
+ending at `T-1` would capture that separator as part of the region, and Apply
+would then write the mirror's bytes — which end at `every diff.` — straight
+over it, leaving the block's last line butted against the next `## ` heading
+with no blank line between them.
+
+That state *converges*: on the next run the `T-1` extraction matches the
+mirror and reports "in sync". So an idempotency or convergence test would
+never catch it — the corruption is silent, permanent, and green. What it
+actually does is delete a blank line around a block, which is the same defect
+class `34ee72e` existed to repair; a `T-1` region would reintroduce it one
+level up while healing it one level down. Both the idempotency check's
+`extract_block`
 and the Apply pass's replacement awk implement `H..E` by buffering blank
 lines and only emitting them once a later non-blank line proves they were
 interior to the block (never trailing).

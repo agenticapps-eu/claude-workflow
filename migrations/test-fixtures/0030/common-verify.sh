@@ -56,7 +56,25 @@ case "$PREFLIGHT" in
     ;;
 esac
 
-preflight() { eval "$PREFLIGHT"; }
+# NOTE ON `( ... )` vs 0029's `{ ... }`
+#
+# Each of the four functions below runs its eval'd block in a SUBSHELL, where
+# 0029's harness uses brace groups. This is deliberate and load-bearing.
+#
+# 0029's Step 1 blocks carry no `set -eu` at all (it appears zero times in that
+# document) and 0029's fixtures wrap preflight in `$(...)`, so its brace form is
+# safe. 0030's Pre-flight and Apply DO carry `set -eu`, and it is load-bearing in
+# Apply: a non-zero awk must abort before the non-empty/`mv` guards, which would
+# otherwise accept a truncated-but-non-empty tmp and clobber CLAUDE.md.
+#
+# With a brace group, that `set -eu` — and every `exit` in a refusal path — leaks
+# into the SOURCING fixture: `apply_step1; diff a b` would die on the first
+# non-zero command, and `if preflight; then` would terminate the fixture outright
+# instead of yielding a status. The subshell contains both while still returning
+# the block's exit status and still writing files into the fixture's cwd.
+#
+# Do not "simplify" these back to brace groups to match 0029.
+preflight() ( eval "$PREFLIGHT"; )
 
 # Pulls the fenced block following "**Idempotency check:**" within "### Step 1".
 # Same want/fence discipline as extract_0030_step1_apply below.
@@ -92,7 +110,7 @@ case "$STEP1_IDEMPOTENCY" in
 esac
 
 # Returns the idempotency check's own exit status (0 = already applied).
-check_step1_idempotent() { eval "$STEP1_IDEMPOTENCY"; }
+check_step1_idempotent() ( eval "$STEP1_IDEMPOTENCY"; )
 
 # Pulls the FIRST fenced block following "**Apply:**" within "### Step 1".
 # `want` is cleared as soon as a fence opens, so a change from ```bash to ```sh
@@ -128,7 +146,7 @@ case "$STEP1_APPLY" in
     ;;
 esac
 
-apply_step1() { eval "$STEP1_APPLY"; }
+apply_step1() ( eval "$STEP1_APPLY"; )
 
 # Pulls the FIRST fenced block following "**Rollback:**" within "### Step 1".
 # Same want/fence discipline: `want` clears the instant any fence opens, so it
@@ -165,4 +183,4 @@ case "$STEP1_ROLLBACK" in
     ;;
 esac
 
-rollback_step1() { eval "$STEP1_ROLLBACK"; }
+rollback_step1() ( eval "$STEP1_ROLLBACK"; )

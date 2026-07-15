@@ -68,10 +68,22 @@ On replace, emit lines 1..P, then the mirror's bytes, then lines E+1..EOF.
 **Why `E` is the last non-blank line, not `T-1`:** the mirror's final byte is
 `...every diff.\n` with no trailing blank line, but in a real file the block is
 followed by a blank line and then `## Project Overview`. Defining the region as
-`H..T-1` would capture that separator blank, so the extracted bytes could never
-equal the mirror — every apply would rewrite the file and still mismatch, and
-the migration would never converge. Anchoring on `E` leaves lines `E+1..T-1`
-(the separator) untouched.
+`H..T-1` would capture that separator blank, and Apply would write the mirror's
+bytes over it — leaving the block's last line butted against the next `## `
+heading. Anchoring on `E` leaves lines `E+1..T-1` (the separator) untouched.
+
+**CORRECTED 2026-07-15 (Task 2 review; verified by execution — this paragraph
+originally shipped a false claim).** An earlier draft said a `T-1` region
+"would never converge". **That is false**, and it was proven false by running
+it: a consistently `T-1`-pinned extract+replace converges on the *second* run,
+because Apply consumes the separator and the next extraction then matches the
+mirror. The real failure is worse for being quiet — `T-1` silently **deletes
+the blank line before the next heading**, then reports in-sync forever. No
+idempotency or convergence test can catch it. It is the same defect class
+`34ee72e` existed to repair: a `T-1` region would reintroduce it one level up
+while healing it one level down. Fixture 05 (`converges`) is therefore NOT
+what binds this — it would pass under `T-1` too. What binds it is fixture 01's
+assertion that the ONLY change to the file is four blank-line insertions.
 
 **Why `^## ` does not swallow the block's own sub-headings:** the block contains
 only `### ` level-3 headings. The regex `^## ` requires the third character to
@@ -372,8 +384,9 @@ echo "0030: §11 block re-synced to canonical mirror bytes."
 > `HEAD:CLAUDE.md`. In every case the block healed to the mirror byte-for-byte
 > and the **only** change to the file was the four blank-line insertions;
 > re-apply was a byte-identical no-op. Transcribe it verbatim. If you change
-> it, re-run all four shapes — the trailing-blank convergence bug is invisible
-> to fixture 02 and only fixture 05 catches it.
+> it, re-run all four shapes. **Note (corrected):** the T-1 bug is invisible to
+> BOTH fixture 02 and fixture 05 — it converges. Only fixture 01's "exactly four
+> blank-line insertions and nothing else" assertion catches it.
 
 - [ ] **Step 5: Write Step 1 — Rollback**
 
@@ -453,7 +466,13 @@ git commit -m "feat(migration): 0030 — re-sync stale spec §11 block bytes (2.
 
 Fixture 05 is the convergence proof and is **not** redundant with 02: 02 proves
 a healthy file is not churned; 05 proves a *healed* file reaches that state.
-The trailing-blank bug would pass 02 and fail 05.
+
+**CORRECTED 2026-07-15:** an earlier draft claimed "the trailing-blank bug would
+pass 02 and fail 05". **False** — verified by execution. A `T-1`-pinned region
+converges, so it passes 02 AND 05. The fixture that actually binds it is **01**,
+whose assertion is that the ONLY change to the file is four blank-line
+insertions — a `T-1` region also deletes the separator blank, which 01 sees as a
+fifth change and 05 cannot see at all.
 
 **On numbering vs the spec:** the spec's fixture list ends with
 "`CORE_SPEC_REQUIRED=1` + absent core spec → suite red". That is not a
