@@ -4,7 +4,7 @@
 
 **Goal:** Ship migration 0029 so the spec §11 canonical block is anchored above any GitNexus-managed region instead of inside it, and so `agenticapps-dashboard` — stamped 2.5.0/spec-0.9.0 with no §11 block at all — is repaired.
 
-**Architecture:** A new forward-fixing migration (0014 is immutable and permanently un-replayable for 2.x repos). Step 1 heals §11 placement in the project's `CLAUDE.md`; Step 2 bumps the installed scaffolder version. The anchor rule is a one-alternation delta to 0014's existing awk. The identical rule is mirrored into `setup/SKILL.md` step e2 and locked by a new parity guard, because spec §08 requires the setup flow's end state to equal a full replay.
+**Architecture:** A new forward-fixing migration (0014 is immutable and permanently un-replayable for 2.x repos). Step 1 heals §11 placement in the project's `CLAUDE.md`; Step 2 bumps the installed scaffolder version. The anchor rule adds an anchored marker alternation to 0014's awk — and, because that **breaks** 0014's "block is always followed by a `## `" invariant rather than preserving it, every terminator (strip, Rollback) carries the same alternation. Anchor and terminator are one decision. The identical rule is mirrored into `setup/SKILL.md` step e2 and locked by a new parity guard, because spec §08 requires the setup flow's end state to equal a full replay.
 
 **Tech Stack:** POSIX shell + awk (BSD awk on macOS, GNU awk in CI — no GNU-only constructs). Markdown migration documents. `migrations/run-tests.sh` fixture harness.
 
@@ -12,7 +12,10 @@
 
 - **0014 is immutable.** Do not edit `migrations/0014-inject-spec-11-coding-discipline.md`. It is already applied in five repos and its `to_version: 1.14.0` makes it permanently not-pending. This fixes forward.
 - **Version chain:** `from_version: 2.6.0`, `to_version: 2.7.0`. Pre-flight gate accepts both: `^version: 2\.(6\.0|7\.0)$`.
-- **Anchor rule, verbatim:** insert immediately before the first line that is **either** a `## ` heading **or** a `<!-- gitnexus:start -->` marker — whichever comes first; EOF if neither.
+- **Anchor rule, verbatim:** insert immediately before the first line that is **either** a `## ` heading **or** a line that is *exactly* `<!-- gitnexus:start -->` — whichever comes first; EOF if neither.
+- **Marker regexes MUST be anchored** (`/^<!-- gitnexus:start -->$/`, `/^<!-- gitnexus:end -->$/`) everywhere they appear — idempotency check, insert anchor, strip terminator, Rollback terminator. Unanchored they substring-match *prose mentions*; this repo's own `CLAUDE.md:2` has one inside an HTML comment, and the block would be injected into that comment and silently commented out.
+- **Every terminator carries the anchor's alternation.** A healed region-led file has the block followed by the start marker, not a `## `. Any "terminate at next `^## `" consumer corrupts the region. This includes Rollback.
+- **The canonical block must be non-empty before use.** `test -f` is insufficient — a zero-byte spec-mirror (an interrupted `git pull` in the scaffolder clone) makes awk's `getline` no-op, awk exit 0, and the strip's block-removal commit as "success", destroying the block permanently and leaving idempotency reporting "already applied". Pre-flight must use `test -s`, and the result must be shape-asserted before `mv`.
 - **Provenance string, verbatim:** `<!-- spec-source: agenticapps-workflow-core@0.4.0 §11 -->`. The mirror stays at `@0.4.0` — that is the block's *content* version, unchanged since; it is **not** the spec version (0.9.1).
 - **Canonical block source:** `$HOME/.claude/skills/agenticapps-workflow/templates/spec-mirrors/11-coding-discipline-0.4.0.md` (same as 0014).
 - **Portability:** `sed -i.bak` + `rm -f` (bare `-i` is not portable). No `grep -P`. Env bash is 3.2.
@@ -612,7 +615,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: `apply_step1()` extraction contract from Task 1 — Step 1's Apply block must be the first fenced block after `**Apply:**` inside `### Step 1`, and must contain the literal `gitnexus:start`.
-- Produces: the anchor rule literal `(/^## / || /<!-- gitnexus:start -->/)`, which Task 3's parity guard greps for in both this file and `setup/SKILL.md`.
+- Produces: the anchor rule literal `(/^## / || /^<!-- gitnexus:start -->$/)`, which Task 3's parity guard greps for in both this file and `setup/SKILL.md`.
 
 - [ ] **Step 1: Write the migration document**
 
@@ -780,7 +783,7 @@ else
   # region starts late.
   awk -v prov="$PROV" -v block_file="$SPEC_BLOCK" '
     BEGIN { inserted = 0 }
-    !inserted && (/^## / || /<!-- gitnexus:start -->/) {
+    !inserted && (/^## / || /^<!-- gitnexus:start -->$/) {
       print prov
       while ((getline line < block_file) > 0) print line
       close(block_file)
@@ -904,7 +907,7 @@ sed). `&` in the *replacement* means "the whole match", so it must be escaped.
 
 ```bash
 cd ~/Sourcecode/agenticapps/claude-workflow
-sed -i.mut 's,!inserted && (/^## / || /<!-- gitnexus:start -->/),!inserted \&\& /^## /,' \
+sed -i.mut 's,!inserted && (/^## / || /^<!-- gitnexus:start -->$/),!inserted \&\& /^## /,' \
   migrations/0029-region-aware-spec-11-placement.md
 grep -c 'gitnexus:start' migrations/0029-region-aware-spec-11-placement.md
 ```
@@ -960,7 +963,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - Modify: `migrations/run-tests.sh` (add the `anchor-parity` guard inside `test_migration_0029`)
 
 **Interfaces:**
-- Consumes: the anchor literal `(/^## / || /<!-- gitnexus:start -->/)` produced by Task 2.
+- Consumes: the anchor literal `(/^## / || /^<!-- gitnexus:start -->$/)` produced by Task 2.
 - Produces: an `anchor-parity` PASS/FAIL line in the 0029 test block.
 
 - [ ] **Step 1: Update `setup/SKILL.md` step e2's awk**
@@ -980,7 +983,7 @@ Replace with:
 
 ```awk
        BEGIN { done = 0 }
-       !done && (/^## / || /<!-- gitnexus:start -->/) { emit(); done = 1 }
+       !done && (/^## / || /^<!-- gitnexus:start -->$/) { emit(); done = 1 }
        { print }
        END { if (!done) emit() }
 ```
@@ -1057,7 +1060,7 @@ Append inside `test_migration_0029()`, immediately after the fixture `for` loop 
   # one distinct value.
   local setup_file="$REPO_ROOT/setup/SKILL.md"
   local anchors distinct count
-  anchors=$(grep -hoF '(/^## / || /<!-- gitnexus:start -->/)' "$migration_file" "$setup_file")
+  anchors=$(grep -hoF '(/^## / || /^<!-- gitnexus:start -->$/)' "$migration_file" "$setup_file")
   count=$(printf '%s\n' "$anchors" | grep -c .)
   distinct=$(printf '%s\n' "$anchors" | sort -u | grep -c .)
 
@@ -1095,7 +1098,7 @@ escaped `\&` in the replacement. `sed -i.mut` leaves the original at
 
 ```bash
 cd ~/Sourcecode/agenticapps/claude-workflow
-sed -i.mut 's,!done && (/^## / || /<!-- gitnexus:start -->/),!done \&\& /^## /,' setup/SKILL.md
+sed -i.mut 's,!done && (/^## / || /^<!-- gitnexus:start -->$/),!done \&\& /^## /,' setup/SKILL.md
 ./migrations/run-tests.sh 0029
 ```
 
