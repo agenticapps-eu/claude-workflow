@@ -126,11 +126,27 @@ that is *exactly* `<!-- gitnexus:start -->` — the same alternation migration
 byte replacement straight through a GitNexus-managed region and destroy it on
 any project 0029 already healed.
 
-**Known limitations (not fixed here, shared with 0014/0029):** a CRLF
-`CLAUDE.md` fails the line-oriented anchors, since `^...$` never matches a
-line ending in `\r`; and a provenance or `gitnexus:start` marker written
-literally inside a fenced code block is treated as a real marker, since awk
-has no fence awareness. Neither shape has a live instance in the fleet today.
+**Known limitations (not fixed here, shared with 0014/0029):**
+
+- **Prose between the block and its terminator is deleted.** This is the only
+  limitation here that destroys data rather than refusing, so it is stated
+  first. The managed block has no end marker: the region is implicitly
+  "provenance → the last non-blank line before the next `## ` or
+  `<!-- gitnexus:start -->`". Anything a user writes *after* the block's closing
+  paragraph but *before* that terminator is inside the region and is replaced
+  along with it. Migration 0029, already applied across the fleet, deletes the
+  identical line — 0030 inherits this boundary, it does not introduce it, and
+  fixing it means giving §11 an end marker, which is a change to 0014's on-disk
+  contract and belongs in its own migration. All five fleet repos were checked:
+  none has content in that position, and every E2E run deletes zero lines.
+- **CRLF.** A CRLF `CLAUDE.md` fails the line-oriented anchors, since `^...$`
+  never matches a line ending in `\r`. The effect is a clean pre-flight refusal
+  (rule 3 counts zero provenance lines), not corruption.
+- **Markers inside fenced code blocks.** A provenance or `gitnexus:start` marker
+  written literally inside a fence is treated as a real marker, since awk has no
+  fence awareness. The effect is a refusal or a no-op, not corruption.
+
+Neither CRLF nor an in-fence marker has a live instance in the fleet today.
 
 ## Pre-flight (hard aborts on failure)
 

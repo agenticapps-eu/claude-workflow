@@ -96,7 +96,7 @@ for downstream projects to re-run.
   lists (`5ea7ea9`, 2026-05-20); this repo mirrored it faithfully
   (`913360e`/#42, byte-identical to core at that moment) and shipped it as
   migration 0014; `cparx` and `fx-signal-agent` ran 0014 that same day and
-  received it as it then read. Five days later core revised §11's prose *in
+  received it as it then read. Four days later core revised §11's prose *in
   place* — adding the four blank lines (`10f2c96`/#12, titled "blank lines
   around §11 anti-pattern lists (markdown/prettier-clean)") — **without
   bumping `spec_version`** (0.4.0 before and after). This repo mirrored that
