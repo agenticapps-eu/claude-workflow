@@ -8,11 +8,9 @@ SKILL=.claude/skills/agentic-apps-workflow/SKILL.md
 
 [ ! -e "$PI" ] || { echo "PRE: fixture must start with no .prettierignore"; exit 1; }
 
-apply_step1() {
-  if [ -f "$PI" ] && ! grep -qE '^\.claude/hooks/?$' "$PI"; then
-    printf '\n.claude/hooks/\n' >> "$PI"
-  fi
-}
+# ── Step 1 apply — extracted from the migration doc, not copied here ─────────
+. "$REPO_ROOT/migrations/test-fixtures/0028/common-verify.sh"
+
 apply_step2() {
   sed 's/^version: 2\.5\.0$/version: 2.6.0/' "$SKILL" > "$SKILL.t" && mv "$SKILL.t" "$SKILL"
 }
