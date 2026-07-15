@@ -2487,6 +2487,70 @@ test_claude_md_reproduces_spec_11_verbatim() {
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Binds templates/spec-mirrors/11-coding-discipline-0.4.0.md to the upstream
+# spec it transcribes: agenticapps-workflow-core's spec/11-coding-discipline.md.
+# WORKFLOW — policy specific to this repo's mirror-fidelity claim; stays here.
+#
+# Why this exists: commit 913360e shipped the mirror as a faulty transcription
+# of the upstream spec (four blank lines dropped). Nothing detected it —
+# test_claude_md_reproduces_spec_11_verbatim above binds this repo's CLAUDE.md
+# TO THE MIRROR, but the mirror itself was unbound to the spec it claims to
+# transcribe. Two downstream repos consumed the bad bytes via migration 0014
+# before anyone noticed. This guard closes that hole by diffing the mirror
+# against a live extraction of workflow-core's spec on every run.
+#
+# CORE_SPEC_DIR defaults to the sibling clone so local runs work unchanged.
+# CORE_SPEC_REQUIRED is a declared flag, not an inferred "am I in CI?" check —
+# unset it SKIPs loudly when the sibling clone isn't present; CI sets it to 1
+# so a missing core spec there is a hard failure, not a silent no-op.
+# ─────────────────────────────────────────────────────────────────────────────
+
+test_mirror_matches_core_spec_11() {
+  echo ""
+  echo "${YELLOW}━━━ Mirror ≡ workflow-core spec §11 ━━━${RESET}"
+
+  local core_dir="${CORE_SPEC_DIR:-$REPO_ROOT/../agenticapps-workflow-core}"
+  local core_spec="$core_dir/spec/11-coding-discipline.md"
+
+  if [ ! -f "$core_spec" ]; then
+    if [ "${CORE_SPEC_REQUIRED:-}" = "1" ]; then
+      echo "  ${RED}✗${RESET} core spec not found at $core_spec"
+      echo "      CORE_SPEC_REQUIRED=1 — a missing core spec is a hard failure."
+      FAIL=$((FAIL+1))
+    else
+      echo "  ${YELLOW}SKIP${RESET}: workflow-core not cloned at $core_dir"
+      echo "      (set CORE_SPEC_DIR, or CORE_SPEC_REQUIRED=1 to make this fatal)"
+      SKIP=$((SKIP+1))
+    fi
+    return
+  fi
+
+  local mirror="$REPO_ROOT/templates/spec-mirrors/11-coding-discipline-0.4.0.md"
+  local tmp; tmp="$(mktemp -t core-spec-11-XXXXXX)"
+  awk '/^## Coding Discipline \(NON-NEGOTIABLE\)$/{f=1} f{print} f && /session-level discipline the model brings to every diff\.$/{exit}' \
+    "$core_spec" > "$tmp"
+
+  if [ ! -s "$tmp" ]; then
+    echo "  ${RED}✗${RESET} could not extract the §11 block from $core_spec"
+    FAIL=$((FAIL+1)); rm -f "$tmp"; return
+  fi
+
+  if diff -u "$tmp" "$mirror" > /dev/null; then
+    echo "  ${GREEN}✓${RESET} mirror matches workflow-core spec §11 byte-for-byte"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} mirror has DRIFTED from workflow-core spec §11:"
+    diff -u "$tmp" "$mirror" | sed 's/^/      /'
+    echo "      The spec moved, or the mirror was transcribed wrong. Re-sync the"
+    echo "      mirror AND ship a migration to carry consumers forward — a mirror"
+    echo "      edit without one is what stranded cparx and fx-signal-agent."
+    FAIL=$((FAIL+1))
+  fi
+  rm -f "$tmp"
+}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Dispatcher
 # SHARED — generic filter-driven test dispatcher; the if/FILTER pattern is
 #   repo-agnostic framework machinery; consumer repos replace the per-migration
@@ -2579,6 +2643,10 @@ fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "spec-11-self-conformance" ]; then
   test_claude_md_reproduces_spec_11_verbatim
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "spec11" ]; then
+  test_mirror_matches_core_spec_11
 fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "test-skill-md-version-matches-latest-migration-to-version" ]; then
