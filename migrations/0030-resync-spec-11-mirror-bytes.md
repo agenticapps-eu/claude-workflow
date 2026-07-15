@@ -15,35 +15,44 @@ requires:
 
 # Migration 0030 — Re-sync stale spec §11 block bytes (v2.7.0 -> 2.8.0)
 
-**Root cause.** Commit `913360e` (PR #42, "spec 0.4.0 absorption", 2026-05-21)
-shipped `templates/spec-mirrors/11-coding-discipline-0.4.0.md` as a faulty
-transcription of the core spec: the blank line separating each "Anti-patterns
-this rule prevents:" label from its bullet list was dropped, in all four
-occurrences. Commit `34ee72e` (PR #44, "prettier-clean the vendored §11
-block", 2026-05-25) added those four blank lines back, restoring the mirror's
-fidelity to `agenticapps-workflow-core`'s spec — but shipped no re-sync
-migration, so any project that had already run migration 0014 against the
-pre-fix mirror was left stranded on the stale bytes.
+**Root cause.** Nobody mis-transcribed anything. The mirror was a correct copy
+of the spec at every instant. The defect is that §11's canonical prose was
+revised upstream *in place*, under an unchanged `spec_version`, and this repo
+mirrored that revision without shipping a migration to carry already-migrated
+projects forward. Every step below is verifiable from the two repos' histories:
 
-Two repos ran 0014 before the fix landed and carry the stale block: `cparx`
-(via commit `e6e44e7b`, 2026-05-21) and `fx-signal-agent` (via `d38a97c`,
-2026-05-21) — both four days before `34ee72e`. `callbot` ran 0014 after the
-fix (`d2e92db`, 2026-05-26); its block is byte-identical to the canonical
-mirror today and is not affected.
+| Date | Commit | Effect |
+|---|---|---|
+| 2026-05-20 | core `5ea7ea9` | introduces spec §11 **without** the blank lines (v0.4.0) |
+| 2026-05-21 | `913360e` (#42) | mirrors it **faithfully** — byte-identical to core at that moment — and ships migration 0014 |
+| 2026-05-21 | `e6e44e7b`, `d38a97c` | `cparx` and `fx-signal-agent` run 0014, faithfully receiving §11 **as it then was** |
+| 2026-05-25 | core `10f2c96` (#12) | **adds** a blank line after each "Anti-patterns this rule prevents:" — and does **not** bump `spec_version` |
+| 2026-05-25 | `34ee72e` (#44) | mirrors that edit (4 insertions, 1 file) with **no migration** → already-migrated projects stranded |
+| 2026-05-26 | `d2e92db` | `callbot` runs 0014 against the new mirror → verbatim, unaffected |
 
-**Why provenance-based idempotency fails.** The managed block's provenance
-comment records the spec version it was copied from — `@0.4.0` — and that
-stamp never changed across the fix, because the underlying spec text never
-changed; only the mirror's *transcription* of it did. A check keyed on the
-provenance stamp alone reports "already applied" and short-circuits before
-ever comparing bytes. 0030 derives its idempotency check from the block's
-actual bytes instead: it extracts the block as it currently sits in
-`CLAUDE.md` and compares it to the vendored mirror, byte for byte.
+So `cparx` and `fx-signal-agent` are not corrupted. They hold a faithful copy of
+spec §11 as it read on 2026-05-21, and the spec moved underneath them.
 
-**Why no spec-version bump.** `agenticapps-workflow-core`'s
-`spec/11-coding-discipline.md` is `spec_version: 0.4.0`, and §11's normative
-text did not change — only the vendored mirror's buggy transcription of it
-did. `implements_spec` stays `0.9.0`, unchanged.
+**Why provenance-based idempotency is structurally blind here.** The managed
+block's provenance records the spec version it was copied from — `@0.4.0`. Core
+`10f2c96` changed §11's normative text *without* bumping `spec_version`, so
+`@0.4.0` remained, and remains, a **genuinely correct stamp over bytes that no
+longer match**. A check keyed on the provenance version is therefore not merely
+unlucky here — it cannot distinguish the two states even in principle. That is
+why 0030 derives idempotency from the block's actual bytes: it extracts the
+block as it currently sits in `CLAUDE.md` and compares it to the vendored
+mirror, byte for byte.
+
+The same fact disabled 0014's own escape hatch. 0014's design notes prescribe
+that a future spec revision vendors a new `11-coding-discipline-0.5.0.md` and a
+migration swaps the provenance line plus the block bytes. That convention could
+never fire: core never shipped 0.5.0. It revised 0.4.0 in place.
+
+**Why no spec-version bump here.** `agenticapps-workflow-core`'s
+`spec/11-coding-discipline.md` is `spec_version: 0.4.0` both before and after
+`10f2c96`. The mirror's filename was correct throughout, and inventing a
+`0.4.1` would stamp a version that does not exist upstream. `implements_spec`
+stays `0.9.0`, unchanged.
 
 **The block region.** The bytes being compared and replaced are bounded by
 the provenance comment on one side and the *last non-blank line* of the block

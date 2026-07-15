@@ -23,43 +23,56 @@ Both stale blocks are missing the same four blank lines — one after each
 
 ## Root cause
 
-Not prettier. The chain, each link verified against git history:
+> **CORRECTED 2026-07-15 (Task 5 review).** This section originally blamed a
+> "faulty transcription" in `913360e`. That was **false**, and it was the third
+> wrong root cause on this branch. `913360e`'s mirror is byte-identical to the
+> upstream spec at the moment it shipped — verified. The corrected account below
+> is proven line by line from both repos' histories.
 
-1. `913360e` (spec 0.4.0 absorption, v1.14.0) shipped
-   `templates/spec-mirrors/11-coding-discipline-0.4.0.md` as a **faulty
-   transcription** of the core spec, dropping four blank lines.
-2. cparx (#52) and fx-signal-agent (#53) ran migration 0014 against that
-   mirror. Their blocks are a **byte-exact copy of the then-canonical
-   mirror** — both repos were conformant on the day they migrated.
-3. `34ee72e` (#44, 2026-05-25, *"prettier-clean the vendored §11 block"*)
-   added the four blank lines. Despite the commit message, its effect was
-   to **restore spec fidelity**: the post-`34ee72e` mirror matches
-   `spec/11-coding-discipline.md` byte for byte.
-4. That fix shipped **no re-sync migration**, so repos that had already
-   consumed the faulty bytes were frozen on them.
+Nobody mis-transcribed anything. The mirror was a correct copy of the spec at
+every instant. The defect is that §11's canonical prose was revised **upstream,
+in place, under an unchanged `spec_version`**, and this repo mirrored that
+revision without shipping a migration to carry already-migrated projects forward.
 
-The current mirror is correct and the two repos are wrong. This is
-canonical-text drift, not damage — nothing will re-corrupt a repaired
-block.
+| Date | Commit | Effect |
+|---|---|---|
+| 2026-05-20 | core `5ea7ea9` | introduces spec §11 **without** the blank lines (v0.4.0) |
+| 2026-05-21 | `913360e` (#42) | mirrors it **faithfully** — byte-identical to core — and ships migration 0014 |
+| 2026-05-21 | `e6e44e7b`, `d38a97c` | cparx and fx-signal-agent run 0014, faithfully receiving §11 **as it then was** |
+| 2026-05-25 | core `10f2c96` (#12) | **adds** the four blank lines — and does **not** bump `spec_version` |
+| 2026-05-25 | `34ee72e` (#44) | mirrors that edit with **no migration** → already-migrated projects stranded |
+| 2026-05-26 | `d2e92db` | callbot runs 0014 against the new mirror → verbatim, unaffected |
+
+So cparx and fx-signal-agent are not corrupted: they hold a faithful copy of §11
+as it read on 2026-05-21, and the spec moved underneath them. Nothing will
+re-corrupt a repaired block.
+
+The original handoff's "prettier" instinct was directionally real after all —
+but inverted. Prettier ran on the **spec, upstream**, *adding* blank lines
+(core `10f2c96`: *"blank lines around §11 anti-pattern lists
+(markdown/prettier-clean)"*). It never stripped anything downstream.
 
 ### Why the spec version is not bumped
 
-`spec/11-coding-discipline.md` carries `spec_version: 0.4.0`. The §11 text
-never changed; only claude-workflow's transcription of it was wrong. The
-mirror's *filename* was always correct. 0014's design note prescribes a new
-versioned mirror (`...-0.5.0.md`) for a genuine spec revision — that
-convention does not apply here, and inventing a `0.4.1` would stamp a
-version that does not exist upstream.
+`spec/11-coding-discipline.md` is `spec_version: 0.4.0` **both before and after**
+`10f2c96` — upstream changed canonical prose without bumping it. The mirror's
+filename was correct throughout, and inventing a `0.4.1` would stamp a version
+that does not exist upstream.
 
-### Why 0029 cannot heal this
+This same fact disabled 0014's escape hatch: its design note prescribes vendoring
+a new `...-0.5.0.md` plus a migration for a spec revision. That convention could
+never fire, because core never shipped 0.5.0 — it revised 0.4.0 in place.
+
+### Why 0029 cannot heal this — and why the fix must be byte-derived
 
 The provenance line reads
-`<!-- spec-source: agenticapps-workflow-core@0.4.0 §11 -->` — the **correct
-version stamp over wrong bytes**. Provenance records the spec version, not
-the block's content, so a version-based idempotency check reports "already
-applied" and short-circuits before Apply. Provenance cannot distinguish good
-0.4.0 bytes from bad 0.4.0 bytes. This is the design flaw 0030 routes
-around.
+`<!-- spec-source: agenticapps-workflow-core@0.4.0 §11 -->`. Because `10f2c96`
+changed §11's text without bumping `spec_version`, that stamp is **still
+genuinely correct** while the bytes no longer match. A version-keyed idempotency
+check is therefore not merely unlucky here — it **cannot distinguish the two
+states even in principle**, so it reports "already applied" and short-circuits
+before Apply. Byte-derived idempotency is the only thing that can see the
+difference. Right fix; the reason is what changed.
 
 ## Design
 

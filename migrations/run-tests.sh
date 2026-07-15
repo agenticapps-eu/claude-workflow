@@ -2491,13 +2491,22 @@ test_claude_md_reproduces_spec_11_verbatim() {
 # spec it transcribes: agenticapps-workflow-core's spec/11-coding-discipline.md.
 # WORKFLOW — policy specific to this repo's mirror-fidelity claim; stays here.
 #
-# Why this exists: commit 913360e shipped the mirror as a faulty transcription
-# of the upstream spec (four blank lines dropped). Nothing detected it —
-# test_claude_md_reproduces_spec_11_verbatim above binds this repo's CLAUDE.md
-# TO THE MIRROR, but the mirror itself was unbound to the spec it claims to
-# transcribe. Two downstream repos consumed the bad bytes via migration 0014
-# before anyone noticed. This guard closes that hole by diffing the mirror
-# against a live extraction of workflow-core's spec on every run.
+# Why this exists: on 2026-05-25 upstream core 10f2c96 added four blank lines to
+# §11's canonical prose WITHOUT bumping spec_version, and this repo mirrored that
+# edit in 34ee72e with no migration to carry already-migrated projects forward.
+# cparx and fx-signal-agent had run 0014 four days earlier and were stranded on
+# the older — and, at the time, entirely correct — bytes. Nobody mis-transcribed
+# anything: 913360e's mirror was byte-identical to core at the moment it shipped.
+#
+# Nothing detected the drift for seven weeks. test_claude_md_reproduces_spec_11_-
+# verbatim above binds this repo's CLAUDE.md TO THE MIRROR, but the mirror itself
+# was unbound to the spec it claims to transcribe. This guard closes that hole by
+# diffing the mirror against a live extraction of core's spec on every run.
+#
+# This is also why ref: main is deliberately unpinned in ci.yml. Had this guard
+# existed on 2026-05-25, core's 10f2c96 would have turned CI red that day — which
+# is exactly the notification that was missing. A pinned SHA would have hidden it
+# and merely moved the hole to "who remembers to bump the pin".
 #
 # CORE_SPEC_DIR defaults to the sibling clone so local runs work unchanged.
 # CORE_SPEC_REQUIRED is a declared flag, not an inferred "am I in CI?" check —

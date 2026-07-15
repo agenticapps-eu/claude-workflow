@@ -420,10 +420,16 @@ on `$SKILL_FILE`, with the Rollback reversing it. `implements_spec` is
 - [ ] **Step 7: Write the rationale section**
 
 Must state, each claim verifiable from git:
-- Root cause: `913360e` shipped a faulty transcription; `34ee72e` (#44) restored
-  spec fidelity without a re-sync migration.
-- Why provenance-based idempotency fails: `@0.4.0` is a **correct stamp over
-  wrong bytes**.
+- Root cause **(corrected — the original text here was wrong)**: upstream core
+  `10f2c96` (2026-05-25) revised §11's canonical prose **without bumping
+  `spec_version`**, and `34ee72e` (#44) mirrored that edit with no re-sync
+  migration, stranding projects that ran 0014 on 05-21. `913360e` was a
+  **faithful** transcription — byte-identical to core at the time. Nobody
+  mis-transcribed anything.
+- Why provenance-based idempotency is **structurally** blind: because upstream
+  never bumped `spec_version`, `@0.4.0` is a **genuinely correct stamp over
+  bytes that no longer match** — a version-keyed check cannot tell the two
+  states apart even in principle.
 - Why no spec-version bump: `spec/11-coding-discipline.md` is `spec_version: 0.4.0`.
 - The region definition from Task 1, verbatim.
 - Known limitations, recorded not fixed: CRLF; a marker at column 0 inside a
@@ -844,9 +850,15 @@ Expected: all exit 0.
 
 - [ ] **Step 3: Write the CHANGELOG 2.8.0 entry**
 
-State the true root cause (faulty transcription in `913360e`, fidelity restored
-by `34ee72e` with no re-sync migration) — **not** "prettier stripped blank
-lines", which is false.
+State the true root cause **(corrected 2026-07-15 — earlier drafts of this plan
+got it wrong twice)**: upstream core `10f2c96` revised §11's canonical prose on
+2026-05-25 **without bumping `spec_version`**, and `34ee72e` mirrored that edit
+with no re-sync migration, stranding the two projects that ran 0014 on 05-21.
+Do **not** write "prettier stripped blank lines" (false) and do **not** write
+"faulty transcription in `913360e`" (also false — `913360e` was byte-identical
+to core at the time). Prettier *was* involved, but upstream and inverted: core's
+commit is titled *"blank lines around §11 anti-pattern lists
+(markdown/prettier-clean)"* and it **added** them.
 
 - [ ] **Step 4: Full suite**
 
@@ -895,8 +907,17 @@ git commit -m "docs: ADR-0042 — byte-derived idempotency for vendored spec mir
 
 Its header currently reads that cparx / fx-signal / callbot blocks *"have since
 lost the blank line ... to prettier normalization"*. Both halves are disproven:
-the loss was a faulty transcription in `913360e`, not prettier, and **callbot's
-block is verbatim** — it is not one of the affected repos.
+
+- **callbot is not affected** — its block is verbatim (it ran 0014 on 05-26,
+  after the mirror was updated).
+- **Nothing was "lost"**, and nothing was normalized downstream. cparx and
+  fx-signal-agent hold a *faithful* copy of §11 as it read on 2026-05-21;
+  upstream core `10f2c96` **added** the blank lines on 05-25 and `34ee72e`
+  mirrored that with no re-sync migration. Prettier was involved only upstream,
+  adding lines to the spec — never stripping them here.
+
+The replacement comment in Step 1 below must reflect this, not the older
+"faulty transcription" account (which was itself wrong).
 
 This is the only edit outside 0030's own files. It is in scope because 0030's
 rationale contradicts it directly, and leaving both would put two mutually
@@ -910,10 +931,13 @@ no behaviour change**, so `run-tests.sh 0029` must stay green.
 # This is the POSITIONAL shape of cparx / fx-signal-agent (block above a late
 # region) — not their byte content: this fixture builds its block from the
 # canonical mirror verbatim, whereas those two repos carry the pre-34ee72e
-# mirror's bytes (four blank lines short) because 913360e transcribed the spec
-# wrongly and 34ee72e fixed it without a re-sync migration. Migration 0030
-# heals that; 0029 must not touch this fixture's file at all (idempotency
-# short-circuits).
+# mirror's bytes (four blank lines short) — not because anyone mis-transcribed
+# the spec, but because upstream core 10f2c96 ADDED those blank lines to §11 on
+# 2026-05-25 without bumping spec_version, and 34ee72e mirrored that edit with
+# no re-sync migration. Both repos ran 0014 on 05-21 and faithfully carry §11 as
+# it read that day. callbot ran 0014 on 05-26 and is NOT affected. Migration
+# 0030 heals the two; 0029 must not touch this fixture's file at all
+# (idempotency short-circuits).
 ```
 
 - [ ] **Step 2: Confirm 0029 stays green**
