@@ -87,6 +87,39 @@ for downstream projects to re-run.
   having a project-instruction file at all.
 
 
+## [2.8.0] — 2026-07-15 — Re-sync stale spec §11 mirror bytes
+
+### Fixed
+- **Migration 0030 — two already-migrated projects carried a stale §11
+  block, and no version bump caught it.** Nobody mis-transcribed anything:
+  core introduced spec §11 without the blank lines around its anti-pattern
+  lists (`5ea7ea9`, 2026-05-20); this repo mirrored it faithfully
+  (`913360e`/#42, byte-identical to core at that moment) and shipped it as
+  migration 0014; `cparx` and `fx-signal-agent` ran 0014 that same day and
+  received it as it then read. Five days later core revised §11's prose *in
+  place* — adding the four blank lines (`10f2c96`/#12, titled "blank lines
+  around §11 anti-pattern lists (markdown/prettier-clean)") — **without
+  bumping `spec_version`** (0.4.0 before and after). This repo mirrored that
+  edit (`34ee72e`/#44, four insertions) but shipped no re-sync migration, so
+  the two already-migrated projects were stranded on the old bytes. `callbot`
+  ran 0014 the next day, against the already-updated mirror, and is
+  unaffected — only `cparx` and `fx-signal-agent` need 0030.
+
+  Provenance `@0.4.0` is a genuinely correct stamp on both sides of this
+  change, because upstream never moved `spec_version` — a check keyed on the
+  provenance version cannot tell the two states apart even in principle. 0030
+  derives idempotency from the block's actual bytes instead: it extracts the
+  managed region from `CLAUDE.md` and compares it to the vendored mirror,
+  byte for byte, replacing only on mismatch. `implements_spec` stays `0.9.0`;
+  no `0.4.1` is invented, since core never shipped one. See the "Root cause"
+  section of `migrations/0030-resync-spec-11-mirror-bytes.md` for the full
+  commit-by-commit account.
+
+  A new CI guard, `test_mirror_matches_core_spec_11`, binds this repo's
+  mirror to workflow-core's spec §11 at `ref: main` — unpinned — so the next
+  such in-place upstream revision turns this repo's suite red the same day
+  instead of drifting silently for weeks.
+
 ## [2.7.0] — 2026-07-15 — Region-aware §11 placement
 
 ### Fixed
