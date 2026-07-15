@@ -1,12 +1,17 @@
 #!/bin/sh
 # Verify rollback_step1 is an honest reporting no-op after a heal: it returns
 # 0, it does NOT restore the pre-apply (stale) bytes, it leaves the file
-# byte-identical to its post-apply (healed) state, and — the sentinel check
-# below — it does not terminate the calling shell. `rollback_step1` runs its
-# eval'd block in a subshell (see common-verify.sh's header note), which is
-# exactly what makes it safe to call here without killing this script; the
-# echo immediately after the call, plus this script actually reaching its
-# own final "OK" line, is the proof that survived.
+# byte-identical to its post-apply (healed) state, and it does not terminate
+# the calling shell.
+#
+# On what actually proves that last clause: NOT the `$(...)`-captured call
+# below, and NOT this script reaching its final "OK" line. Command
+# substitution is itself a subshell, so it swallows an `exit` regardless of
+# whether the harness is correct — and a premature `exit 0` is
+# indistinguishable from normal completion by exit status alone, so an
+# exit-code comparison cannot see it either. Both of those "proofs" were
+# tried and shown to be unfailable. The clause is bound instead by the bare
+# call further down, guarded by an EXIT trap. See the comment there.
 set -eu
 . "$REPO_ROOT/migrations/test-fixtures/0030/common-verify.sh"
 
@@ -18,7 +23,9 @@ rollback_out="$(rollback_step1 2>&1)"
 rc=$?
 set -e
 
-echo "SENTINEL: caller survived the call to rollback_step1 (exit $rc)"
+# (This echo is NOT a proof — the $(...) capture above would have swallowed an
+# exit anyway. It is a trace line. The real bind is the bare call below.)
+echo "TRACE: rollback_step1 returned via command substitution (exit $rc)"
 
 [ "$rc" -eq 0 ] || {
   echo "FAIL: rollback_step1 returned non-zero ($rc): $rollback_out"

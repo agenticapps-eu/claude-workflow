@@ -4,11 +4,19 @@
 #
 # NOTE: this fixture is the convergence proof, and is deliberately NOT the
 # fixture that catches a region mis-pinned to the terminator line (T-1)
-# instead of the last non-blank line (E). A T-1-pinned region converges too
-# — it passes this fixture — while silently deleting the separator blank
-# line before the next `## ` heading. That is caught only by fixture 01's
-# whole-file diff assertion, proven by running fixture 01 against a
-# deliberately T-1-mutated copy of the migration (see task-3-report.md).
+# instead of the last non-blank line (E). Convergence is the one property a
+# T-1 region DOES satisfy: it converges, and its extraction of an already
+# in-sync file does equal the mirror — so this fixture passes under T-1 while
+# the separator blank line before the next `## ` heading is silently deleted.
+#
+# What catches T-1 is any assertion about bytes OUTSIDE the block region:
+# fixture 01 primarily (the deleted separator is a fifth change on top of the
+# four blank-line insertions), and fixture 02 secondarily — not via its
+# idempotency check, which under T-1 correctly reports "in sync", but because
+# 02 does a FORCED apply that still consumes the separator. Both were proven
+# by running them against a deliberately T-1-mutated copy of the migration
+# (see task-3-report.md). Do not write "only fixture 01" here: that claim has
+# been made and refuted four times on this branch.
 set -eu
 . "$REPO_ROOT/migrations/test-fixtures/0030/common-verify.sh"
 
