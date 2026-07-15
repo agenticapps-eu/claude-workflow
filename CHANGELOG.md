@@ -26,6 +26,17 @@ anyone already at 2.6.0.
   `.prettierignore` (permanent skip) and `callbot` already carries the exact
   entry from a hand-fix, so for them 0028 is a version stamp and nothing more.
 
+- **The setup flow kept the old predicate (spec §08).** §08 requires setup to
+  reach an end state equivalent to a full `0000`→latest replay. The widened
+  predicate landed in migration 0028 but not in `setup/SKILL.md`, so on a
+  project with a subsuming `.claude` (the `fbc-platform` shape) a **fresh
+  install appended while an update skipped** — different end states from the
+  same starting point. `check-snapshot-parity.sh` cannot catch this:
+  `.prettierignore` is a project file, not snapshot payload, so the named §08
+  guard has nothing to say about it. `run-tests.sh` now asserts the predicate
+  directly — it collects every copy across the migration and `setup/SKILL.md`
+  and requires exactly one distinct value.
+
 ### Changed
 - **0028's fixtures now run the migration's own shell.** `verify.sh` in fixtures
   01-03 inlined a *copy* of Step 1's Apply block, so they tested the copy rather
@@ -34,6 +45,12 @@ anyone already at 2.6.0.
   `common-verify.sh` extracts Step 1's Apply block from the document and all
   four fixtures run that. Verified by mutation: reverting the document's
   predicate alone now fails fixture 04.
+
+  The extractor is hardened against grabbing the wrong block: it accepts any
+  fence language and cannot latch past the Apply block onto the Rollback (which
+  would have turned `apply_step1` into a destructive `sed … /d`), and a sentinel
+  asserts the extracted block actually appends to `.prettierignore`. Emptiness
+  is not correctness.
 
 ## [2.6.0] — 2026-07-15 — Register .claude/hooks in .prettierignore
 
