@@ -1895,30 +1895,61 @@ test_migration_0029() {
   done
 
   # ── setup flow ≡ migration replay (spec/08 Conformance) ────────────────────
-  # The anchor rule is written twice: migration 0029's Step 1 apply, and the
-  # setup flow's step e2. The fixtures only exercise the migration, so the setup
-  # copy can drift unnoticed — which is exactly what happened to 0028's
-  # predicate (#87). Collect every copy across both files and require exactly
-  # one distinct value. migration_file legitimately repeats the literal more
-  # than once (idempotency check + apply + heal branches), so an aggregate
-  # count alone can't tell "setup dropped its copy" from "migration has a lot
-  # of copies" — check setup's own occurrence count directly instead of
-  # inferring it from the total.
+  # The anchor rule is written twice: migration 0029's Step 1 apply (3 copies:
+  # the strip pass, the insert pass, and Rollback), and the setup flow's step
+  # e2 (1 copy). The fixtures only exercise the migration, so the setup copy
+  # can drift unnoticed — which is exactly what happened to 0028's predicate
+  # (#87). Collect every copy across both files and require exactly one
+  # distinct value, AND require each file to contribute at least one copy —
+  # an aggregate-only check can't tell "setup dropped its copy" apart from
+  # "migration dropped its copies" (both just make the total go down), so
+  # each side needs its own floor and its own failure message.
+  #
+  # Capture by SHAPE — any two-branch `(/^.../ || /^.../)` awk alternation —
+  # rather than one hardcoded literal. A fixed-literal search can only prove
+  # "this exact byte string appears somewhere"; it can never observe two
+  # copies that actually differ (every match IS the literal, by construction,
+  # so `distinct` was permanently 1 whenever count was >=1 — dead code), and
+  # it false-fails on a *legitimate* co-evolution where both files move
+  # together to a newly agreed anchor text that no longer matches the old
+  # hardcoded literal. Shape capture fixes both: a genuine disagreement
+  # (e.g. one file's branches reordered relative to the other) now shows up
+  # as >1 distinct value, and a synchronized re-anchor still agrees.
+  #
+  # Hazard shared with predicate-parity above: a prose sentence that happens
+  # to quote the anchor condition verbatim (e.g. in backticks) would also
+  # match and silently count toward parity. No such prose copy exists today.
+  #
+  # $anchor_shape encodes the STRUCTURE, not the current marker text — a
+  # synchronized change to the marker names (e.g. a new region-start comment)
+  # needs no update here. Only a structural change (a third alternative, a
+  # different grouping) requires updating $anchor_shape itself, in lockstep
+  # with both files.
   local setup_file="$REPO_ROOT/setup/SKILL.md"
-  local anchor_literal='(/^## / || /^<!-- gitnexus:start -->$/)'
-  local anchors distinct count setup_count
-  anchors=$(grep -hoF "$anchor_literal" "$migration_file" "$setup_file")
+  local anchor_shape='\(/\^[^/]*/ \|\| /\^[^/]*/\)'
+  local anchors mig_matches setup_matches distinct count mig_count setup_count
+  anchors=$(grep -hoE "$anchor_shape" "$migration_file" "$setup_file")
+  mig_matches=$(grep -hoE "$anchor_shape" "$migration_file")
+  setup_matches=$(grep -hoE "$anchor_shape" "$setup_file")
   count=$(printf '%s\n' "$anchors" | grep -c .)
   distinct=$(printf '%s\n' "$anchors" | sort -u | grep -c .)
-  setup_count=$(grep -cF "$anchor_literal" "$setup_file")
+  mig_count=$(printf '%s\n' "$mig_matches" | grep -c .)
+  setup_count=$(printf '%s\n' "$setup_matches" | grep -c .)
 
-  if [ "$setup_count" -lt 1 ]; then
+  if [ "$mig_count" -lt 1 ]; then
+    echo "  ${RED}✗${RESET} anchor-parity — migration 0029's Step 1 apply is missing the anchor rule"
+    echo "      (migration has 0 copies, setup/SKILL.md step e2 has $setup_count)"
+    FAIL=$((FAIL+1))
+  elif [ "$setup_count" -lt 1 ]; then
     echo "  ${RED}✗${RESET} anchor-parity — setup/SKILL.md step e2 is missing the anchor rule"
-    echo "      (migration 0029 has $count total copies, setup/SKILL.md has 0)"
+    echo "      (migration 0029 has $mig_count copies, setup/SKILL.md has 0)"
     FAIL=$((FAIL+1))
   elif [ "$distinct" -ne 1 ]; then
-    echo "  ${RED}✗${RESET} anchor-parity — the $count copies disagree (spec/08 setup ≡ replay)"
-    printf '%s\n' "$anchors" | sort -u | sed 's/^/        /'
+    echo "  ${RED}✗${RESET} anchor-parity — the anchor rule disagrees between migration and setup (spec/08 setup ≡ replay)"
+    echo "      migration 0029's Step 1 apply ($mig_count copies):"
+    printf '%s\n' "$mig_matches" | sort -u | sed 's/^/        /'
+    echo "      setup/SKILL.md step e2 ($setup_count copies):"
+    printf '%s\n' "$setup_matches" | sort -u | sed 's/^/        /'
     FAIL=$((FAIL+1))
   else
     echo "  ${GREEN}✓${RESET} anchor-parity — all $count copies agree (migration + setup)"

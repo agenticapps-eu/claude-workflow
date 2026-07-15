@@ -235,8 +235,9 @@ e2. **§11 canonical block (spec §11 — CLAUDE.md)** — inject the canonical
    fi
    ```
 
-   The `END` branch is the fallback for a `CLAUDE.md` with no `## ` heading at
-   all — the block is appended rather than dropped.
+   The `END` branch is the fallback for a `CLAUDE.md` where neither anchor
+   matched by EOF — no `## ` heading and no anchored `<!-- gitnexus:start -->`
+   line — the block is appended rather than dropped.
 
    The anchor alternation (`/^## /` **or** `<!-- gitnexus:start -->`, whichever
    comes first) is byte-identical to migration 0029's, and
@@ -245,10 +246,20 @@ e2. **§11 canonical block (spec §11 — CLAUDE.md)** — inject the canonical
    *inside* a GitNexus-managed region on a region-led `CLAUDE.md`, where the
    next `gitnexus analyze` would silently destroy the block.
 
-   Setup needs only two of migration 0029's three branches: setup refuses to
-   re-run on an installed project (it routes to `/update`), so a CLAUDE.md
-   already carrying OUR provenance anchor is unreachable here. 0029's
-   move/replace branch is therefore dead code on this path.
+   0029's Step 1 Apply has three branches: no `CLAUDE.md` → informational
+   skip; a hand-pasted `## Coding Discipline` heading with no provenance
+   comment → abort; else → strip the block from wherever it currently sits,
+   then re-insert it at the anchor (0029 notes the strip is a no-op when the
+   block is absent, so "inject" and "move" are the same code path — there is
+   no separate move/replace branch to skip). Setup implements the abort
+   branch verbatim above, and only the *insert* half of the else branch — it
+   has no strip pass at all. It omits the no-`CLAUDE.md` branch because step
+   `e`, immediately above, already guarantees `CLAUDE.md` exists by the time
+   e2 runs. And it never needs the strip pass because, on a first run,
+   nothing can require stripping: a pre-existing heading with no provenance
+   is already caught by the abort above, and a block already carrying OUR
+   provenance anchor can't exist yet, since setup refuses to re-run on an
+   installed project (it routes to `/update` instead).
 
    - In `--dry-run`: show the diff instead of writing.
 
