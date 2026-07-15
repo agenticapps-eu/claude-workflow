@@ -4,6 +4,19 @@ All notable changes to the AgenticApps Claude Workflow scaffolder are
 documented here. The format follows [Keep a Changelog](https://keepachangelog.com/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.6.0] — 2026-07-15 — Register .claude/hooks in .prettierignore
+
+### Fixed
+- **Migration 0028 — vendored hook fails host `prettier --check`.** The GitNexus
+  reindex hook (`.claude/hooks/gitnexus-reindex.cjs`, migration 0026) is a
+  CommonJS Node hook. Repos whose formatter runs over `.claude/` (a
+  `prettier --check .` in CI) fail on its formatting, and Prettier has no
+  whole-file ignore comment. Migration 0028 (and the setup flow) append
+  `.claude/hooks/` to an **existing** `.prettierignore` — never creating one.
+  The ESLint counterpart (`@typescript-eslint/no-require-imports`) was already
+  handled at the source by the hook's file-level `eslint-disable` header
+  (2.5.x). Surfaced during the 2.5.0 downstream rollout (callbot).
+
 ## [2.5.0] — 2026-07-14 — Honest spec 0.9.0 conformance claim
 
 The conformance **claim** was incoherent, not the implementation.

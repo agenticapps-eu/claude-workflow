@@ -268,6 +268,21 @@ h. **`.gitignore` (commit phase artifacts — ADR-0037)** — the snapshot's
    - Phase artifacts (`CONTEXT.md`, `PLAN.md`, `VERIFICATION.md`, `REVIEW.md`,
      `HANDOFF-LOG.md`) MUST remain committed — never re-add `.planning/phases/`.
 
+i. **`.prettierignore` (exclude vendored hooks — migration 0028)** — the
+   GitNexus reindex hook (`.claude/hooks/gitnexus-reindex.cjs`) is a CommonJS
+   Node hook; a project that runs `prettier --check` over `.claude/` would fail
+   on it. **Append-if-exists only** — never create the file:
+   ```bash
+   if [ -f .prettierignore ] && ! grep -qE '^\.claude/hooks/?$' .prettierignore; then
+     printf '\n# AgenticApps workflow (0028): vendored .claude hooks are .cjs/.sh Node\n# tooling, not app code; exclude from prettier --check.\n.claude/hooks/\n' >> .prettierignore
+   fi
+   ```
+   A project without a `.prettierignore` never configured Prettier ignores;
+   creating one would imply tooling it does not use (the same conservative
+   stance §15 takes with an absent vault). ESLint needs no equivalent — the
+   shipped hook carries a file-level `eslint-disable` header.
+   - In `--dry-run`: show the diff instead of writing.
+
 ## Step 5: Post-checks and commit
 
 Post-checks (fail the install, do not commit, if any fail):

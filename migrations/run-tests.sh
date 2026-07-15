@@ -1719,6 +1719,79 @@ test_migration_0027() {
 }
 
 
+# test_migration_0028 — Register .claude/hooks in .prettierignore (2.5.0 -> 2.6.0)
+# WORKFLOW — verify body specific to migration 0028; stays in claude-workflow.
+# Coexists with test_migration_0026 / test_migration_0027.
+test_migration_0028() {
+  echo ""
+  echo "${YELLOW}━━━ Migration 0028 — Register .claude/hooks in .prettierignore ━━━${RESET}"
+
+  local fixtures="$REPO_ROOT/migrations/test-fixtures/0028"
+  if [ ! -d "$fixtures" ]; then
+    echo "  ${RED}SKIP${RESET}: fixtures directory missing"
+    SKIP=$((SKIP+1))
+    return
+  fi
+
+  local migration_file="$REPO_ROOT/migrations/0028-register-prettierignore.md"
+  if [ ! -f "$migration_file" ]; then
+    echo "  ${RED}✗${RESET} migration file missing: $migration_file — RED state"
+    FAIL=$((FAIL+1))
+    return
+  fi
+
+  run_0028_fixture() {
+    local fixname="$1"
+    local fixdir="$fixtures/$fixname"
+    local tmp; tmp="$(mktemp -d -t "migration-0028-${fixname}-XXXXXX")"
+    local fake_home="$tmp/home"
+    mkdir -p "$fake_home"
+
+    if [ -x "$fixdir/setup.sh" ]; then
+      (
+        cd "$tmp" && \
+        HOME="$fake_home" REPO_ROOT="$REPO_ROOT" FIXTURES_ROOT="$fixtures" \
+          "$fixdir/setup.sh" >/dev/null 2>&1
+      ) || {
+        echo "  ${RED}✗${RESET} $fixname — setup.sh failed"
+        FAIL=$((FAIL+1))
+        rm -rf "$tmp"
+        return
+      }
+    fi
+
+    local verify_out verify_exit
+    verify_out=$(
+      cd "$tmp" && \
+      HOME="$fake_home" REPO_ROOT="$REPO_ROOT" \
+        bash "$fixdir/verify.sh" 2>&1
+    )
+    verify_exit=$?
+
+    local expected_exit
+    expected_exit=$(tr -d '\n' < "$fixdir/expected-exit")
+    if [ "$verify_exit" != "$expected_exit" ]; then
+      echo "  ${RED}✗${RESET} $fixname — verify exit $verify_exit, expected $expected_exit"
+      echo "      verify output:"
+      printf '%s\n' "$verify_out" | sed 's/^/        /' | head -10
+      FAIL=$((FAIL+1))
+      rm -rf "$tmp"
+      return
+    fi
+
+    echo "  ${GREEN}✓${RESET} $fixname"
+    PASS=$((PASS+1))
+    rm -rf "$tmp"
+  }
+
+  for fix in "$fixtures"/[0-9]*-*/; do
+    local name
+    name="$(basename "${fix%/}")"
+    run_0028_fixture "$name"
+  done
+}
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Phase Sentinel hook (GH #58 / D-07) — deterministic Stop gate exit-code cases
 # WORKFLOW — inline test (no fixture dir): runs the template hook under a temp
@@ -2152,6 +2225,10 @@ fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "0027" ]; then
   test_migration_0027
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "0028" ]; then
+  test_migration_0028
 fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "phase-sentinel" ]; then
