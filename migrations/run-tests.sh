@@ -1789,6 +1789,39 @@ test_migration_0028() {
     name="$(basename "${fix%/}")"
     run_0028_fixture "$name"
   done
+
+  # ── setup flow ≡ migration replay (spec/08 Conformance) ────────────────────
+  # .prettierignore is a project file, not snapshot payload, so
+  # check-snapshot-parity.sh does not compare these two. Nothing else would
+  # notice them diverging: the fixtures exercise the migration, and the setup
+  # flow has no fixture at all. A predicate fix landing in one and not the
+  # other silently breaks §08's end-state equivalence — which is exactly what
+  # happened when 0028's predicate was widened for subsuming `.claude` entries.
+  # The predicate is written THREE times: the migration's Step 1 idempotency
+  # check, the migration's Step 1 apply condition, and the setup flow's copy.
+  # The fixtures only ever execute the apply block, so the other two can drift
+  # unnoticed — mutation-proven: reverting the idempotency copy alone leaves all
+  # four fixtures green. Rather than compare a chosen pair, collect every copy
+  # across both files and require exactly one distinct value.
+  local setup_file="$REPO_ROOT/setup/SKILL.md"
+  local preds distinct count
+  preds=$(grep -ho "grep -qE '[^']*' \.prettierignore" "$migration_file" "$setup_file")
+  count=$(printf '%s\n' "$preds" | grep -c .)
+  distinct=$(printf '%s\n' "$preds" | sort -u | grep -c .)
+
+  if [ "$count" -lt 3 ]; then
+    echo "  ${RED}✗${RESET} predicate-parity — expected 3 copies of the predicate, found $count"
+    echo "      (migration idempotency + migration apply + setup flow)"
+    printf '%s\n' "$preds" | sed 's/^/        /'
+    FAIL=$((FAIL+1))
+  elif [ "$distinct" -ne 1 ]; then
+    echo "  ${RED}✗${RESET} predicate-parity — the $count copies disagree (spec/08 setup ≡ replay)"
+    printf '%s\n' "$preds" | sort -u | sed 's/^/        /'
+    FAIL=$((FAIL+1))
+  else
+    echo "  ${GREEN}✓${RESET} predicate-parity — all $count copies agree (migration + setup)"
+    PASS=$((PASS+1))
+  fi
 }
 
 

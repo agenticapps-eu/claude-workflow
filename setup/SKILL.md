@@ -273,7 +273,7 @@ i. **`.prettierignore` (exclude vendored hooks — migration 0028)** — the
    Node hook; a project that runs `prettier --check` over `.claude/` would fail
    on it. **Append-if-exists only** — never create the file:
    ```bash
-   if [ -f .prettierignore ] && ! grep -qE '^\.claude/hooks/?$' .prettierignore; then
+   if [ -f .prettierignore ] && ! grep -qE '^\.claude(/\*\*)?/?$|^\.claude/hooks(/\*\*)?/?$' .prettierignore; then
      printf '\n# AgenticApps workflow (0028): vendored .claude hooks are .cjs/.sh Node\n# tooling, not app code; exclude from prettier --check.\n.claude/hooks/\n' >> .prettierignore
    fi
    ```
@@ -281,6 +281,15 @@ i. **`.prettierignore` (exclude vendored hooks — migration 0028)** — the
    creating one would imply tooling it does not use (the same conservative
    stance §15 takes with an absent vault). ESLint needs no equivalent — the
    shipped hook carries a file-level `eslint-disable` header.
+
+   The predicate MUST stay byte-identical to migration 0028's (its Step 1
+   idempotency check and apply condition). §08 requires the setup flow to reach
+   an end state equivalent to a full `0000`→latest replay, and `.prettierignore`
+   is a *project* file rather than snapshot payload, so
+   `check-snapshot-parity.sh` does not guard this pair — the equivalence rests
+   on the two being kept in step by hand. A project that already ignores the
+   whole `.claude` directory has the hooks dir covered by subsumption; see 0028
+   for the full set of forms treated as covered.
    - In `--dry-run`: show the diff instead of writing.
 
 ## Step 5: Post-checks and commit

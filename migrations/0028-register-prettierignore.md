@@ -79,9 +79,14 @@ subsuming forms as well as the exact ones:
 | `.claude` | yes — subsumes everything below it |
 | `.claude/` | yes |
 | `.claude/**` | yes |
+| `.claude/**/` | yes |
 | `.claude/hooks` | yes — the exact entry |
 | `.claude/hooks/` | yes |
 | `.claude/hooks/**` | yes |
+| `.claude/hooks/**/` | yes |
+
+Anchored at both ends, so near-misses are correctly *not* covered and still get
+the entry: `.claudex`, `src/.claude`, `!.claude/hooks`.
 
 This is not hypothetical: `factiv/fbc-platform` ships a bare `.claude`, and it
 is the only downstream repo where Step 1 would do anything at all.
