@@ -27,11 +27,29 @@ projects forward. Every step below is verifiable from the two repos' histories:
 | 2026-05-21 | `913360e` (#42) | mirrors it **faithfully** — byte-identical to core at that moment — and ships migration 0014 |
 | 2026-05-21 | `e6e44e7b`, `d38a97c` | `cparx` and `fx-signal-agent` run 0014, faithfully receiving §11 **as it then was** |
 | 2026-05-25 | core `10f2c96` (#12) | **adds** a blank line after each "Anti-patterns this rule prevents:" — and does **not** bump `spec_version` |
-| 2026-05-25 | `34ee72e` (#44) | mirrors that edit (4 insertions, 1 file) with **no migration** → already-migrated projects stranded |
-| 2026-05-26 | `d2e92db` | `callbot` runs 0014 against the new mirror → verbatim, unaffected |
+| 2026-05-25 20:31 | callbot `4fa4dac` | runs 0014 against the **still-stale** mirror — receives the same old bytes as the other two |
+| 2026-05-25 20:35 | callbot `1149187` | callbot's **own** `prettier --write` pass ("prettier-format injected §11 block to satisfy format:check") reformats the block, independently landing on the bytes core would ship |
+| 2026-05-25 20:51 | `34ee72e` (#44) | mirrors core's edit (4 insertions, 1 file) with **no migration** → already-migrated projects stranded |
+| 2026-05-26 12:48 | callbot `d2e92db` | PR #31 squash-merges `4fa4dac`+`1149187` to main |
 
 So `cparx` and `fx-signal-agent` are not corrupted. They hold a faithful copy of
 spec §11 as it read on 2026-05-21, and the spec moved underneath them.
+
+**Why `callbot` needs no repair, precisely.** Not because it ran 0014 after the
+mirror was fixed — it ran 0014 *twenty minutes before* (`4fa4dac`, 20:31 vs
+`34ee72e`, 20:51) and received the identical stale block. It self-healed four
+minutes later when its own `format:check` ran prettier over `CLAUDE.md`
+(`1149187`, 20:35). Reading `d2e92db` alone suggests otherwise, because that
+squash commit concatenates both originals under a single 05-26 date.
+
+That is also the whole mechanism in one line: **prettier's "blank lines around
+lists" rule is what added the four lines at every site** — core's spec
+(`10f2c96`, titled "markdown/prettier-clean"), callbot's `CLAUDE.md`
+(`1149187`), and this repo's mirror (`34ee72e`, "prettier-clean the vendored §11
+block"). `cparx` and `fx-signal-agent` are stale for exactly one reason: nothing
+runs prettier over *their* `CLAUDE.md`. Prettier never stripped anything from
+anyone; it added, everywhere it ran, and the two repos it did not reach are the
+two that need 0030.
 
 **Why provenance-based idempotency is structurally blind here.** The managed
 block's provenance records the spec version it was copied from — `@0.4.0`. Core

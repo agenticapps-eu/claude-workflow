@@ -101,9 +101,19 @@ for downstream projects to re-run.
   around §11 anti-pattern lists (markdown/prettier-clean)") — **without
   bumping `spec_version`** (0.4.0 before and after). This repo mirrored that
   edit (`34ee72e`/#44, four insertions) but shipped no re-sync migration, so
-  the two already-migrated projects were stranded on the old bytes. `callbot`
-  ran 0014 the next day, against the already-updated mirror, and is
-  unaffected — only `cparx` and `fx-signal-agent` need 0030.
+  the two already-migrated projects were stranded on the old bytes.
+
+  `callbot` also ran 0014 against the stale mirror (`4fa4dac`, 05-25 20:31 —
+  twenty minutes *before* `34ee72e` at 20:51) and received the identical stale
+  block. It self-healed four minutes later, when its own `format:check` ran
+  prettier over `CLAUDE.md` (`1149187`, 20:35), independently landing on the
+  bytes core would ship. Only `cparx` and `fx-signal-agent` need 0030.
+
+  That is the mechanism in one line: prettier's "blank lines around lists"
+  rule added the four lines at every site it ran — core's spec, callbot's
+  `CLAUDE.md`, and this repo's mirror. Prettier never stripped anything from
+  anyone. `cparx` and `fx-signal-agent` are stale for exactly one reason:
+  nothing runs prettier over *their* `CLAUDE.md`.
 
   Provenance `@0.4.0` is a genuinely correct stamp on both sides of this
   change, because upstream never moved `spec_version` — a check keyed on the

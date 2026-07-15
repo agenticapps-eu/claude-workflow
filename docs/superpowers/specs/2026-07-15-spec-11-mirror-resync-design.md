@@ -40,17 +40,29 @@ revision without shipping a migration to carry already-migrated projects forward
 | 2026-05-21 | `913360e` (#42) | mirrors it **faithfully** — byte-identical to core — and ships migration 0014 |
 | 2026-05-21 | `e6e44e7b`, `d38a97c` | cparx and fx-signal-agent run 0014, faithfully receiving §11 **as it then was** |
 | 2026-05-25 | core `10f2c96` (#12) | **adds** the four blank lines — and does **not** bump `spec_version` |
-| 2026-05-25 | `34ee72e` (#44) | mirrors that edit with **no migration** → already-migrated projects stranded |
-| 2026-05-26 | `d2e92db` | callbot runs 0014 against the new mirror → verbatim, unaffected |
+| 2026-05-25 20:31 | callbot `4fa4dac` | runs 0014 against the **still-stale** mirror — gets the same old bytes |
+| 2026-05-25 20:35 | callbot `1149187` | callbot's **own** prettier `format:check` pass reformats the block, landing on the bytes core would ship |
+| 2026-05-25 20:51 | `34ee72e` (#44) | mirrors core's edit with **no migration** → already-migrated projects stranded |
+| 2026-05-26 | callbot `d2e92db` | PR #31 squash-merges the two callbot commits above |
 
 So cparx and fx-signal-agent are not corrupted: they hold a faithful copy of §11
 as it read on 2026-05-21, and the spec moved underneath them. Nothing will
 re-corrupt a repaired block.
 
-The original handoff's "prettier" instinct was directionally real after all —
-but inverted. Prettier ran on the **spec, upstream**, *adding* blank lines
-(core `10f2c96`: *"blank lines around §11 anti-pattern lists
-(markdown/prettier-clean)"*). It never stripped anything downstream.
+**Corrected again (Task 6 review):** callbot is unaffected **not** because it
+ran 0014 after the fix. It ran 0014 twenty minutes *before* the fix and got the
+identical stale block; it self-healed when its own prettier pass ran four
+minutes later. `d2e92db` is a squash commit whose single 05-26 date hides both
+originals — which is what made the wrong story look verifiable.
+
+**The mechanism, finally complete.** Prettier's "blank lines around lists" rule
+added the four lines at **every site it ran**: core's spec (`10f2c96`,
+"markdown/prettier-clean"), callbot's `CLAUDE.md` (`1149187`), and this repo's
+mirror (`34ee72e`, "prettier-clean the vendored §11 block"). It never stripped
+anything from anyone. cparx and fx-signal-agent are stale for exactly one
+reason: **nothing runs prettier over their `CLAUDE.md`** — cparx has no prettier
+config at all. The handoff's original "prettier" instinct named the right actor
+and the wrong direction, which is why it kept half-fitting the evidence.
 
 ### Why the spec version is not bumped
 
@@ -126,7 +138,24 @@ that fixture is mandatory.
 
 ### Rollback
 
-Restore from a `.0030.bak` backup, matching 0014/0029's idiom.
+> **WITHDRAWN AND REPLACED (user decision, Task 2 review).** This section
+> originally specified "restore from a `.0030.bak` backup, matching 0014/0029's
+> idiom". That was wrong twice over: 0029 uses **no `.bak` at all**, and Apply
+> deleted its own backup, so Rollback would have been inert on the normal path
+> while fixture 08 passed vacuously.
+
+Apply uses 0029's actual idiom: write `CLAUDE.md.0030.tmp`, require it non-empty
+before it may replace `CLAUDE.md`, atomic `mv`, clean up the tmp on every path
+including a failed `mv`.
+
+Rollback is an honest **reporting no-op**. Step 1 has no forward inverse: it
+replaces non-canonical bytes with the canonical ones, the pre-migration bytes are
+not recoverable from the post-migration file, and restoring them would
+re-introduce the defect 0030 exists to fix. This is safe because Step 1 is
+byte-idempotent — if Step 2 fails, the project holds a canonical block and a
+2.7.0 stamp, 0030 stays pending, and a re-run is a Step 1 no-op plus a Step 2
+retry. `migrations/README.md` sanctions exactly this ("partial-state recovery may
+be more useful than full revert"; rollback may be "manual").
 
 ### Version bump
 
@@ -211,7 +240,10 @@ suite could otherwise ship a bug it does not bind.
 4. **EOF-terminated block** — no `## ` and no region follows
 5. **missing provenance → refuse**, file untouched
 6. **two provenance lines → refuse**, file untouched
-7. **rollback restores** the pre-Apply bytes
+7. **rollback is a no-op** — returns 0, leaves the file byte-identical to its
+   post-apply (healed) state, and does **not** terminate the calling fixture.
+   (Originally "rollback restores the pre-Apply bytes"; withdrawn with the
+   `.bak` idiom — see the Rollback section above.)
 8. **mutation test** — perturb the mirror; `test_mirror_matches_core_spec_11`
    must go red. A guard without a mutation proof is decoration: 0029's
    anchor-parity guard could never fire and was caught only because a
