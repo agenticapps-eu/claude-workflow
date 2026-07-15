@@ -2202,6 +2202,77 @@ test_skill_md_version_matches_latest_migration_to_version() {
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# F5 — spec §11 self-conformance test
+# Asserts THIS repo's own CLAUDE.md reproduces the §11 canonical block verbatim.
+# WORKFLOW — policy specific to this repo's conformance claim; stays here.
+#
+# Why this exists: §11 binds its block to the host's "primary project-instruction
+# file", and this host injects it into every project it scaffolds (migration 0014)
+# while — until 2026-07-15 — not reproducing it in its own CLAUDE.md. Nothing
+# noticed for the life of the repo: core's drift-report grepped the whole clone
+# and kept finding the block in templates/, setup/ and 0014 — payload shipped INTO
+# other projects, which instructs nobody here. The source of canonical prose was
+# the one host not carrying it.
+#
+# The block is compared byte-for-byte against templates/spec-mirrors/, which is
+# itself byte-identical to the spec's canonical block. That makes this a real
+# guard rather than a spot-check: reword one bullet and it fails.
+# ─────────────────────────────────────────────────────────────────────────────
+
+test_claude_md_reproduces_spec_11_verbatim() {
+  local claude_md="$REPO_ROOT/CLAUDE.md"
+  local mirror="$REPO_ROOT/templates/spec-mirrors/11-coding-discipline-0.4.0.md"
+  local provenance='<!-- spec-source: agenticapps-workflow-core@0.4.0 §11 -->'
+
+  if [ ! -f "$claude_md" ] || [ ! -f "$mirror" ]; then
+    echo "  ${RED}FAIL${RESET}: spec-11-self-conformance — CLAUDE.md or the spec mirror is missing"
+    FAIL=$((FAIL+1))
+    return
+  fi
+
+  if ! grep -qF "$provenance" "$claude_md"; then
+    echo "  ${RED}FAIL${RESET}: spec-11-self-conformance — CLAUDE.md carries no §11 provenance anchor"
+    echo "      expected: $provenance"
+    echo "      §11 MUSTs the block in this host's primary project-instruction file."
+    FAIL=$((FAIL+1))
+    return
+  fi
+
+  # Extract from the provenance line to the end of the block. The block contains
+  # exactly one `## ` line (its own heading) and no HTML comments, so the block
+  # ends at whichever comes first: the next `## ` after its own heading, the next
+  # HTML-comment marker, or EOF.
+  #
+  # Migration 0014 terminates on `## ` alone, which it can afford because it
+  # inserts immediately before the first `## ` heading — guaranteeing one follows.
+  # That invariant does not hold here: this file's §11 block sits ABOVE the
+  # `<!-- gitnexus:start -->` region (see CLAUDE.md for why), so what follows the
+  # block is a marker and an H1, and the next `## ` is several paragraphs down
+  # inside the GitNexus section. Terminating on `## ` alone swallowed that
+  # preamble — the same over-capture 0014's fixture 07-byte-identity-replace was
+  # written to catch.
+  local extracted
+  extracted=$(awk '
+    /<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->/ && !seen { seen=1; next }
+    seen && !own && /^## Coding Discipline \(NON-NEGOTIABLE\)$/ { own=1; print; next }
+    seen && own && /^## / { exit }
+    seen && /^<!--/ { exit }
+    seen { print }
+  ' "$claude_md" | sed -e :a -e '/^[[:space:]]*$/{$d;N;ba' -e '}')
+
+  if [ "$extracted" = "$(cat "$mirror")" ]; then
+    echo "  ${GREEN}PASS${RESET}: spec-11-self-conformance — CLAUDE.md reproduces §11 verbatim"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}FAIL${RESET}: spec-11-self-conformance — CLAUDE.md's §11 block is not verbatim"
+    echo "      diff (expected = templates/spec-mirrors/, actual = CLAUDE.md):"
+    diff "$mirror" <(printf '%s\n' "$extracted") 2>&1 | head -10 | sed 's/^/        /'
+    FAIL=$((FAIL+1))
+  fi
+}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Dispatcher
 # SHARED — generic filter-driven test dispatcher; the if/FILTER pattern is
 #   repo-agnostic framework machinery; consumer repos replace the per-migration
@@ -2282,6 +2353,10 @@ fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "preflight" ]; then
   test_preflight_verify_paths
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "spec-11-self-conformance" ]; then
+  test_claude_md_reproduces_spec_11_verbatim
 fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "test-skill-md-version-matches-latest-migration-to-version" ]; then

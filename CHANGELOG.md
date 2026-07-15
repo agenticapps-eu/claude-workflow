@@ -6,10 +6,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-**No version bump.** Migration 0028 has not been applied in any downstream repo
-(all six sit at 2.5.0), so correcting it in place carries no reapplication risk
-and its `to_version` is unchanged. No new migration; nothing to re-run for
-anyone already at 2.6.0.
+
+**No version bump.** Neither change touches a migration's `to_version`: 0028 is
+corrected in place (it is applied in zero downstream repos), and the §11 work is
+this repo's own conformance rather than a change to what it scaffolds. Nothing
+for downstream projects to re-run.
 
 ### Fixed
 - **Migration 0028 appended a redundant entry under a subsuming `.claude`.**
@@ -36,6 +37,22 @@ anyone already at 2.6.0.
   guard has nothing to say about it. `run-tests.sh` now asserts the predicate
   directly — it collects every copy across the migration and `setup/SKILL.md`
   and requires exactly one distinct value.
+- **This host did not reproduce the spec §11 canonical block (conformance gap).**
+  §11 MUSTs the Coding Discipline block in the host's *primary
+  project-instruction file*. `codex-workflow` and `opencode-workflow` both carry
+  it in their `AGENTS.md`. This host — the source of canonical prose, claiming
+  `full` — carried it nowhere, and declared no §11 delta. It ships the block to
+  every project it scaffolds (migration 0014) and never reproduced it for itself.
+
+  Nothing noticed for the life of the repo: core's `drift-report.sh` grepped the
+  whole clone and kept finding the block in `templates/`, `setup/` and
+  `migrations/0014` — payload shipped *into* other projects, which instructs
+  nobody here. Surfaced by agenticapps-workflow-core#22, which scopes the check
+  to declared instruction files.
+
+  `CLAUDE.md` now carries the block verbatim, above the `<!-- gitnexus:start -->`
+  region. Guarded by `test_claude_md_reproduces_spec_11_verbatim`, which diffs it
+  against `templates/spec-mirrors/` (itself byte-identical to the spec).
 
 ### Changed
 - **0028's fixtures now run the migration's own shell.** `verify.sh` in fixtures
@@ -51,6 +68,31 @@ anyone already at 2.6.0.
   would have turned `apply_step1` into a destructive `sed … /d`), and a sentinel
   asserts the extracted block actually appends to `.prettierignore`. Emptiness
   is not correctness.
+- **`CLAUDE.md` is now tracked** (removed from `.gitignore`; `AGENTS.md` stays
+  ignored). It was ignored as a "fully regenerable" GitNexus artifact, which left
+  this host with **no tracked project-instruction file at all** — so §11's block
+  had nowhere to live that would survive a clone. It is now part-authored and
+  must be tracked.
+
+  Placement is load-bearing: `gitnexus analyze` rewrites only between its own
+  markers, so the block sits above them (verified — an `analyze` updated the
+  stat line inside the region and left the block untouched). This is also the
+  earliest point in the file, per §11's placement SHOULD. Note migration 0014
+  injects §11 *before the first `## ` heading*, which for a GitNexus-managed
+  CLAUDE.md would land **inside** the regenerated region — see Known issues.
+
+  Cost: an `analyze` that changes the graph rewrites the stat line inside the
+  GitNexus region, producing a diff in a tracked file. That is the price of
+  having a project-instruction file at all.
+
+### Known issues
+- **Migration 0014 can inject §11 inside a GitNexus-managed region.** 0014
+  inserts before the first `## ` heading; in a project whose `CLAUDE.md` leads
+  with the `<!-- gitnexus:start -->` block, that heading is *inside* the region,
+  so a later `gitnexus analyze` would drop the block. Not fixed here (0014 is
+  immutable and this repo is not self-scaffolded, so it is unaffected); recorded
+  for a follow-up migration.
+
 
 ## [2.6.0] — 2026-07-15 — Register .claude/hooks in .prettierignore
 
