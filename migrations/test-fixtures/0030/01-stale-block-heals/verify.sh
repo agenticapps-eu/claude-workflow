@@ -5,11 +5,14 @@
 #
 # This is the single most important assertion in this fixture set. A region
 # mis-pinned to the terminator line (T-1) instead of the last non-blank line
-# (E) CONVERGES — it passes fixture 02 (in-sync-noop) and fixture 05
-# (converges) — while silently deleting the separator blank line that must
-# sit between the healed block and the next `## ` heading. Fixture 05 alone
-# does NOT catch that (proven by execution, not assumed); this whole-file
-# diff, plus the explicit separator check below, is what does.
+# (E) CONVERGES — fixture 05 (converges) passes under T-1, because T-1's
+# extraction of an already-in-sync file does equal the mirror. Convergence
+# is the one property T-1 satisfies, so fixture 05 cannot catch it. What
+# catches it is an assertion about bytes OUTSIDE the block region — T-1
+# silently deletes the separator blank line that must sit between the healed
+# block and the next `## ` heading. That is this fixture's whole-file diff
+# plus the explicit separator check below (fixture 02 also fails under T-1,
+# via its forced apply_step1, but that is secondary to this one).
 set -eu
 . "$REPO_ROOT/migrations/test-fixtures/0030/common-verify.sh"
 

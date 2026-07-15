@@ -6,10 +6,22 @@ set -eu
 
 before="$(cat CLAUDE.md)"
 
-if preflight 2>/dev/null; then
+out="$(preflight 2>&1)" && {
   echo "FAIL: pre-flight accepted two provenance lines and two §11 headings"
   exit 1
-fi
+}
+
+# Assert refusal came from rule 3 (exactly-one provenance/heading), not from
+# some other failure mode. Without this, deleting rule 3 outright still
+# leaves this fixture green — but for the wrong reason: PROV_LINE is
+# multi-line ("5\n89"), so rule 4's `$((PROV_LINE + 1))` dies with a shell
+# arithmetic syntax error (rc=127). Nothing refused; it crashed. Matching
+# only on exit status can't tell the two apart.
+printf '%s' "$out" | grep -q 'expected exactly one' || {
+  echo "FAIL: pre-flight refused, but not via rule 3 — got:"
+  printf '%s\n' "$out" | sed 's/^/    /'
+  exit 1
+}
 
 [ "$before" = "$(cat CLAUDE.md)" ] || {
   echo "FAIL: refusing pre-flight still mutated CLAUDE.md"
