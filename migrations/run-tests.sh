@@ -1901,11 +1901,17 @@ test_migration_0029() {
   # flow's step e2, which carries 1. The fixtures only exercise the
   # migration, so the setup copy can drift unnoticed — which is exactly what
   # happened to 0028's predicate (#87). Collect every copy across both files
-  # and require exactly one distinct value, AND require each file to
-  # contribute at least one copy —
-  # an aggregate-only check can't tell "setup dropped its copy" apart from
-  # "migration dropped its copies" (both just make the total go down), so
-  # each side needs its own floor and its own failure message.
+  # and require exactly one distinct value, AND require each file to carry
+  # its documented count exactly (3 for the migration, 1 for setup) — a
+  # `-lt 1` floor would pass a migration whose copies were partially
+  # rewritten to some other shape (2 of 3 dropped, 1 left), since the
+  # remaining copy alone still satisfies "at least one" and the surviving
+  # value trivially agrees with itself. An exact count turns that partial
+  # drift into a direct FAIL instead of leaving it to fixtures 01/02/08 to
+  # catch indirectly. Each side still needs its own count and its own
+  # failure message — an aggregate-only check can't tell "setup dropped its
+  # copy" apart from "migration dropped its copies" (both just make the
+  # total go down).
   #
   # Capture by SHAPE — any two-branch `(/^.../ || /^.../)` awk alternation —
   # rather than one hardcoded literal. A fixed-literal search can only prove
@@ -1938,13 +1944,14 @@ test_migration_0029() {
   mig_count=$(printf '%s\n' "$mig_matches" | grep -c .)
   setup_count=$(printf '%s\n' "$setup_matches" | grep -c .)
 
-  if [ "$mig_count" -lt 1 ]; then
-    echo "  ${RED}✗${RESET} anchor-parity — migration 0029 carries no copy of the anchor rule anywhere in the file"
-    echo "      (migration has 0 copies, setup/SKILL.md step e2 has $setup_count)"
+  if [ "$mig_count" -ne 3 ]; then
+    echo "  ${RED}✗${RESET} anchor-parity — migration 0029 carries $mig_count copies of the anchor rule, expected 3"
+    echo "      (Step 1 Apply's strip pass, Step 1 Apply's insert pass, Step 1 Rollback;"
+    echo "      setup/SKILL.md step e2 has $setup_count)"
     FAIL=$((FAIL+1))
-  elif [ "$setup_count" -lt 1 ]; then
-    echo "  ${RED}✗${RESET} anchor-parity — setup/SKILL.md step e2 is missing the anchor rule"
-    echo "      (migration 0029 has $mig_count copies, setup/SKILL.md has 0)"
+  elif [ "$setup_count" -ne 1 ]; then
+    echo "  ${RED}✗${RESET} anchor-parity — setup/SKILL.md step e2 carries $setup_count copies of the anchor rule, expected 1"
+    echo "      (migration 0029 has $mig_count copies)"
     FAIL=$((FAIL+1))
   elif [ "$distinct" -ne 1 ]; then
     echo "  ${RED}✗${RESET} anchor-parity — the anchor rule disagrees between migration and setup (spec/08 setup ≡ replay)"

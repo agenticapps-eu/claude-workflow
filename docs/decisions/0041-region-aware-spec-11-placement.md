@@ -103,8 +103,18 @@ are coverage gaps the suite closed, not padding.
 ## Consequences
 
 - Validated against all six real repo shapes: the rule re-derives the block's
-  current position exactly in the five healthy repos (zero churn — a true
-  no-op), and anchors above the region on the dashboard's gitnexus-led shape.
+  current *position* exactly in the five healthy repos, and on the dashboard
+  selects L5, above the region at L82, restoring a block the repo never had.
+  The dashboard exercises the missing-block defect, not the region-led
+  placement defect — its first `## ` already sits above its region, so
+  0014's naive anchor would have placed the block identically; the
+  region-led anchor has no live instance and is bound by fixtures 01/02. The
+  actual zero-churn guarantee for the five healthy repos is the idempotency
+  check short-circuiting Apply entirely (all five already read
+  "already applied"), not byte-identical round-tripping through strip +
+  re-insert — three of the five have lost the blank line after each
+  `Anti-patterns this rule prevents:` heading to prettier normalization, so a
+  strip+re-insert round-trip on them is not byte-identical.
 - Five repos (agenticapps-roadmap, fbc-platform, cparx, fx-signal-agent,
   callbot) take a version stamp only. `agenticapps-dashboard` gains its
   missing block and becomes conformant with the spec 0.9.0 it already claims;

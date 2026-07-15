@@ -205,7 +205,7 @@ e2. **§11 canonical block (spec §11 — CLAUDE.md)** — inject the canonical
    ```bash
    SPEC11="$SNAP/spec-mirrors/11-coding-discipline-0.4.0.md"
    PROV='<!-- spec-source: agenticapps-workflow-core@0.4.0 §11 -->'
-   PROV_RE='<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->'
+   PROV_RE='^<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->$'
 
    test -f "$SPEC11" || { echo "ABORT: snapshot missing $SPEC11"; exit 3; }
 
@@ -241,10 +241,12 @@ e2. **§11 canonical block (spec §11 — CLAUDE.md)** — inject the canonical
 
    The anchor alternation (`/^## /` **or** `<!-- gitnexus:start -->`, whichever
    comes first) is byte-identical to migration 0029's, and
-   `migrations/run-tests.sh`'s `anchor-parity` guard fails the build if the two
-   ever disagree. Anchoring on the first `## ` alone would select a heading
-   *inside* a GitNexus-managed region on a region-led `CLAUDE.md`, where the
-   next `gitnexus analyze` would silently destroy the block.
+   `migrations/run-tests.sh`'s `anchor-parity` guard fails the build if this
+   copy diverges from the migration's, or if either file's copy count drifts
+   from the documented 1 (setup) / 3 (migration). Anchoring on the first
+   `## ` alone would select a heading *inside* a GitNexus-managed region on a
+   region-led `CLAUDE.md`, where the next `gitnexus analyze` would silently
+   destroy the block.
 
    0029's Step 1 Apply has three branches: no `CLAUDE.md` → informational
    skip; a hand-pasted `## Coding Discipline` heading with no provenance
@@ -339,7 +341,7 @@ Post-checks (fail the install, do not commit, if any fail):
 - `.gitignore` exists and does **not** ignore the `.planning/phases/` tree
   (ADR-0037): `! grep -qE '^[[:space:]]*/?\.planning/phases/?[[:space:]]*$' .gitignore`
 - `CLAUDE.md` carries the §11 canonical block under provenance:
-  `grep -q '<!-- spec-source: agenticapps-workflow-core@0.4.0 §11 -->' CLAUDE.md`
+  `grep -q '^<!-- spec-source: agenticapps-workflow-core@0.4.0 §11 -->$' CLAUDE.md`
   and `grep -q '^## Coding Discipline (NON-NEGOTIABLE)$' CLAUDE.md`
 
 ```bash

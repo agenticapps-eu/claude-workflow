@@ -40,6 +40,15 @@ this migration document itself) — e.g. this repo's own CLAUDE.md, which
 mentions the `gitnexus:start` marker in a guidance comment at line 2, 94
 lines above its actual, anchored occurrence at line 96.
 
+The same discipline applies to the provenance marker that locates the
+managed block itself. The strip pass (Apply) and Rollback both enter the
+managed region on `/^<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+
+§11 -->$/`; that trigger is anchored for the identical reason — a guidance
+comment can quote the provenance marker in prose above the real block (e.g.
+"the block is anchored behind `<!-- spec-source: ... §11 -->` below"), and an
+unanchored trigger would enter the managed region at that prose line instead
+of the real one, deleting every line up to the next terminator.
+
 This is a one-alternation delta to 0014's awk, but it does **not** preserve
 0014's structural invariant — it **replaces** it. 0014 could assume the block
 is always followed by a `## ` line or EOF, because its anchor could only ever
@@ -56,12 +65,22 @@ The rule anchors on the region **only when the region comes first**. Anchoring
 before `gitnexus:start` whenever a region exists would be wrong: in a project
 whose region starts late (cparx's begins at L306) the block would land hundreds
 of lines down, violating §12's placement advisory. Validated against six real
-repos — the rule re-derives the block's current position exactly in all five
-healthy ones (zero churn) and anchors above the region on a gitnexus-led file.
+repos — the rule re-derives the block's current *position* exactly in all
+five healthy ones and anchors above the region on a gitnexus-led file. The
+position claim holds, but a strip+re-insert round-trip is not byte-identical
+on three of the five (cparx, fx-signal-agent, callbot): their on-disk blocks
+have lost the blank line after each `Anti-patterns this rule prevents:`
+heading to prettier normalization, which the canonical mirror re-adds. The
+actual zero-churn guarantee for all five is the idempotency check
+short-circuiting Apply entirely — each already reads "already applied," so
+Apply never runs against them.
 
 **Fresh installs** get the same rule from the setup flow's step e2, which
-carries a byte-identical anchor condition. `migrations/run-tests.sh`'s
-`anchor-parity` guard fails the build if the two copies ever disagree
+carries a byte-identical anchor condition. This migration carries three
+copies of the rule (Step 1 Apply's strip pass, Step 1 Apply's insert pass,
+and Step 1 Rollback) and setup carries one; `migrations/run-tests.sh`'s
+`anchor-parity` guard fails the build if setup's copy diverges from the
+migration's shared value, or if either file's copy count drifts from 3/1
 (spec §08: the setup flow's end state must equal a full replay).
 
 ## Pre-flight (hard aborts on failure)
@@ -120,19 +139,23 @@ informational message and Step 2 still runs (0014's idiom).
 
 ```bash
 [ -f CLAUDE.md ] \
-  && grep -q '<!-- spec-source: agenticapps-workflow-core@0\.4\.0 §11 -->' CLAUDE.md \
+  && grep -q '^<!-- spec-source: agenticapps-workflow-core@0\.4\.0 §11 -->$' CLAUDE.md \
   && ! awk '
        /^<!-- gitnexus:start -->$/ { r = 1; next }
        /^<!-- gitnexus:end -->$/   { r = 0; next }
-       r && /<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->/ { f = 1 }
+       r && /^<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->$/ { f = 1 }
        END { exit(f ? 0 : 1) }
      ' CLAUDE.md
 ```
 
-Both marker regexes are anchored (`^...$`) — a bare substring match also fires
-on prose that merely *mentions* the marker (a scaffolded project's own
-CLAUDE.md guidance comment does exactly that — not this migration document),
-which would misjudge a healthy file as "inside a region."
+All three marker regexes are anchored (`^...$`) — a bare substring match also
+fires on prose that merely *mentions* a marker, and that includes the
+provenance comment itself: a scaffolded project's own CLAUDE.md guidance
+comment can quote `<!-- spec-source: agenticapps-workflow-core@0.4.0 §11 -->`
+in prose above the real block (not this migration document), and an
+unanchored `PROV_RE` would enter `in_block`/`r` state at that prose line
+instead of the real one. Anchoring requires the *entire* line to be exactly
+the marker, which a prose sentence embedding it never is.
 
 Returns 0 (already applied — nothing to do) only when the current-version
 provenance is present **and** the block is not inside a managed region. That
@@ -149,7 +172,7 @@ non-empty, and is not truncated (its final section is present).
 
 ```bash
 PROV='<!-- spec-source: agenticapps-workflow-core@0.4.0 §11 -->'
-PROV_RE='<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->'
+PROV_RE='^<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->$'
 SPEC_BLOCK="$HOME/.claude/skills/agenticapps-workflow/templates/spec-mirrors/11-coding-discipline-0.4.0.md"
 
 if [ ! -f CLAUDE.md ]; then
@@ -177,12 +200,18 @@ else
   # The strip is 0014's rollback logic, widened by one alternation: the
   # terminator recognizes the SAME anchor as the insert pass below (`## ` OR
   # an anchored `<!-- gitnexus:start -->`) — see "The anchor rule" above for
-  # why these two must move together. The block contains exactly one `## `
-  # line (its own heading), so we swallow that explicitly first; naively
-  # stopping at the first `## ` would leave the block body behind (0014
-  # fixture 07-byte-identity-replace catches that shape). `swallowed_own_h2`
-  # is reset at the terminator so a SECOND provenance line re-enters cleanly
-  # instead of inheriting a stale swallow state and leaking its own heading.
+  # why these two must move together. The `in_block` trigger itself is also
+  # anchored (`^...$`): a prose line that merely MENTIONS the provenance
+  # marker (e.g. a guard comment reading "the block is anchored behind
+  # <!-- spec-source: ... §11 --> below") would otherwise substring-match
+  # and enter `in_block` at that prose line instead of the real one,
+  # deleting everything up to the next terminator. The block contains
+  # exactly one `## ` line (its own heading), so we swallow that explicitly
+  # first; naively stopping at the first `## ` would leave the block body
+  # behind (0014 fixture 07-byte-identity-replace catches that shape).
+  # `swallowed_own_h2` is reset at the terminator so a SECOND provenance
+  # line re-enters cleanly instead of inheriting a stale swallow state and
+  # leaking its own heading.
   #
   # The strip's output is required non-empty before anything downstream is
   # allowed to consume it. `CLAUDE.md` must never be replaced by a result
@@ -191,7 +220,7 @@ else
   # partial temp file rather than leaking it into the project.
   if awk '
     BEGIN { in_block = 0; swallowed_own_h2 = 0 }
-    /<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->/ {
+    /^<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->$/ {
       in_block = 1
       next
     }
@@ -291,7 +320,7 @@ fi
 if [ -f CLAUDE.md ]; then
   if awk '
     BEGIN { in_block = 0; swallowed_own_h2 = 0 }
-    /<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->/ {
+    /^<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->$/ {
       in_block = 1
       next
     }
@@ -373,3 +402,20 @@ only.
 own §11 injectors and inherit this defect wherever their `AGENTS.md` is
 region-led. Both are currently latent (§11 sits above the region in each).
 Propagation follows the ADR-0037 pattern and is tracked separately.
+
+`cparx`, `callbot`, and `fx-signal-agent` carry §11 blocks that are no longer
+byte-identical to the canonical mirror (prettier has stripped the blank line
+after each `Anti-patterns this rule prevents:` heading) while stamping
+`implements_spec: 0.9.0`. This migration does not heal that drift — the
+idempotency check's provenance-presence test short-circuits before any
+byte-comparison runs — and it is out of scope here. Tracked as a follow-up.
+
+**Known limitations (no live instance, not fixed by design):** the marker
+regexes are line-oriented (`^...$` on `$0`), so (1) a CRLF `CLAUDE.md` fails
+every anchor — `/^<!-- gitnexus:start -->$/` does not match a line ending in
+`\r`, and the unanchored `## Always Do` fallback then matches instead,
+reproducing the original region-led defect; and (2) a `<!-- gitnexus:start -->`
+or provenance marker written literally inside a fenced code block is treated
+as a real marker, since awk has no fence awareness. Neither shape exists in
+the fleet today; 0014 shares both flaws. Not worth widening the diff for a
+shape with no live instance.

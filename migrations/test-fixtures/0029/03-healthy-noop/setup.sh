@@ -1,6 +1,11 @@
 #!/bin/sh
 # Fixture 03 — BEFORE: §11 correctly anchored above a late region (state A).
-# This is the shape of cparx / fx-signal / callbot. 0029 must not touch it.
+# This is the POSITIONAL shape of cparx / fx-signal / callbot (block above a
+# late region) — not their byte content: this fixture builds its block from
+# the canonical mirror verbatim, and those three repos' on-disk blocks have
+# since lost the blank line after each "Anti-patterns this rule prevents:"
+# heading to prettier normalization, so they no longer match it byte-for-byte.
+# 0029 must not touch this fixture's file at all (idempotency short-circuits).
 set -eu
 . "$FIXTURES_ROOT/common-setup.sh"
 

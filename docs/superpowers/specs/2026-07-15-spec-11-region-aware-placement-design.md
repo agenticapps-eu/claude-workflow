@@ -117,10 +117,16 @@ pass, and in Rollback. The anchor rule and the terminator rule are one decision,
 not two, and they must move together.
 
 **Validated against all six real repo shapes.** With any existing block stripped,
-the rule re-derives the block's current position exactly in all five healthy
-repos (roadmap L6, fbc-platform L2, cparx L8, fx-signal L3, callbot L8) — a true
-no-op, zero churn. For the dashboard it selects L5, above the region at L82. On
-the gitnexus-led shape it anchors above the region rather than inside it. On a
+the rule re-derives the block's current *position* exactly in all five healthy
+repos (roadmap L6, fbc-platform L2, cparx L8, fx-signal L3, callbot L8). The
+position claim holds, but a strip+re-insert round-trip is not byte-identical on
+cparx, fx-signal, and callbot — their on-disk blocks have lost the blank line
+after each `Anti-patterns this rule prevents:` heading to prettier
+normalization, which the canonical mirror re-adds. The actual zero-churn
+guarantee for these five repos is the idempotency check short-circuiting Apply
+entirely — all five already read "already applied," so Apply never runs. For
+the dashboard it selects L5, above the region at L82. On the gitnexus-led
+shape it anchors above the region rather than inside it. On a
 file with no `## ` and no region it falls to EOF. On a region-led file with no
 `## ` outside the region it anchors above the region.
 
