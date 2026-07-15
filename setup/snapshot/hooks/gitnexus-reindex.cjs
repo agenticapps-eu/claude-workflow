@@ -1,4 +1,9 @@
 #!/usr/bin/env node
+/* eslint-disable */
+// ^ This is a vendored CommonJS (.cjs) Node hook, not application code. It uses
+//   require() by necessity and is not part of any project's TypeScript surface.
+//   Consuming repos that lint .claude/ would otherwise fail it on rules like
+//   @typescript-eslint/no-require-imports; a hook is tooling, so linting is off.
 /**
  * gitnexus reindex-on-change — background, non-blocking per-project index refresh.
  *
