@@ -383,8 +383,22 @@ sed -i.0030.bak 's/^version: 2\.8\.0$/version: 2.7.0/' \
 ## Downstream
 
 `cparx` and `fx-signal-agent` are the two repos this repairs — both ran
-migration 0014 on 2026-05-21, four days before `34ee72e` fixed the vendored
-mirror, and both stamp `implements_spec: 0.9.0` while carrying a block
-missing the four blank lines the fix restored. `callbot` ran 0014 after the
-fix and needs no repair; its block is already byte-identical to the
-canonical mirror, so Step 1's idempotency check short-circuits on it.
+migration 0014 on 2026-05-21, four days before `34ee72e` updated the vendored
+mirror, and both stamp `implements_spec: 0.9.0` while carrying a block missing
+the four blank lines that edit added. Both are at workflow `version: 2.5.0`
+today, so applying 0030 means chaining 0028 → 0029 → 0030; 0029 is expected to
+be a positional no-op on each (their §11 already sits above any region) while
+bumping the stamp.
+
+`callbot` needs no repair, but **not** because it ran 0014 after the mirror was
+updated — see the root-cause table above: it ran 0014 twenty minutes *before*
+and self-healed via its own prettier pass. Its block is byte-identical to the
+canonical mirror today, so Step 1's idempotency check short-circuits and 0030
+writes nothing. Its provenance line is separated from the §11 heading by a
+blank line (prettier's HTML-comment rule, from that same pass), which pre-flight
+rule 4 accepts by design — an earlier revision of rule 4 required strict
+adjacency and hard-aborted on `callbot`, which is the shape fixture
+`11-prettier-spaced-provenance-heals` now binds.
+
+`fbc-platform` and `agenticapps-roadmap` also carry verbatim blocks and are
+likewise no-ops.
