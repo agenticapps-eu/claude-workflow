@@ -31,10 +31,24 @@ also refuses the `--migration 0014` force path (it demands `1.12.0`/`1.14.0`).
 forward rather than editing it.
 
 **The anchor rule.** Insert immediately before the first line that is **either**
-a `## ` heading **or** a `<!-- gitnexus:start -->` marker — whichever comes
-first; EOF if neither. It is a one-alternation delta to 0014's awk, so 0014's
-structural invariant survives: the block is still always followed by a `## `
-line or EOF, which is what bounds the managed section for replace and rollback.
+a `## ` heading **or** a line that is *exactly* `<!-- gitnexus:start -->` —
+whichever comes first; EOF if neither. Both marker regexes MUST be anchored
+(`/^<!-- gitnexus:start -->$/`, `/^<!-- gitnexus:end -->$/`) — an unanchored
+substring match also fires on prose that merely *mentions* the marker, which is
+exactly what this file's own guidance comment does two lines above this
+paragraph's rendered position in a scaffolded project.
+
+This is a one-alternation delta to 0014's awk, but it does **not** preserve
+0014's structural invariant — it **replaces** it. 0014 could assume the block
+is always followed by a `## ` line or EOF, because its anchor could only ever
+be a `## ` heading. Once the anchor can also be a `<!-- gitnexus:start -->`
+marker, a healed region-led file has the block followed by that marker, not a
+`## ` line. The invariant that actually holds after this migration is: the
+block is always followed by a `## ` line, an anchored `<!-- gitnexus:start -->`
+marker, or EOF. Every terminator that bounds the managed section — the strip
+pass in Step 1 Apply and the Rollback awk below — carries the same alternation
+as the anchor, because the anchor rule and the terminator rule are one
+decision, not two, and must move together.
 
 The rule anchors on the region **only when the region comes first**. Anchoring
 before `gitnexus:start` whenever a region exists would be wrong: in a project
@@ -84,12 +98,16 @@ informational message and Step 2 still runs (0014's idiom).
 [ -f CLAUDE.md ] \
   && grep -q '<!-- spec-source: agenticapps-workflow-core@0\.4\.0 §11 -->' CLAUDE.md \
   && ! awk '
-       /<!-- gitnexus:start -->/ { r = 1; next }
-       /<!-- gitnexus:end -->/   { r = 0; next }
+       /^<!-- gitnexus:start -->$/ { r = 1; next }
+       /^<!-- gitnexus:end -->$/   { r = 0; next }
        r && /<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->/ { f = 1 }
        END { exit(f ? 0 : 1) }
      ' CLAUDE.md
 ```
+
+Both marker regexes are anchored (`^...$`) — a bare substring match also fires
+on prose that merely *mentions* the marker (this file's own guidance comment
+does exactly that), which would misjudge a healthy file as "inside a region."
 
 Returns 0 (already applied — nothing to do) only when the current-version
 provenance is present **and** the block is not inside a managed region. That
@@ -130,11 +148,22 @@ else
   # re-insert it at the region-aware anchor. Strip is a no-op when the block is
   # absent (state C), so both "inject" and "move" are the same code path.
   #
-  # The strip is 0014's rollback logic verbatim: the block contains exactly one
-  # `## ` line (its own heading), so we swallow that explicitly and terminate on
-  # the NEXT `## ` — naively stopping at the first `## ` would leave the block
-  # body behind (0014 fixture 07-byte-identity-replace catches that shape).
-  awk '
+  # The strip is 0014's rollback logic, widened by one alternation: the
+  # terminator recognizes the SAME anchor as the insert pass below (`## ` OR
+  # an anchored `<!-- gitnexus:start -->`) — see "The anchor rule" above for
+  # why these two must move together. The block contains exactly one `## `
+  # line (its own heading), so we swallow that explicitly first; naively
+  # stopping at the first `## ` would leave the block body behind (0014
+  # fixture 07-byte-identity-replace catches that shape). `swallowed_own_h2`
+  # is reset at the terminator so a SECOND provenance line re-enters cleanly
+  # instead of inheriting a stale swallow state and leaking its own heading.
+  #
+  # The strip's output is required non-empty before anything downstream is
+  # allowed to consume it. `CLAUDE.md` must never be replaced by a result
+  # derived from a truncated or failed strip (awk error, disk full) — on
+  # failure this aborts and leaves `CLAUDE.md` untouched, cleaning up any
+  # partial temp file rather than leaking it into the project.
+  if awk '
     BEGIN { in_block = 0; swallowed_own_h2 = 0 }
     /<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->/ {
       in_block = 1
@@ -144,53 +173,75 @@ else
       swallowed_own_h2 = 1
       next
     }
-    in_block && swallowed_own_h2 && /^## / {
+    in_block && swallowed_own_h2 && (/^## / || /^<!-- gitnexus:start -->$/) {
       in_block = 0
+      swallowed_own_h2 = 0
       print
       next
     }
     in_block { next }
     !in_block { print }
-  ' CLAUDE.md > CLAUDE.md.0029.strip
-
-  # Re-insert at the region-aware anchor. The alternation IS the fix: 0014 had
-  # only /^## /, which selects a heading inside the region on a gitnexus-led
-  # file. `whichever comes first` is what keeps the block near the top when the
-  # region starts late.
-  awk -v prov="$PROV" -v block_file="$SPEC_BLOCK" '
-    BEGIN { inserted = 0 }
-    !inserted && (/^## / || /<!-- gitnexus:start -->/) {
-      print prov
-      while ((getline line < block_file) > 0) print line
-      close(block_file)
-      print ""
-      inserted = 1
-      print
-      next
-    }
-    { print }
-    END {
-      if (!inserted) {
-        print ""
+  ' CLAUDE.md > CLAUDE.md.0029.strip && [ -s CLAUDE.md.0029.strip ]; then
+    # Re-insert at the region-aware anchor. The alternation IS the fix: 0014
+    # had only /^## /, which selects a heading inside the region on a
+    # gitnexus-led file. `whichever comes first` is what keeps the block near
+    # the top when the region starts late. The gitnexus:start regex is
+    # anchored (`^...$`) so a prose mention of the marker (this file's own
+    # guidance comment does exactly that) can never be mistaken for it.
+    if awk -v prov="$PROV" -v block_file="$SPEC_BLOCK" '
+      BEGIN { inserted = 0 }
+      !inserted && (/^## / || /^<!-- gitnexus:start -->$/) {
         print prov
         while ((getline line < block_file) > 0) print line
         close(block_file)
+        print ""
+        inserted = 1
+        print
+        next
       }
-    }
-  ' CLAUDE.md.0029.strip > CLAUDE.md.0029.tmp \
-    && mv CLAUDE.md.0029.tmp CLAUDE.md \
-    && rm -f CLAUDE.md.0029.strip
-  echo "INFO: migration 0029 Step 1 — §11 block anchored above any managed region."
+      { print }
+      END {
+        if (!inserted) {
+          print ""
+          print prov
+          while ((getline line < block_file) > 0) print line
+          close(block_file)
+        }
+      }
+    ' CLAUDE.md.0029.strip > CLAUDE.md.0029.tmp && [ -s CLAUDE.md.0029.tmp ]; then
+      mv CLAUDE.md.0029.tmp CLAUDE.md
+      rm -f CLAUDE.md.0029.strip CLAUDE.md.0029.tmp
+      echo "INFO: migration 0029 Step 1 — §11 block anchored above any managed region."
+    else
+      rm -f CLAUDE.md.0029.strip CLAUDE.md.0029.tmp
+      echo "ABORT: migration 0029 Step 1 — the insert pass produced no output;"
+      echo "       refusing to replace CLAUDE.md. Left untouched."
+      exit 3
+    fi
+  else
+    rm -f CLAUDE.md.0029.strip
+    echo "ABORT: migration 0029 Step 1 — the strip pass produced no output;"
+    echo "       refusing to replace CLAUDE.md with a possibly-truncated result."
+    exit 3
+  fi
 fi
 ```
 
 **Rollback:**
 
 ```bash
-# Remove the managed block. Same shape as 0014's rollback: swallow the block's
-# own H2 explicitly, then terminate on the NEXT `## ` (or EOF).
+# Remove the managed block. Same shape as 0014's rollback, widened by the same
+# alternation as Step 1's strip: the terminator must recognize a `## ` line OR
+# an anchored `<!-- gitnexus:start -->` marker (or EOF) — a healed region-led
+# file's block is followed by the marker, not a `## ` line, so a terminator
+# that only recognized `## ` swallows past the marker and into the region's
+# own content (see "The anchor rule" above). `swallowed_own_h2` resets at the
+# terminator so a second provenance line re-enters cleanly. The strip's output
+# is required non-empty before it is allowed to replace CLAUDE.md, and any
+# temp file is cleaned up on every path — a failed/truncated rollback must not
+# destroy the file, and must not leak a stray `.0029.tmp` into the project.
 if [ -f CLAUDE.md ]; then
-  awk '
+  if awk '
     BEGIN { in_block = 0; swallowed_own_h2 = 0 }
     /<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->/ {
       in_block = 1
@@ -200,14 +251,23 @@ if [ -f CLAUDE.md ]; then
       swallowed_own_h2 = 1
       next
     }
-    in_block && swallowed_own_h2 && /^## / {
+    in_block && swallowed_own_h2 && (/^## / || /^<!-- gitnexus:start -->$/) {
       in_block = 0
+      swallowed_own_h2 = 0
       print
       next
     }
     in_block { next }
     !in_block { print }
-  ' CLAUDE.md > CLAUDE.md.0029.tmp && mv CLAUDE.md.0029.tmp CLAUDE.md
+  ' CLAUDE.md > CLAUDE.md.0029.tmp && [ -s CLAUDE.md.0029.tmp ]; then
+    mv CLAUDE.md.0029.tmp CLAUDE.md
+    rm -f CLAUDE.md.0029.tmp
+  else
+    rm -f CLAUDE.md.0029.tmp
+    echo "ABORT: migration 0029 Step 1 rollback — produced no output;"
+    echo "       refusing to replace CLAUDE.md. Left untouched."
+    exit 3
+  fi
 fi
 ```
 
