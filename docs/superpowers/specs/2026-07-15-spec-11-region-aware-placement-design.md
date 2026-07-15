@@ -217,11 +217,25 @@ extractor locks onto the wrong fence.
 | `06-no-heading-eof` | no `## `, no region → EOF append |
 | `07-prose-mention-not-a-region` | a *prose mention* of `<!-- gitnexus:start -->` (this repo's own `CLAUDE.md:2` shape) is NOT treated as a region — idempotency holds, nothing is injected into the comment |
 | `08-rollback-region-led` | Rollback on a healed region-led file removes the block and leaves the region intact and paired |
+| `09-two-provenance-heal` | a file with TWO provenance+block pairs heals to exactly one provenance and one heading (binds the `swallowed_own_h2` reset) |
+| `10-corrupt-mirror-refused` | an empty/truncated spec-mirror is REFUSED (`exit 3`), `CLAUDE.md` byte-identical, no temps (binds the C-1 guards) |
 
-Fixtures 07 and 08 were added after the Task 2 review. They are the two gaps
-that let a green suite ship file-destroying bugs: **no fixture covered Rollback
-at all**, and none covered a file mentioning the marker in prose. A suite that
-binds only the anchor rule proves only the anchor rule.
+Fixtures 07-10 were each added after a review caught a bug the then-green suite
+did not. They are coverage gaps, not extras: **no fixture covered Rollback**,
+none covered a prose mention of the marker, none covered a two-provenance file,
+and none supplied a bad spec-mirror. A suite that binds only the anchor rule
+proves only the anchor rule.
+
+**The testing principle this migration keeps re-learning:** three separate fixes
+here were justified by code inspection and landed while the suite stayed green
+with the fix reverted — twice the review caught it, once by mutation-testing the
+fix itself. A fix without a mutation-proven covering test is an unverified claim,
+regardless of how obviously correct it reads. Every guard in this migration must
+have a fixture that goes RED when the guard is removed.
+
+The fixtures deliberately bypass pre-flight (they extract and run Step 1's Apply
+directly), which is why `10-corrupt-mirror-refused` must exercise the **pre-flight
+block too** — otherwise `test -s` is unbound by construction.
 
 Plus: an `anchor-parity` guard (migration ≡ setup e2), and the existing
 `spec-11-self-conformance` and `check-snapshot-parity.sh` must stay green.
