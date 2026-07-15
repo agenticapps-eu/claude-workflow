@@ -35,8 +35,10 @@ a `## ` heading **or** a line that is *exactly* `<!-- gitnexus:start -->` —
 whichever comes first; EOF if neither. Both marker regexes MUST be anchored
 (`/^<!-- gitnexus:start -->$/`, `/^<!-- gitnexus:end -->$/`) — an unanchored
 substring match also fires on prose that merely *mentions* the marker, which is
-exactly what this file's own guidance comment does two lines above this
-paragraph's rendered position in a scaffolded project.
+exactly what a scaffolded project's own CLAUDE.md guidance comment does (not
+this migration document itself) — e.g. this repo's own CLAUDE.md, which
+mentions the `gitnexus:start` marker in prose two lines above its actual,
+anchored occurrence.
 
 This is a one-alternation delta to 0014's awk, but it does **not** preserve
 0014's structural invariant — it **replaces** it. 0014 could assume the block
@@ -75,10 +77,14 @@ grep -qE '^version: 2\.(6\.0|7\.0)$' "$SKILL_FILE" || {
   exit 3
 }
 
-# 2. Vendored §11 block must be present in the global scaffolder bundle.
+# 2. Vendored §11 block must be present AND non-empty in the global scaffolder
+#    bundle. `test -f` alone passes on a zero-byte file — exactly what an
+#    interrupted `git pull` in the scaffolder clone produces — and a zero-byte
+#    block would strip the project's existing §11 block on Apply and insert
+#    nothing in its place. `test -s` catches that before Apply ever runs.
 SPEC_BLOCK="$HOME/.claude/skills/agenticapps-workflow/templates/spec-mirrors/11-coding-discipline-0.4.0.md"
-test -f "$SPEC_BLOCK" || {
-  echo "ABORT: vendored §11 canonical block missing at:"
+test -s "$SPEC_BLOCK" || {
+  echo "ABORT: vendored §11 canonical block missing or empty at:"
   echo "       $SPEC_BLOCK"
   echo "       Re-install: cd ~/.claude/skills/agenticapps-workflow && git pull --ff-only"
   exit 3
@@ -106,8 +112,9 @@ informational message and Step 2 still runs (0014's idiom).
 ```
 
 Both marker regexes are anchored (`^...$`) — a bare substring match also fires
-on prose that merely *mentions* the marker (this file's own guidance comment
-does exactly that), which would misjudge a healthy file as "inside a region."
+on prose that merely *mentions* the marker (a scaffolded project's own
+CLAUDE.md guidance comment does exactly that — not this migration document),
+which would misjudge a healthy file as "inside a region."
 
 Returns 0 (already applied — nothing to do) only when the current-version
 provenance is present **and** the block is not inside a managed region. That
@@ -186,8 +193,17 @@ else
     # had only /^## /, which selects a heading inside the region on a
     # gitnexus-led file. `whichever comes first` is what keeps the block near
     # the top when the region starts late. The gitnexus:start regex is
-    # anchored (`^...$`) so a prose mention of the marker (this file's own
-    # guidance comment does exactly that) can never be mistaken for it.
+    # anchored (`^...$`) so a prose mention of the marker (a scaffolded
+    # project's own CLAUDE.md guidance comment does exactly that — not this
+    # migration document) can never be mistaken for it.
+    #
+    # Non-empty is not the same as correct: a zero-byte $SPEC_BLOCK (e.g. an
+    # interrupted `git pull` in the scaffolder clone — pre-flight's `test -s`
+    # guards the common case, but this is the last line of defense) makes the
+    # `while ((getline ...))` loop below read nothing, yet awk still exits 0
+    # with non-empty output (the rest of the file, plus an orphaned provenance
+    # line). `[ -s ]` alone would pass and commit that data loss. Requiring
+    # the result to actually contain the block's own heading catches it.
     if awk -v prov="$PROV" -v block_file="$SPEC_BLOCK" '
       BEGIN { inserted = 0 }
       !inserted && (/^## / || /^<!-- gitnexus:start -->$/) {
@@ -208,14 +224,25 @@ else
           close(block_file)
         }
       }
-    ' CLAUDE.md.0029.strip > CLAUDE.md.0029.tmp && [ -s CLAUDE.md.0029.tmp ]; then
-      mv CLAUDE.md.0029.tmp CLAUDE.md
-      rm -f CLAUDE.md.0029.strip CLAUDE.md.0029.tmp
-      echo "INFO: migration 0029 Step 1 — §11 block anchored above any managed region."
+    ' CLAUDE.md.0029.strip > CLAUDE.md.0029.tmp && [ -s CLAUDE.md.0029.tmp ] \
+      && grep -q '^## Coding Discipline (NON-NEGOTIABLE)$' CLAUDE.md.0029.tmp; then
+      if mv CLAUDE.md.0029.tmp CLAUDE.md; then
+        rm -f CLAUDE.md.0029.strip CLAUDE.md.0029.tmp
+        echo "INFO: migration 0029 Step 1 — §11 block anchored above any managed region."
+      else
+        rm -f CLAUDE.md.0029.strip CLAUDE.md.0029.tmp
+        echo "ABORT: migration 0029 Step 1 — mv failed; refusing to report"
+        echo "       success. CLAUDE.md left as-is (mv is atomic on failure);"
+        echo "       check disk space / permissions."
+        exit 3
+      fi
     else
       rm -f CLAUDE.md.0029.strip CLAUDE.md.0029.tmp
-      echo "ABORT: migration 0029 Step 1 — the insert pass produced no output;"
-      echo "       refusing to replace CLAUDE.md. Left untouched."
+      echo "ABORT: migration 0029 Step 1 — the insert pass produced no output,"
+      echo "       or its result is missing the §11 heading. The vendored"
+      echo "       spec-mirror block is likely empty or corrupt:"
+      echo "       $SPEC_BLOCK"
+      echo "       Refusing to replace CLAUDE.md. Left untouched."
       exit 3
     fi
   else
@@ -236,10 +263,12 @@ fi
 # file's block is followed by the marker, not a `## ` line, so a terminator
 # that only recognized `## ` swallows past the marker and into the region's
 # own content (see "The anchor rule" above). `swallowed_own_h2` resets at the
-# terminator so a second provenance line re-enters cleanly. The strip's output
-# is required non-empty before it is allowed to replace CLAUDE.md, and any
-# temp file is cleaned up on every path — a failed/truncated rollback must not
-# destroy the file, and must not leak a stray `.0029.tmp` into the project.
+# terminator so a second provenance line re-enters cleanly. Rollback has no
+# strip pass of its own — this removal pass is the entirety of Rollback — and
+# its output is required non-empty before it is allowed to replace CLAUDE.md.
+# Any temp file is cleaned up on every path, including a failed `mv`: a
+# failed/truncated rollback must not destroy the file, and must not leak a
+# stray `.0029.tmp` into the project.
 if [ -f CLAUDE.md ]; then
   if awk '
     BEGIN { in_block = 0; swallowed_own_h2 = 0 }
@@ -260,8 +289,15 @@ if [ -f CLAUDE.md ]; then
     in_block { next }
     !in_block { print }
   ' CLAUDE.md > CLAUDE.md.0029.tmp && [ -s CLAUDE.md.0029.tmp ]; then
-    mv CLAUDE.md.0029.tmp CLAUDE.md
-    rm -f CLAUDE.md.0029.tmp
+    if mv CLAUDE.md.0029.tmp CLAUDE.md; then
+      rm -f CLAUDE.md.0029.tmp
+    else
+      rm -f CLAUDE.md.0029.tmp
+      echo "ABORT: migration 0029 Step 1 rollback — mv failed; refusing to"
+      echo "       report success. CLAUDE.md left as-is (mv is atomic on"
+      echo "       failure); check disk space / permissions."
+      exit 3
+    fi
   else
     rm -f CLAUDE.md.0029.tmp
     echo "ABORT: migration 0029 Step 1 rollback — produced no output;"
