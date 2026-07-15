@@ -10,7 +10,7 @@ applies_to:
 requires:
   - file: templates/spec-mirrors/11-coding-discipline-0.4.0.md
     install: "vendored in the scaffolder repo at claude-workflow/templates/spec-mirrors/; symlinked into $HOME via the same install pattern as migration 0014"
-    verify: "test -f $HOME/.claude/skills/agenticapps-workflow/templates/spec-mirrors/11-coding-discipline-0.4.0.md"
+    verify: "test -s $HOME/.claude/skills/agenticapps-workflow/templates/spec-mirrors/11-coding-discipline-0.4.0.md"
 ---
 
 # Migration 0029 — Region-aware §11 placement (v2.6.0 -> 2.7.0)
@@ -37,8 +37,8 @@ whichever comes first; EOF if neither. Both marker regexes MUST be anchored
 substring match also fires on prose that merely *mentions* the marker, which is
 exactly what a scaffolded project's own CLAUDE.md guidance comment does (not
 this migration document itself) — e.g. this repo's own CLAUDE.md, which
-mentions the `gitnexus:start` marker in prose two lines above its actual,
-anchored occurrence.
+mentions the `gitnexus:start` marker in a guidance comment at line 2, 94
+lines above its actual, anchored occurrence at line 96.
 
 This is a one-alternation delta to 0014's awk, but it does **not** preserve
 0014's structural invariant — it **replaces** it. 0014 could assume the block
@@ -89,6 +89,24 @@ test -s "$SPEC_BLOCK" || {
   echo "       Re-install: cd ~/.claude/skills/agenticapps-workflow && git pull --ff-only"
   exit 3
 }
+
+# 3. Non-empty is not the same as un-truncated. The block's heading sits on
+#    line 1, so a mirror truncated to just a few lines still satisfies
+#    `test -s` above, and still satisfies Step 1's pre-`mv` shape assertion
+#    (which only greps for that same line-1 heading) — both are single-point
+#    guards on a continuum, not a guard against truncation. Assert the
+#    block's LAST section is present too; a real truncation or a corrupt
+#    mirror loses the tail long before it loses the head. This is not a
+#    byte-identity or checksum check — vendored-file integrity is git's
+#    job — it is the cheapest guard that closes the gap between "has a
+#    heading" and "is the whole block."
+grep -q '^### 4\. Goal-Driven Execution$' "$SPEC_BLOCK" || {
+  echo "ABORT: vendored §11 canonical block at:"
+  echo "       $SPEC_BLOCK"
+  echo "       is missing its final section — it looks truncated or corrupt."
+  echo "       Re-install: cd ~/.claude/skills/agenticapps-workflow && git pull --ff-only"
+  exit 3
+}
 ```
 
 Pre-flight is permissive on the missing-`CLAUDE.md` path: Step 1 emits an
@@ -124,7 +142,8 @@ provenance but is not safe, so provenance alone must not short-circuit the heal.
 Returns non-zero when `CLAUDE.md` is absent (routes to the informational-skip
 branch), when the block is missing, and when the block is inside a region.
 
-**Pre-condition:** pre-flight passed — the vendored block exists.
+**Pre-condition:** pre-flight passed — the vendored block exists, is
+non-empty, and is not truncated (its final section is present).
 
 **Apply:**
 

@@ -1,9 +1,12 @@
 #!/bin/sh
-# Sourced by each 0029 fixture verify.sh. Provides the migration's own Step 1
-# Apply block, read out of the migration document rather than copied.
+# Sourced by each 0029 fixture verify.sh. Provides the migration's own
+# Pre-flight and Step 1 blocks, read out of the migration document rather
+# than copied.
 #
 # Requires: REPO_ROOT (exported by run-tests.sh).
-# Provides: apply_step1() — runs Step 1's Apply block in the current directory.
+# Provides: preflight()    — runs the Pre-flight block in the current directory.
+#           apply_step1()  — runs Step 1's Apply block in the current directory.
+#           rollback_step1() — runs Step 1's Rollback block.
 
 MIGRATION_0029="$REPO_ROOT/migrations/0029-region-aware-spec-11-placement.md"
 
@@ -11,6 +14,49 @@ MIGRATION_0029="$REPO_ROOT/migrations/0029-region-aware-spec-11-placement.md"
   echo "PRE: migration doc not found at $MIGRATION_0029"
   exit 1
 }
+
+# Pulls the fenced bash block under "## Pre-flight (hard aborts on failure)",
+# stopping at that block's own closing fence. Unlike the Step 1 extractors
+# below there is no "**Something:**" marker to wait for — the heading is
+# immediately followed by the fence.
+extract_0029_preflight() {
+  awk '
+    /^## Pre-flight/ { want=1; next }
+    want && /^```/ { inb=1; want=0; next }
+    inb && /^```$/ { exit }
+    inb { print }
+  ' "$MIGRATION_0029"
+}
+
+PREFLIGHT="$(extract_0029_preflight)"
+[ -n "$PREFLIGHT" ] || {
+  echo "PRE: could not extract Pre-flight block from $MIGRATION_0029"
+  exit 1
+}
+
+# Shape assertion: the extracted block must be identifiably the Pre-flight
+# block (an extractor that silently latches onto the wrong fence is the exact
+# failure mode this pattern exists to prevent). Anchor on the two variable
+# assignments that identify it structurally — `SKILL_FILE=` and
+# `SPEC_BLOCK=` — NOT on the specific guard operators (`test -s`, the
+# tail-sentinel grep) that fixture 10 exists to mutation-test. Coupling this
+# shape check to the guard text itself would make reverting a guard trip the
+# loader for EVERY fixture that sources this file, not just fixture 10 —
+# masking the real signal (preflight() wrongly returning 0) behind a loader
+# error instead.
+case "$PREFLIGHT" in
+  *'SKILL_FILE='*'SPEC_BLOCK='*) ;;
+  *)
+    echo "PRE: extracted block is not the Pre-flight block — it carries"
+    echo "     neither a SKILL_FILE= nor a SPEC_BLOCK= assignment. The"
+    echo "     migration's Pre-flight shape changed; fix the extractor"
+    echo "     rather than trusting this block. Extracted:"
+    printf '%s\n' "$PREFLIGHT" | sed 's/^/       /'
+    exit 1
+    ;;
+esac
+
+preflight() { eval "$PREFLIGHT"; }
 
 # Pulls the fenced block following "**Idempotency check:**" within "### Step 1".
 # Same want/fence discipline as extract_0029_step1_apply below.
