@@ -78,7 +78,10 @@ on the other — not the line immediately before the terminator:
 
 ```
 P = the single line matching PROV_RE
-H = P+1, which MUST be `## Coding Discipline (NON-NEGOTIABLE)`
+H = the line matching `## Coding Discipline (NON-NEGOTIABLE)`, found by
+    scanning forward from P. Pre-flight rule 4 requires H at or after P+1,
+    with only blank lines (never other content) between P and H — H is not
+    required to be exactly P+1.
 T = the first line > H matching `^## ` OR `^<!-- gitnexus:start -->$`;
     if none exists, T = EOF+1
 E = the last NON-BLANK line in the range H..T-1
@@ -86,6 +89,15 @@ E = the last NON-BLANK line in the range H..T-1
 The block region is H..E.  Compare lines H..E against the mirror.
 On replace, emit lines 1..P, then the mirror's bytes, then lines E+1..EOF.
 ```
+
+A blank line between P and H is common, not a defect: prettier's "blank
+line after an HTML comment" rule inserts exactly one there, and this is the
+real, currently-committed shape of `callbot`'s `CLAUDE.md` (provenance at
+line 8, heading at line 10) — the same `prettier --write` pass that healed
+its §11 block bytes (`1149187`, see the root-cause table above) also
+inserted that blank line. Pre-flight rule 4 accepts it; the extract/apply
+awk above already tolerates it structurally, since it scans forward from P
+looking for H rather than assuming H is literally the next line.
 
 E is the last *non-blank* line, not `T-1`, because the canonical mirror has
 no trailing blank line, while a real, in-place block is always followed by a
@@ -162,12 +174,51 @@ if [ "$PROV_COUNT" -ne 1 ] || [ "$HEAD_COUNT" -ne 1 ]; then
   exit 1
 fi
 
-# 4. The heading must sit immediately below the provenance line.
+# 4. The heading must plainly belong to its provenance line. It may sit
+#    immediately below the provenance line, or be separated from it by
+#    blank lines only — that shape is not a defect, it is prettier's normal
+#    output (its "blank line after an HTML comment" rule) and it is the
+#    real, currently-committed shape of callbot's CLAUDE.md (provenance at
+#    line 8, heading at line 10). Refusing that shape would hard-abort a
+#    repo whose block is already byte-identical to the canonical mirror.
+#
+#    Two shapes are still refused:
+#
+#    - The heading sits ABOVE its provenance line. This is not merely
+#      mis-placed, it is silent non-convergence: extract_block and the
+#      Apply awk (Step 1, below) only start looking for the heading AFTER
+#      matching the provenance line (`!seen && $0 ~ prov { seen=1; next }`).
+#      A heading that already passed by the time the provenance line is
+#      reached is never entered — `inb` never becomes 1 — so both the
+#      idempotency check and Apply would silently no-op forever while the
+#      idempotency check keeps reporting "stale".
+#    - Non-blank content sits between the provenance line and the heading
+#      (extra prose, another heading, anything). That means the provenance
+#      line does not plainly belong to this heading, and 0030 refuses
+#      rather than guess which heading it was meant to stamp.
 PROV_LINE=$(grep -nE "$PROV_RE" CLAUDE.md | cut -d: -f1)
 HEAD_LINE=$(grep -nE '^## Coding Discipline \(NON-NEGOTIABLE\)$' CLAUDE.md | cut -d: -f1)
-if [ "$HEAD_LINE" -ne $((PROV_LINE + 1)) ]; then
+if [ "$HEAD_LINE" -lt "$PROV_LINE" ]; then
+  echo "ABORT: §11 heading is at line $HEAD_LINE, above its provenance line"
+  echo "       at line $PROV_LINE. extract/apply only start looking for the"
+  echo "       heading AFTER matching the provenance line, so a heading"
+  echo "       above it is never entered — this would never converge, not"
+  echo "       merely mis-place the block."
+  exit 1
+fi
+# BETWEEN counts non-blank lines strictly between P and H. Computed with awk,
+# not `sed -n "$a,$bp"`, because BSD sed's inverted-range behavior (a > b) is
+# not "print nothing" as one might assume — verified on this machine: it
+# prints the line at address $a, which here is H itself, producing a false
+# non-zero BETWEEN on the adjacent case (H == P+1) that must be accepted.
+# awk's `NR >= s && NR <= e` is false for every NR when s > e, so it holds
+# for the adjacent case without a special-cased guard.
+BETWEEN=$(awk -v s="$((PROV_LINE + 1))" -v e="$((HEAD_LINE - 1))" \
+  'NR >= s && NR <= e && $0 ~ /[^[:space:]]/ { c++ } END { print c + 0 }' CLAUDE.md)
+if [ "$BETWEEN" -ne 0 ]; then
   echo "ABORT: §11 heading is at line $HEAD_LINE but its provenance is at"
-  echo "       line $PROV_LINE — expected the heading immediately below."
+  echo "       line $PROV_LINE, with non-blank content between them — the"
+  echo "       provenance does not plainly belong to this heading."
   exit 1
 fi
 
