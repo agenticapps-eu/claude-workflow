@@ -76,12 +76,45 @@ project `## ` headings above its region. Defect 2 is live in exactly one repo.
 ### The anchor rule
 
 > Insert immediately before the first line that is **either** a `## ` heading
-> **or** a `<!-- gitnexus:start -->` marker — whichever comes first. If neither
-> exists, append at EOF.
+> **or** a line that is *exactly* `<!-- gitnexus:start -->` — whichever comes
+> first. If neither exists, append at EOF.
 
-A one-alternation delta to 0014's awk, so 0014's structural reasoning survives:
-the block is still always followed by a `## ` line or EOF, which is what bounds
-the managed section for replace and rollback.
+**Both marker regexes MUST be anchored** (`/^<!-- gitnexus:start -->$/`,
+`/^<!-- gitnexus:end -->$/`). This is not stylistic. An unanchored
+`/<!-- gitnexus:start -->/` is a substring match that also fires on *prose
+mentions* of the marker. This repo's own `CLAUDE.md:2` contains exactly such a
+mention, inside the `<!--` guard comment that opens on line 1:
+
+```
+  This block MUST stay ABOVE the `<!-- gitnexus:start -->` region below.
+```
+
+With an unanchored regex the anchor selects line 2 and injects the §11 block
+*inside that HTML comment* — silently commenting the whole block out. The
+migration would recreate the exact defect it exists to fix, on the very file #88
+repaired. Verified empirically, not reasoned about.
+
+### The invariant this breaks (corrected 2026-07-15 after Task 2 review)
+
+An earlier draft of this spec claimed the rule was "a one-alternation delta, so
+0014's structural reasoning survives: the block is still always followed by a
+`## ` line or EOF." **That claim was false**, and it was load-bearing.
+
+Once the anchor can be a marker line, a healed region-led file has the block
+followed by `<!-- gitnexus:start -->` — not a `## `. Every consumer that bounds
+the managed section by "terminate at the next `^## `" therefore breaks on
+exactly the files this migration targets. Running Step 1's Rollback on a healed
+region-led file eats the start marker and the region's real content, leaving an
+orphaned `<!-- gitnexus:end -->` — an unpaired region. Verified empirically.
+
+The invariant is not preserved; it is **replaced**:
+
+> The block is always followed by a `## ` line, an anchored
+> `<!-- gitnexus:start -->` marker, or EOF.
+
+Every terminator must carry the same alternation as the anchor — in the strip
+pass, and in Rollback. The anchor rule and the terminator rule are one decision,
+not two, and they must move together.
 
 **Validated against all six real repo shapes.** With any existing block stripped,
 the rule re-derives the block's current position exactly in all five healthy
@@ -182,6 +215,13 @@ extractor locks onto the wrong fence.
 | `04-no-claudemd` | absent `CLAUDE.md` → informational skip, Step 2 still runs |
 | `05-unmanaged-conflict` | state D → `exit 3`, file untouched |
 | `06-no-heading-eof` | no `## `, no region → EOF append |
+| `07-prose-mention-not-a-region` | a *prose mention* of `<!-- gitnexus:start -->` (this repo's own `CLAUDE.md:2` shape) is NOT treated as a region — idempotency holds, nothing is injected into the comment |
+| `08-rollback-region-led` | Rollback on a healed region-led file removes the block and leaves the region intact and paired |
+
+Fixtures 07 and 08 were added after the Task 2 review. They are the two gaps
+that let a green suite ship file-destroying bugs: **no fixture covered Rollback
+at all**, and none covered a file mentioning the marker in prose. A suite that
+binds only the anchor rule proves only the anchor rule.
 
 Plus: an `anchor-parity` guard (migration ≡ setup e2), and the existing
 `spec-11-self-conformance` and `check-snapshot-parity.sh` must stay green.
