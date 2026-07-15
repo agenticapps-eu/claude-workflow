@@ -195,7 +195,8 @@ e. **Vendored CLAUDE.md block + reference** — `mkdir -p .claude/claude-md` and
 
 e2. **§11 canonical block (spec §11 — CLAUDE.md)** — inject the canonical
    "Coding Discipline" block into `CLAUDE.md` behind a provenance anchor,
-   byte-identical to what migration 0014 produces on the replay path. §11
+   carrying the same region-aware anchor rule as migration 0029 (enforced by
+   `migrations/run-tests.sh`'s `anchor-parity` guard). §11
    requires the block verbatim in the project's PRIMARY instruction file, so
    it goes in `CLAUDE.md` itself — not in `.claude/claude-md/workflow.md`.
 
@@ -204,7 +205,7 @@ e2. **§11 canonical block (spec §11 — CLAUDE.md)** — inject the canonical
    ```bash
    SPEC11="$SNAP/spec-mirrors/11-coding-discipline-0.4.0.md"
    PROV='<!-- spec-source: agenticapps-workflow-core@0.4.0 §11 -->'
-   PROV_RE='<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->'
+   PROV_RE='^<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->$'
 
    test -f "$SPEC11" || { echo "ABORT: snapshot missing $SPEC11"; exit 3; }
 
@@ -226,7 +227,7 @@ e2. **§11 canonical block (spec §11 — CLAUDE.md)** — inject the canonical
          print ""
        }
        BEGIN { done = 0 }
-       !done && /^## / { emit(); done = 1 }
+       !done && (/^## / || /^<!-- gitnexus:start -->$/) { emit(); done = 1 }
        { print }
        END { if (!done) emit() }
      ' CLAUDE.md > CLAUDE.md.spec11.tmp && mv CLAUDE.md.spec11.tmp CLAUDE.md
@@ -234,13 +235,41 @@ e2. **§11 canonical block (spec §11 — CLAUDE.md)** — inject the canonical
    fi
    ```
 
-   The `END` branch is the fallback for a `CLAUDE.md` with no `## ` heading at
-   all — the block is appended rather than dropped.
+   The `END` branch is the fallback for a `CLAUDE.md` where neither anchor
+   matched by EOF — no `## ` heading and no anchored `<!-- gitnexus:start -->`
+   line — the block is appended rather than dropped.
 
-   Setup needs only two of migration 0014's three branches: setup refuses to
-   re-run on an installed project (it routes to `/update`), so a CLAUDE.md
-   already carrying OUR provenance anchor is unreachable here. 0014's
-   stale-provenance replace branch is therefore dead code on this path.
+   The anchor alternation (`/^## /` **or** `<!-- gitnexus:start -->`, whichever
+   comes first) is byte-identical to migration 0029's, and
+   `migrations/run-tests.sh`'s `anchor-parity` guard fails the build if this
+   copy diverges from the migration's, or if either file's copy count drifts
+   from the documented 1 (setup) / 3 (migration). Anchoring on the first
+   `## ` alone would select a heading *inside* a GitNexus-managed region on a
+   region-led `CLAUDE.md`, where the next `gitnexus analyze` would silently
+   destroy the block.
+
+   0029's Step 1 Apply has three branches: no `CLAUDE.md` → informational
+   skip; a hand-pasted `## Coding Discipline` heading with no provenance
+   comment → abort; else → strip the block from wherever it currently sits,
+   then re-insert it at the anchor (0029 notes the strip is a no-op when the
+   block is absent, so "inject" and "move" are the same code path — there is
+   no separate move/replace branch to skip). Setup implements the same abort
+   predicate above (installer-specific wording — an `if` here versus 0029's
+   `elif`, and a one-line remediation instead of 0029's (a)/(b) block), and
+   only the *insert* half of the else branch — it has no strip pass at all.
+   It omits the no-`CLAUDE.md` branch because step `e`, immediately above,
+   already guarantees `CLAUDE.md` exists by the time e2 runs. And it never
+   needs the strip pass because, on a first run, a pre-existing heading with
+   no provenance is already caught by the abort above, and when a block
+   already carrying OUR provenance anchor exists, line 221's own
+   `if ! grep -qE "$PROV_RE" CLAUDE.md` guard skips e2 entirely, so the
+   would-need-stripping case never reaches this code path. (Such a block CAN
+   exist on a first run — the Pre-flight re-run guard keys on
+   `.claude/skills/agentic-apps-workflow/SKILL.md`, not on CLAUDE.md's
+   provenance, so a CLAUDE.md copied in from a sibling repo, routine in this
+   family, can carry the anchor while the skill dir is still absent. In that
+   case e2 silently no-ops rather than healing the block's placement — a
+   pre-existing, out-of-scope gap.)
 
    - In `--dry-run`: show the diff instead of writing.
 
@@ -312,7 +341,7 @@ Post-checks (fail the install, do not commit, if any fail):
 - `.gitignore` exists and does **not** ignore the `.planning/phases/` tree
   (ADR-0037): `! grep -qE '^[[:space:]]*/?\.planning/phases/?[[:space:]]*$' .gitignore`
 - `CLAUDE.md` carries the §11 canonical block under provenance:
-  `grep -q '<!-- spec-source: agenticapps-workflow-core@0.4.0 §11 -->' CLAUDE.md`
+  `grep -q '^<!-- spec-source: agenticapps-workflow-core@0.4.0 §11 -->$' CLAUDE.md`
   and `grep -q '^## Coding Discipline (NON-NEGOTIABLE)$' CLAUDE.md`
 
 ```bash

@@ -1824,6 +1824,148 @@ test_migration_0028() {
   fi
 }
 
+test_migration_0029() {
+  echo ""
+  echo "${YELLOW}━━━ Migration 0029 — Region-aware §11 placement ━━━${RESET}"
+
+  local fixtures="$REPO_ROOT/migrations/test-fixtures/0029"
+  if [ ! -d "$fixtures" ]; then
+    echo "  ${RED}SKIP${RESET}: fixtures directory missing"
+    SKIP=$((SKIP+1))
+    return
+  fi
+
+  # Until the GREEN commit lands the migration body this check fails — that is
+  # the RED state the TDD discipline requires (test before unit-under-test).
+  local migration_file="$REPO_ROOT/migrations/0029-region-aware-spec-11-placement.md"
+  if [ ! -f "$migration_file" ]; then
+    echo "  ${RED}✗${RESET} migration file missing: $migration_file — RED state"
+    FAIL=$((FAIL+1))
+    return
+  fi
+
+  run_0029_fixture() {
+    local fixname="$1"
+    local fixdir="$fixtures/$fixname"
+    local tmp; tmp="$(mktemp -d -t "migration-0029-${fixname}-XXXXXX")"
+    local fake_home="$tmp/home"
+    mkdir -p "$fake_home"
+
+    if [ -x "$fixdir/setup.sh" ]; then
+      (
+        cd "$tmp" && \
+        HOME="$fake_home" REPO_ROOT="$REPO_ROOT" FIXTURES_ROOT="$fixtures" \
+          "$fixdir/setup.sh" >/dev/null 2>&1
+      ) || {
+        echo "  ${RED}✗${RESET} $fixname — setup.sh failed"
+        FAIL=$((FAIL+1))
+        rm -rf "$tmp"
+        return
+      }
+    fi
+
+    local verify_out verify_exit
+    verify_out=$(
+      cd "$tmp" && \
+      HOME="$fake_home" REPO_ROOT="$REPO_ROOT" FIXTURES_ROOT="$fixtures" \
+        "$fixdir/verify.sh" 2>&1
+    )
+    verify_exit=$?
+
+    local expected_exit
+    expected_exit="$(cat "$fixdir/expected-exit" 2>/dev/null || echo 0)"
+
+    if [ "$verify_exit" -ne "$expected_exit" ]; then
+      echo "  ${RED}✗${RESET} $fixname — exit $verify_exit, expected $expected_exit"
+      printf '%s\n' "$verify_out" | sed 's/^/      /'
+      FAIL=$((FAIL+1))
+      rm -rf "$tmp"
+      return
+    fi
+
+    echo "  ${GREEN}✓${RESET} $fixname"
+    PASS=$((PASS+1))
+    rm -rf "$tmp"
+  }
+
+  for fix in "$fixtures"/[0-9]*-*/; do
+    local name
+    name="$(basename "${fix%/}")"
+    run_0029_fixture "$name"
+  done
+
+  # ── setup flow ≡ migration replay (spec/08 Conformance) ────────────────────
+  # The anchor rule lives in two files: migration 0029, which carries 3
+  # copies (Step 1 Apply's strip pass, Step 1 Apply's insert pass, and Step 1
+  # Rollback — Rollback is a sibling of Apply, not part of it), and the setup
+  # flow's step e2, which carries 1. The fixtures only exercise the
+  # migration, so the setup copy can drift unnoticed — which is exactly what
+  # happened to 0028's predicate (#87). Collect every copy across both files
+  # and require exactly one distinct value, AND require each file to carry
+  # its documented count exactly (3 for the migration, 1 for setup) — a
+  # `-lt 1` floor would pass a migration whose copies were partially
+  # rewritten to some other shape (2 of 3 dropped, 1 left), since the
+  # remaining copy alone still satisfies "at least one" and the surviving
+  # value trivially agrees with itself. An exact count turns that partial
+  # drift into a direct FAIL instead of leaving it to fixtures 01/02/08 to
+  # catch indirectly. Each side still needs its own count and its own
+  # failure message — an aggregate-only check can't tell "setup dropped its
+  # copy" apart from "migration dropped its copies" (both just make the
+  # total go down).
+  #
+  # Capture by SHAPE — any two-branch `(/^.../ || /^.../)` awk alternation —
+  # rather than one hardcoded literal. A fixed-literal search can only prove
+  # "this exact byte string appears somewhere"; it can never observe two
+  # copies that actually differ (every match IS the literal, by construction,
+  # so `distinct` was permanently 1 whenever count was >=1 — dead code), and
+  # it false-fails on a *legitimate* co-evolution where both files move
+  # together to a newly agreed anchor text that no longer matches the old
+  # hardcoded literal. Shape capture fixes both: a genuine disagreement
+  # (e.g. one file's branches reordered relative to the other) now shows up
+  # as >1 distinct value, and a synchronized re-anchor still agrees.
+  #
+  # Hazard shared with predicate-parity above: a prose sentence that happens
+  # to quote the anchor condition verbatim (e.g. in backticks) would also
+  # match and silently count toward parity. No such prose copy exists today.
+  #
+  # $anchor_shape encodes the STRUCTURE, not the current marker text — a
+  # synchronized change to the marker names (e.g. a new region-start comment)
+  # needs no update here. Only a structural change (a third alternative, a
+  # different grouping) requires updating $anchor_shape itself, in lockstep
+  # with both files.
+  local setup_file="$REPO_ROOT/setup/SKILL.md"
+  local anchor_shape='\(/\^[^/]*/ \|\| /\^[^/]*/\)'
+  local anchors mig_matches setup_matches distinct count mig_count setup_count
+  anchors=$(grep -hoE "$anchor_shape" "$migration_file" "$setup_file")
+  mig_matches=$(grep -hoE "$anchor_shape" "$migration_file")
+  setup_matches=$(grep -hoE "$anchor_shape" "$setup_file")
+  count=$(printf '%s\n' "$anchors" | grep -c .)
+  distinct=$(printf '%s\n' "$anchors" | sort -u | grep -c .)
+  mig_count=$(printf '%s\n' "$mig_matches" | grep -c .)
+  setup_count=$(printf '%s\n' "$setup_matches" | grep -c .)
+
+  if [ "$mig_count" -ne 3 ]; then
+    echo "  ${RED}✗${RESET} anchor-parity — migration 0029 carries $mig_count copies of the anchor rule, expected 3"
+    echo "      (Step 1 Apply's strip pass, Step 1 Apply's insert pass, Step 1 Rollback;"
+    echo "      setup/SKILL.md step e2 has $setup_count)"
+    FAIL=$((FAIL+1))
+  elif [ "$setup_count" -ne 1 ]; then
+    echo "  ${RED}✗${RESET} anchor-parity — setup/SKILL.md step e2 carries $setup_count copies of the anchor rule, expected 1"
+    echo "      (migration 0029 has $mig_count copies)"
+    FAIL=$((FAIL+1))
+  elif [ "$distinct" -ne 1 ]; then
+    echo "  ${RED}✗${RESET} anchor-parity — the anchor rule disagrees between migration and setup (spec/08 setup ≡ replay)"
+    echo "      migration 0029 ($mig_count copies):"
+    printf '%s\n' "$mig_matches" | sort -u | sed 's/^/        /'
+    echo "      setup/SKILL.md step e2 ($setup_count copies):"
+    printf '%s\n' "$setup_matches" | sort -u | sed 's/^/        /'
+    FAIL=$((FAIL+1))
+  else
+    echo "  ${GREEN}✓${RESET} anchor-parity — all $count copies agree (migration + setup)"
+    PASS=$((PASS+1))
+  fi
+}
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Phase Sentinel hook (GH #58 / D-07) — deterministic Stop gate exit-code cases
@@ -2333,6 +2475,10 @@ fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "0028" ]; then
   test_migration_0028
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "0029" ]; then
+  test_migration_0029
 fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "phase-sentinel" ]; then
