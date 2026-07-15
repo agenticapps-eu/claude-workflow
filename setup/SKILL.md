@@ -195,7 +195,8 @@ e. **Vendored CLAUDE.md block + reference** — `mkdir -p .claude/claude-md` and
 
 e2. **§11 canonical block (spec §11 — CLAUDE.md)** — inject the canonical
    "Coding Discipline" block into `CLAUDE.md` behind a provenance anchor,
-   byte-identical to what migration 0014 produces on the replay path. §11
+   carrying the same region-aware anchor rule as migration 0029 (enforced by
+   `migrations/run-tests.sh`'s `anchor-parity` guard). §11
    requires the block verbatim in the project's PRIMARY instruction file, so
    it goes in `CLAUDE.md` itself — not in `.claude/claude-md/workflow.md`.
 
@@ -226,7 +227,7 @@ e2. **§11 canonical block (spec §11 — CLAUDE.md)** — inject the canonical
          print ""
        }
        BEGIN { done = 0 }
-       !done && /^## / { emit(); done = 1 }
+       !done && (/^## / || /^<!-- gitnexus:start -->$/) { emit(); done = 1 }
        { print }
        END { if (!done) emit() }
      ' CLAUDE.md > CLAUDE.md.spec11.tmp && mv CLAUDE.md.spec11.tmp CLAUDE.md
@@ -237,10 +238,17 @@ e2. **§11 canonical block (spec §11 — CLAUDE.md)** — inject the canonical
    The `END` branch is the fallback for a `CLAUDE.md` with no `## ` heading at
    all — the block is appended rather than dropped.
 
-   Setup needs only two of migration 0014's three branches: setup refuses to
+   The anchor alternation (`/^## /` **or** `<!-- gitnexus:start -->`, whichever
+   comes first) is byte-identical to migration 0029's, and
+   `migrations/run-tests.sh`'s `anchor-parity` guard fails the build if the two
+   ever disagree. Anchoring on the first `## ` alone would select a heading
+   *inside* a GitNexus-managed region on a region-led `CLAUDE.md`, where the
+   next `gitnexus analyze` would silently destroy the block.
+
+   Setup needs only two of migration 0029's three branches: setup refuses to
    re-run on an installed project (it routes to `/update`), so a CLAUDE.md
-   already carrying OUR provenance anchor is unreachable here. 0014's
-   stale-provenance replace branch is therefore dead code on this path.
+   already carrying OUR provenance anchor is unreachable here. 0029's
+   move/replace branch is therefore dead code on this path.
 
    - In `--dry-run`: show the diff instead of writing.
 

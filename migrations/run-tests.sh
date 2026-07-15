@@ -1893,6 +1893,37 @@ test_migration_0029() {
     name="$(basename "${fix%/}")"
     run_0029_fixture "$name"
   done
+
+  # ── setup flow ≡ migration replay (spec/08 Conformance) ────────────────────
+  # The anchor rule is written twice: migration 0029's Step 1 apply, and the
+  # setup flow's step e2. The fixtures only exercise the migration, so the setup
+  # copy can drift unnoticed — which is exactly what happened to 0028's
+  # predicate (#87). Collect every copy across both files and require exactly
+  # one distinct value. migration_file legitimately repeats the literal more
+  # than once (idempotency check + apply + heal branches), so an aggregate
+  # count alone can't tell "setup dropped its copy" from "migration has a lot
+  # of copies" — check setup's own occurrence count directly instead of
+  # inferring it from the total.
+  local setup_file="$REPO_ROOT/setup/SKILL.md"
+  local anchor_literal='(/^## / || /^<!-- gitnexus:start -->$/)'
+  local anchors distinct count setup_count
+  anchors=$(grep -hoF "$anchor_literal" "$migration_file" "$setup_file")
+  count=$(printf '%s\n' "$anchors" | grep -c .)
+  distinct=$(printf '%s\n' "$anchors" | sort -u | grep -c .)
+  setup_count=$(grep -cF "$anchor_literal" "$setup_file")
+
+  if [ "$setup_count" -lt 1 ]; then
+    echo "  ${RED}✗${RESET} anchor-parity — setup/SKILL.md step e2 is missing the anchor rule"
+    echo "      (migration 0029 has $count total copies, setup/SKILL.md has 0)"
+    FAIL=$((FAIL+1))
+  elif [ "$distinct" -ne 1 ]; then
+    echo "  ${RED}✗${RESET} anchor-parity — the $count copies disagree (spec/08 setup ≡ replay)"
+    printf '%s\n' "$anchors" | sort -u | sed 's/^/        /'
+    FAIL=$((FAIL+1))
+  else
+    echo "  ${GREEN}✓${RESET} anchor-parity — all $count copies agree (migration + setup)"
+    PASS=$((PASS+1))
+  fi
 }
 
 
