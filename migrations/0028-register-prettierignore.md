@@ -29,6 +29,11 @@ the project never configured (the same conservative stance §15 takes with an
 absent vault). A project that format-checks `.claude/` and has no
 `.prettierignore` is rare; it can add the one line by hand.
 
+**Append only when not already covered.** A project that already ignores the
+whole `.claude` directory has `.claude/hooks/` covered by subsumption, and this
+migration adds nothing to it. See Step 1's idempotency check for the exact set
+of forms treated as covered.
+
 Fresh installs get this from the setup flow, which performs the same
 append-if-exists step against the target project's `.prettierignore` (see
 `setup/SKILL.md`). The `.prettierignore` is a *project* file, not part of the
@@ -54,13 +59,37 @@ grep -qE '^version: 2\.(5\.0|6\.0)$' "$SKILL_FILE" || {
 **Idempotency check:**
 
 ```bash
-[ ! -f .prettierignore ] || grep -qE '^\.claude/hooks/?$' .prettierignore
+[ ! -f .prettierignore ] || grep -qE '^\.claude(/\*\*)?/?$|^\.claude/hooks(/\*\*)?/?$' .prettierignore
 ```
 
 Returns 0 (already applied — nothing to do) when there is no `.prettierignore`
-(permanent skip) OR the `.claude/hooks/` entry is already present. Returns
-non-zero only when a `.prettierignore` exists without the entry — the one case
-that needs an apply.
+(permanent skip) OR `.claude/hooks/` is **already covered**. Returns non-zero
+only when a `.prettierignore` exists without that coverage — the one case that
+needs an apply.
+
+"Already covered" is broader than "the exact entry is present". A project that
+ignores the whole `.claude` directory has already excluded everything beneath
+it, `.claude/hooks/` included, so there is nothing for this migration to add;
+appending a redundant entry underneath a bare `.claude` would put noise in a
+project file for no formatting effect. The pattern therefore accepts the
+subsuming forms as well as the exact ones:
+
+| `.prettierignore` line | Covered? |
+|---|---|
+| `.claude` | yes — subsumes everything below it |
+| `.claude/` | yes |
+| `.claude/**` | yes |
+| `.claude/hooks` | yes — the exact entry |
+| `.claude/hooks/` | yes |
+| `.claude/hooks/**` | yes |
+
+This is not hypothetical: `factiv/fbc-platform` ships a bare `.claude`, and it
+is the only downstream repo where Step 1 would do anything at all.
+
+Exotic forms that also happen to cover the hooks dir (`**/.claude/`, a
+top-level `*`) are not recognised and would draw a redundant-but-harmless
+entry. Chasing every pattern prettier can express is not worth the regex; the
+common shapes are covered.
 
 **Pre-condition:**
 
@@ -74,13 +103,16 @@ that needs an apply.
 **Apply:**
 
 ```bash
-if [ -f .prettierignore ] && ! grep -qE '^\.claude/hooks/?$' .prettierignore; then
+if [ -f .prettierignore ] && ! grep -qE '^\.claude(/\*\*)?/?$|^\.claude/hooks(/\*\*)?/?$' .prettierignore; then
   printf '\n# AgenticApps workflow (0028): vendored .claude hooks are .cjs/.sh Node\n# tooling, not app code; exclude from prettier --check.\n.claude/hooks/\n' >> .prettierignore
   echo "INFO: 0028 — appended .claude/hooks/ to .prettierignore"
 else
-  echo "INFO: 0028 — no .prettierignore (or entry already present); skipped"
+  echo "INFO: 0028 — no .prettierignore (or .claude/hooks already covered); skipped"
 fi
 ```
+
+The condition here is the negation of the idempotency check above; the two
+must always carry the same pattern.
 
 **Rollback:**
 

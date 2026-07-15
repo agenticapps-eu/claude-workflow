@@ -5,40 +5,22 @@
 # redundant .claude/hooks/ under a bare .claude adds noise to a project file
 # for no formatting effect.
 #
-# Unlike fixtures 01-03, this one does not inline a copy of the migration's
-# shell — it EXTRACTS Step 1's Apply block from the migration document and runs
-# that. The inlined copies in 01-03 can drift from the document silently; here
-# the document is the thing under test, so a predicate fix has to land in the
-# document to make this fixture pass.
+# Like the other 0028 fixtures, this one runs Step 1's Apply block extracted
+# from the migration document (see common-verify.sh) rather than a copy, so the
+# predicate fix has to land in the document to make this fixture pass.
 set -eu
 
 PI=.prettierignore
 SKILL=.claude/skills/agentic-apps-workflow/SKILL.md
-MIGRATION="$REPO_ROOT/migrations/0028-register-prettierignore.md"
-
-[ -f "$MIGRATION" ] || { echo "PRE: migration doc not found at $MIGRATION"; exit 1; }
 
 # Pre-condition: a .prettierignore with a bare `.claude` and no `.claude/hooks`.
 [ -f "$PI" ] || { echo "PRE: fixture must have a .prettierignore"; exit 1; }
 grep -qE '^\.claude$' "$PI" || { echo "PRE: fixture must ignore bare .claude"; exit 1; }
 grep -qE '^\.claude/hooks/?$' "$PI" && { echo "PRE: .claude/hooks must be absent before apply"; exit 1; }
 
-# ── Extract Step 1's Apply block from the migration document ────────────────
-extract_step1_apply() {
-  awk '
-    /^### Step 1/ { in1=1; next }
-    /^### Step 2/ { in1=0 }
-    in1 && /^\*\*Apply:\*\*/ { want=1; next }
-    want && /^```bash$/ { inb=1; next }
-    inb && /^```$/ { exit }
-    inb { print }
-  ' "$1"
-}
+# ── Step 1 apply — extracted from the migration doc, not copied here ─────────
+. "$REPO_ROOT/migrations/test-fixtures/0028/common-verify.sh"
 
-STEP1_APPLY="$(extract_step1_apply "$MIGRATION")"
-[ -n "$STEP1_APPLY" ] || { echo "PRE: could not extract Step 1 Apply block from the migration"; exit 1; }
-
-apply_step1() { eval "$STEP1_APPLY"; }
 apply_step2() {
   sed 's/^version: 2\.5\.0$/version: 2.6.0/' "$SKILL" > "$SKILL.t" && mv "$SKILL.t" "$SKILL"
 }

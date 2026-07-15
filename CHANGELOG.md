@@ -4,6 +4,37 @@ All notable changes to the AgenticApps Claude Workflow scaffolder are
 documented here. The format follows [Keep a Changelog](https://keepachangelog.com/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+**No version bump.** Migration 0028 has not been applied in any downstream repo
+(all six sit at 2.5.0), so correcting it in place carries no reapplication risk
+and its `to_version` is unchanged. No new migration; nothing to re-run for
+anyone already at 2.6.0.
+
+### Fixed
+- **Migration 0028 appended a redundant entry under a subsuming `.claude`.**
+  Step 1's idempotency check grepped `^\.claude/hooks/?$`, so a project already
+  ignoring the whole `.claude` directory did not match and got `.claude/hooks/`
+  appended beneath it — four lines of noise in a project file for no formatting
+  effect, since a bare `.claude` already covers everything below it. The check
+  and the apply condition now treat the subsuming forms (`.claude`, `.claude/`,
+  `.claude/**`) as already-covered alongside the exact ones.
+
+  Found by surveying the six downstream repos before a 2.5.0 → 2.6.0 sweep:
+  `factiv/fbc-platform` ships exactly this shape, and is the only repo where
+  0028's Step 1 would have done anything at all. Four of the six have no
+  `.prettierignore` (permanent skip) and `callbot` already carries the exact
+  entry from a hand-fix, so for them 0028 is a version stamp and nothing more.
+
+### Changed
+- **0028's fixtures now run the migration's own shell.** `verify.sh` in fixtures
+  01-03 inlined a *copy* of Step 1's Apply block, so they tested the copy rather
+  than the migration — a predicate fix could land in the document while every
+  fixture went on exercising the old logic and passing. A shared
+  `common-verify.sh` extracts Step 1's Apply block from the document and all
+  four fixtures run that. Verified by mutation: reverting the document's
+  predicate alone now fails fixture 04.
+
 ## [2.6.0] — 2026-07-15 — Register .claude/hooks in .prettierignore
 
 ### Fixed

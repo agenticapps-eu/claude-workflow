@@ -11,12 +11,8 @@ SKILL=.claude/skills/agentic-apps-workflow/SKILL.md
 [ -f "$PI" ] || { echo "PRE: fixture must have a .prettierignore"; exit 1; }
 grep -qE '^\.claude/hooks/?$' "$PI" && { echo "PRE: entry must be absent before apply"; exit 1; }
 
-# ── Step 1 apply — the exact shell migration 0028 runs ───────────────────────
-apply_step1() {
-  if [ -f "$PI" ] && ! grep -qE '^\.claude/hooks/?$' "$PI"; then
-    printf '\n# AgenticApps workflow (0028): vendored .claude hooks are .cjs/.sh Node\n# tooling, not app code; exclude from prettier --check.\n.claude/hooks/\n' >> "$PI"
-  fi
-}
+# ── Step 1 apply — extracted from the migration doc, not copied here ─────────
+. "$REPO_ROOT/migrations/test-fixtures/0028/common-verify.sh"
 # ── Step 2 apply — version bump ──────────────────────────────────────────────
 apply_step2() {
   sed 's/^version: 2\.5\.0$/version: 2.6.0/' "$SKILL" > "$SKILL.t" && mv "$SKILL.t" "$SKILL"

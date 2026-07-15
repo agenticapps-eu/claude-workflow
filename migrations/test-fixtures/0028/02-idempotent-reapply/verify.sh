@@ -6,16 +6,13 @@ set -eu
 
 PI=.prettierignore
 
-# Idempotency check (the exact one 0028 Step 1 uses) must report "already applied".
-if [ ! -f "$PI" ] || grep -qE '^\.claude/hooks/?$' "$PI"; then :; else
-  echo "PRE: idempotency check should report already-applied for this fixture"; exit 1
-fi
-
-apply_step1() {
-  if [ -f "$PI" ] && ! grep -qE '^\.claude/hooks/?$' "$PI"; then
-    printf '\n# AgenticApps workflow (0028): vendored .claude hooks are .cjs/.sh Node\n# tooling, not app code; exclude from prettier --check.\n.claude/hooks/\n' >> "$PI"
-  fi
+# This fixture's .prettierignore already carries the exact entry.
+grep -qE '^\.claude/hooks/?$' "$PI" || {
+  echo "PRE: fixture must already carry the .claude/hooks entry"; exit 1
 }
+
+# ── Step 1 apply — extracted from the migration doc, not copied here ─────────
+. "$REPO_ROOT/migrations/test-fixtures/0028/common-verify.sh"
 
 before="$(cat "$PI")"
 apply_step1
