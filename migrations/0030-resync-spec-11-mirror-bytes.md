@@ -68,13 +68,15 @@ would then write the mirror's bytes — which end at `every diff.` — straight
 over it, leaving the block's last line butted against the next `## ` heading
 with no blank line between them.
 
-That state *converges*: on the next run the `T-1` extraction matches the
-mirror and reports "in sync". So an idempotency or convergence test would
-never catch it — the corruption is silent, permanent, and green. What it
-actually does is delete a blank line around a block, which is the same defect
-class `34ee72e` existed to repair; a `T-1` region would reintroduce it one
-level up while healing it one level down. Both the idempotency check's
-`extract_block`
+That state *converges*: on the next run the `T-1` extraction does match the
+mirror and does report "in sync". So a test that only asks "does it converge?"
+— apply, then assert the idempotency check now passes — cannot see the damage.
+What sees it is an assertion about the whole file: the separator blank line is
+gone, and that is a change to bytes *outside* the block region, which no
+block-scoped comparison would ever notice. The damage itself is deleting a
+blank line around a block — the same defect class `34ee72e` existed to repair,
+reintroduced one level up while being healed one level down. Both the
+idempotency check's `extract_block`
 and the Apply pass's replacement awk implement `H..E` by buffering blank
 lines and only emitting them once a later non-blank line proves they were
 interior to the block (never trailing).

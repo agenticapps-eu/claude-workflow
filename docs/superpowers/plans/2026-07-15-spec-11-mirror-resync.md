@@ -467,12 +467,24 @@ git commit -m "feat(migration): 0030 — re-sync stale spec §11 block bytes (2.
 Fixture 05 is the convergence proof and is **not** redundant with 02: 02 proves
 a healthy file is not churned; 05 proves a *healed* file reaches that state.
 
-**CORRECTED 2026-07-15:** an earlier draft claimed "the trailing-blank bug would
-pass 02 and fail 05". **False** — verified by execution. A `T-1`-pinned region
-converges, so it passes 02 AND 05. The fixture that actually binds it is **01**,
-whose assertion is that the ONLY change to the file is four blank-line
-insertions — a `T-1` region also deletes the separator blank, which 01 sees as a
-fifth change and 05 cannot see at all.
+**CORRECTED TWICE 2026-07-15 — the second correction is the accurate one.**
+Draft 1 claimed "the trailing-blank bug would pass 02 and fail 05" (false).
+Draft 2 claimed it "passes 02 AND 05" (also false — I overcorrected, and fed
+that error to two subagents before a reviewer's mutation test caught it).
+
+The verified truth, established by running all three cases:
+- **Fixture 05 (`converges`) PASSES under T-1** — T-1 genuinely converges, and
+  T-1's extraction of an already-in-sync file does equal the mirror.
+- **Fixture 01 FAILS under T-1** — it sees the deleted separator as a fifth
+  change on top of the four blank-line insertions.
+- **Fixture 02 also FAILS under T-1** — not via the idempotency check (which
+  correctly reports "in sync"), but because 02 does a *forced* `apply_step1`,
+  which still consumes the separator and churns the file.
+
+So convergence is the one property T-1 does satisfy; what catches it is any
+assertion about bytes OUTSIDE the block region. Fixture 01 is the primary bind,
+02 the secondary. **Lesson: state which mutation makes a fixture red, and run
+it — every prose claim here that was not executed turned out to be wrong.**
 
 **On numbering vs the spec:** the spec's fixture list ends with
 "`CORE_SPEC_REQUIRED=1` + absent core spec → suite red". That is not a
