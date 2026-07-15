@@ -47,15 +47,29 @@ did. `implements_spec` stays `0.9.0`, unchanged.
 
 **The block region.** The bytes being compared and replaced are bounded by
 the provenance comment on one side and the *last non-blank line* of the block
-on the other — not the line immediately before the terminator. The canonical
-mirror has no trailing blank line, but a real, in-place block is always
-followed by a separator blank line before the next heading or region marker;
-a region ending at the terminator's previous line would capture that
-separator, so the extracted bytes could never equal the mirror and the
-migration would never converge. Both the idempotency check's `extract_block`
-and the Apply pass's replacement awk implement this by buffering blank lines
-and only emitting them once a later non-blank line proves they were interior
-to the block, never trailing.
+on the other — not the line immediately before the terminator:
+
+```
+P = the single line matching PROV_RE
+H = P+1, which MUST be `## Coding Discipline (NON-NEGOTIABLE)`
+T = the first line > H matching `^## ` OR `^<!-- gitnexus:start -->$`;
+    if none exists, T = EOF+1
+E = the last NON-BLANK line in the range H..T-1
+
+The block region is H..E.  Compare lines H..E against the mirror.
+On replace, emit lines 1..P, then the mirror's bytes, then lines E+1..EOF.
+```
+
+E is the last *non-blank* line, not `T-1`, because the canonical mirror has
+no trailing blank line, while a real, in-place block is always followed by a
+separator blank line before the next heading or region marker. A region
+ending at `T-1` would capture that separator as part of the compared bytes,
+so the extracted region could never equal the mirror — the idempotency check
+would never report "in sync," and Apply would rewrite the same bytes every
+run without ever converging. Both the idempotency check's `extract_block`
+and the Apply pass's replacement awk implement `H..E` by buffering blank
+lines and only emitting them once a later non-blank line proves they were
+interior to the block (never trailing).
 
 The terminator that bounds the block admits either a `^## ` heading or a line
 that is *exactly* `<!-- gitnexus:start -->` — the same alternation migration
@@ -139,7 +153,6 @@ esac
 **Idempotency check:**
 
 ```bash
-set -eu
 SPEC_BLOCK="$HOME/.claude/skills/agenticapps-workflow/templates/spec-mirrors/11-coding-discipline-0.4.0.md"
 PROV_RE='^<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->$'
 
@@ -172,14 +185,19 @@ set -eu
 SPEC_BLOCK="$HOME/.claude/skills/agenticapps-workflow/templates/spec-mirrors/11-coding-discipline-0.4.0.md"
 PROV_RE='^<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->$'
 
-cp CLAUDE.md CLAUDE.md.0030.bak
-
 # Emit: lines 1..P (through the provenance line), the mirror's bytes verbatim,
 # then lines E+1..EOF (the separator blanks and everything after, untouched).
 # The terminator admits `<!-- gitnexus:start -->` as well as `^## ` because
 # 0029 anchors §11 above a GitNexus region, breaking 0014's "a `## ` always
 # follows" invariant. A `^## `-only terminator would run the replacement
 # through the region marker and destroy the region.
+#
+# `pending_out` buffers blank lines the same way extract_block's `pending`
+# does: they are only re-emitted once the terminator proves they are the
+# separator, never swallowed as part of the old block's body. If a non-blank
+# line follows instead, they were interior to the stale block and are
+# discarded with it — this is what pins the region to E (last non-blank)
+# instead of T-1; see the rationale's region definition above.
 awk -v prov="$PROV_RE" -v block_file="$SPEC_BLOCK" '
   BEGIN { while ((getline l < block_file) > 0) canon = (canon == "" ? l : canon "\n" l) }
   !seen && $0 ~ prov { print; seen=1; next }
@@ -188,53 +206,60 @@ awk -v prov="$PROV_RE" -v block_file="$SPEC_BLOCK" '
   }
   inb && (/^## / || /^<!-- gitnexus:start -->$/) { inb=0; done=1; print pending_out $0; pending_out=""; next }
   inb {
-    # Hold blanks; if a non-blank follows, they were interior to the old block
-    # and are discarded with it. If the terminator follows, they are the
-    # separator and are re-emitted ahead of it.
     if ($0 == "") { pending_out = pending_out "\n"; next }
     pending_out = ""; next
   }
   { print }
   END { if (inb) printf "%s", pending_out }
-' CLAUDE.md > CLAUDE.md.0030.new
+' CLAUDE.md > CLAUDE.md.0030.tmp
 
-mv CLAUDE.md.0030.new CLAUDE.md
-rm -f CLAUDE.md.0030.bak
-echo "0030: §11 block re-synced to canonical mirror bytes."
+# The tmp must never replace CLAUDE.md unless non-empty (a truncated rewrite
+# must never destroy the file) and the `mv` must be atomic; the tmp is
+# cleaned up on every path, including a failed `mv`, so it never leaks a
+# stray `.0030.tmp` into the project (mirrors 0029's Step 1 Apply idiom).
+if [ -s CLAUDE.md.0030.tmp ]; then
+  if mv CLAUDE.md.0030.tmp CLAUDE.md; then
+    rm -f CLAUDE.md.0030.tmp
+    echo "0030: §11 block re-synced to canonical mirror bytes."
+  else
+    rm -f CLAUDE.md.0030.tmp
+    echo "ABORT: migration 0030 Step 1 — mv failed; refusing to report"
+    echo "       success. CLAUDE.md left as-is (mv is atomic on failure);"
+    echo "       check disk space / permissions."
+    exit 1
+  fi
+else
+  rm -f CLAUDE.md.0030.tmp
+  echo "ABORT: migration 0030 Step 1 — the re-sync pass produced no output;"
+  echo "       refusing to replace CLAUDE.md with a possibly-truncated result."
+  exit 1
+fi
 ```
-
-> **Implementer note:** the `pending_out` bookkeeping above is the subtlest
-> code in this migration. Do not accept it on reading — fixture 02
-> (`in-sync noop`) and fixture 05 (`converges`) are what prove it. If they are
-> red, fix the awk, never the fixture.
->
-> **This awk was executed during planning, not merely written.** It was run
-> against all four shapes (trailing `## ` heading, `gitnexus:start` terminator
-> with a `## Always Do` line *inside* the region, EOF-terminated, and
-> already-in-sync) and E2E against cparx's and fx-signal-agent's real
-> `HEAD:CLAUDE.md`. In every case the block healed to the mirror byte-for-byte
-> and the **only** change to the file was the four blank-line insertions;
-> re-apply was a byte-identical no-op. Transcribe it verbatim. If you change
-> it, re-run all four shapes — the trailing-blank convergence bug is invisible
-> to fixture 02 and only fixture 05 catches it.
 
 **Rollback:**
 
+Step 1 has no forward inverse. It replaces non-canonical §11 bytes with the
+canonical ones the spec mandates; the pre-migration bytes are not recoverable
+from the post-migration file, and restoring them would re-introduce the exact
+defect 0030 exists to fix. This is safe by construction because Step 1 is
+byte-idempotent: if Step 2 fails, the project holds a canonical block and a
+2.7.0 stamp, 0030 stays pending, and a re-run is a no-op for Step 1 plus a
+retry for Step 2. `migrations/README.md` sanctions this — "partial-state
+recovery may be more useful than full revert" and rollback may be "manual".
+Rollback is therefore an honest report, not an action: it never removes or
+rewrites `CLAUDE.md`, and it never exits the calling shell (an `exit` from an
+eval'd Rollback block would terminate the caller, not just this block).
+
 ```bash
-set -eu
 PROV_RE='^<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->$'
 
-if [ ! -f CLAUDE.md.0030.bak ]; then
-  echo "ROLLBACK: no CLAUDE.md.0030.bak — nothing to restore."
-  exit 0
+if [ -f CLAUDE.md ] && grep -qE "$PROV_RE" CLAUDE.md; then
+  echo "ROLLBACK: Step 1 has no inverse — CLAUDE.md's §11 block is left"
+  echo "          canonical (byte-identical to the vendored mirror)."
+else
+  echo "ROLLBACK: no managed §11 block (spec-source: agenticapps-workflow-core"
+  echo "          provenance) present in CLAUDE.md — nothing to do."
 fi
-if ! grep -qE "$PROV_RE" CLAUDE.md.0030.bak; then
-  echo "ROLLBACK ABORT: backup carries no §11 provenance line; refusing to"
-  echo "                restore a file that is not a managed CLAUDE.md."
-  exit 1
-fi
-mv CLAUDE.md.0030.bak CLAUDE.md
-echo "0030: rolled back — CLAUDE.md restored from backup."
 ```
 
 ### Step 2 — Bump the installed scaffolder version 2.7.0 -> 2.8.0
