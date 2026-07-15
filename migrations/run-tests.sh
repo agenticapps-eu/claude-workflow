@@ -2506,12 +2506,15 @@ test_claude_md_reproduces_spec_11_verbatim() {
 # This is also why ref: main is deliberately unpinned in ci.yml. But ci.yml only
 # runs on push/pull_request to THIS repo — an upstream commit to core cannot
 # start this workflow by itself. ci.yml also carries a daily schedule: trigger
-# (see the workflow file) for exactly this reason, so an in-place upstream edit
-# is observed within a day even if nobody pushes here — on the next scheduled
-# run, or the next push/PR, whichever comes first. Had both existed on
-# 2026-05-25, core's 10f2c96 would have turned CI red within a day, not
-# instantly and not "that same day" as a guarantee. A pinned SHA would have
-# hidden the drift entirely and only moved the hole to "who remembers to bump
+# (see the workflow file) for exactly this reason: it re-runs this guard when
+# nobody is pushing here. It promises no latency — GitHub delays scheduled
+# events under load, may drop queued runs, and disables schedules after a
+# period of repo inactivity. The honest statement: drift is caught on the next
+# run of this workflow — a PR, a push to main, or the timer, whichever actually
+# happens first. What unpinning buys is that whenever that run happens, it
+# compares against upstream's CURRENT main rather than a frozen copy. A pinned
+# SHA would have stayed green through the drift entirely and only moved the
+# hole to "who remembers to bump
 # the pin".
 #
 # The extraction below is anchored to the FOUR-BACKTICK fence in core's spec

@@ -160,12 +160,13 @@ destroying it.
   marker written literally inside a fence is treated as a real marker, since
   awk has no fence awareness — that is still true, and is not fixed here.
   What the blank-line-drift guard (above) changes is what happens next: the
-  extraction's terminator scan has no fence awareness either, so a real
-  terminator following the fence is *not* recognized as ending the block —
-  the fence's closing ` ``` ` line, and anything up to the real terminator,
-  is captured as trailing block content instead. That line never matches the
-  canonical mirror, so the guard's non-blank comparison now refuses rather
-  than writing through it. Verified by probe: a fenced example containing
+  extraction runs past the fence's closing ` ``` ` line and captures it as
+  trailing block content. (A real `## ` heading after the fence *does* still
+  terminate the scan normally — the extractor is not confused about the
+  terminator, it is confused about where the block began.) The captured fence
+  delimiter never matches the canonical mirror, so the guard's non-blank
+  comparison now refuses rather than writing through it. Verified by probe: a
+  fenced example containing
   the sole §11 provenance/heading pair, followed by a real `## ` heading,
   now REFUSES with `CLAUDE.md` left byte-identical, where the guard-less
   migration corrupted it — consuming the fence's closing delimiter and
@@ -344,9 +345,9 @@ PROV_RE='^<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->$'
 # tell a lawful addition apart from genuine drift, and would silently
 # destroy the addition. The same blindness lets an unrecognised region
 # (e.g. a swallowed `  ## User Section` — an indented heading, which
-# CommonMark permits with 1-3 leading spaces or a tab but this migration's
-# `^## ` terminator does not recognise) get replaced along with real user
-# content.
+# CommonMark permits with up to 3 leading spaces, and whose `#` sequence may
+# be followed by a tab rather than a space, neither of which this migration's
+# `^## ` terminator recognises) get replaced along with real user content.
 #
 # The fix: re-extract the block exactly as the idempotency check does,
 # strip blank lines from both it and the mirror, and diff what remains. If

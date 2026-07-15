@@ -72,12 +72,18 @@ the moment any consumer exists — never a local one.
 the first half of this rule: it binds the mirror itself to a live extraction
 of core's spec §11 (delimited by the canonical block's four-backtick fence)
 on every run, with `ci.yml` checking core out at `ref: main` — deliberately
-unpinned — and, since `ci.yml` only triggers on this repo's own push/PR
-events, also polled on a daily `schedule:` so an in-place upstream edit is
-observed within a day rather than only on the next incidental push. Had both
-existed on 2026-05-25, core's `10f2c96` would have turned this repo's CI red
-within a day of shipping — not instantly, and not guaranteed same-day. A
-pinned SHA would have hidden the same drift and only relocated the hole to
+unpinned — and, since `ci.yml` only triggers on this repo's own push-to-`main`
+and pull_request events, also polled on a daily `schedule:`.
+
+**No latency is promised, and earlier drafts of this ADR promised one twice.**
+An upstream commit cannot start this workflow. The guard observes drift on the
+next run of this workflow — a PR, a push to `main`, or the timer, whichever
+actually happens first. The timer is a backstop, not a guarantee: GitHub
+documents that scheduled events can be delayed under load and that queued runs
+may be dropped, and it disables schedules after a period of repository
+inactivity. What unpinning buys is that whenever the next run happens, it
+compares against upstream's *current* `main` rather than a frozen copy. A
+pinned SHA would stay green through the drift entirely and relocate the hole to
 "who remembers to bump the pin." The guard is mutation-proven against the
 real historical bytes: installing `git show 913360e:templates/spec-mirrors/11-coding-discipline-0.4.0.md`
 over the current mirror turns it red.
@@ -117,10 +123,12 @@ claim.
 - `test_mirror_matches_core_spec_11` runs on every `migrations/run-tests.sh`
   invocation where a sibling `agenticapps-workflow-core` clone is present
   (`CORE_SPEC_DIR`), and is a hard CI failure (`CORE_SPEC_REQUIRED=1`) rather
-  than a skip. `ci.yml` runs this on every push/PR to this repo AND on a
-  daily `schedule:`, so any future in-place revision to core's §11 prose —
-  with or without a `spec_version` bump — now fails this repo's CI within a
-  day of shipping instead of silently forking for weeks.
+  than a skip. `ci.yml` runs this on every pull_request and every push to
+  `main`, plus a best-effort daily `schedule:`. Any future in-place revision to
+  core's §11 prose — with or without a `spec_version` bump — fails this repo's
+  CI on the next run of the workflow, instead of forking silently and
+  indefinitely. That is a bound on *detection*, not on *time*: see the timing
+  caveat above.
 - The rule generalizes to any future vendored spec-mirror payload: an edit to
   a mirror file always ships alongside a migration, and any drift check
   written against it should compare bytes, not the provenance stamp.

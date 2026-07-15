@@ -1,8 +1,9 @@
 #!/bin/sh
 # Fixture 13 — BEFORE: a STALE block (the same shape fixture 01 heals),
 # followed by an INDENTED heading `  ## User Section` and one line of user
-# data. CommonMark permits a heading marker to carry 1-3 leading spaces (or
-# a tab); this migration's terminator, `^## `, does not recognize that form,
+# data. CommonMark permits a heading marker to carry up to 3 leading spaces
+# (and permits a tab after the `#` sequence in place of a space); this
+# migration's terminator, `^## `, recognizes neither form,
 # so the region scan does not stop there — it keeps scanning until the next
 # UNINDENTED `## ` heading, swallowing the indented heading and the user
 # data underneath it into the block region.
