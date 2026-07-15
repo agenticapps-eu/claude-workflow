@@ -2355,13 +2355,14 @@ if [ -z "$FILTER" ] || [ "$FILTER" = "preflight" ]; then
   test_preflight_verify_paths
 fi
 
+if [ -z "$FILTER" ] || [ "$FILTER" = "spec-11-self-conformance" ]; then
+  test_claude_md_reproduces_spec_11_verbatim
+fi
+
 if [ -z "$FILTER" ] || [ "$FILTER" = "test-skill-md-version-matches-latest-migration-to-version" ]; then
   # Function exists after Task 1.3 lands. Guard with declare -F so this commit doesn't
   # try to run it before Task 1.3 defines it. Increments SKIP when not yet defined
   # so the harness exits 0 rather than "NO TESTS RAN" during the Wave 0 → Wave 1 window.
-  if declare -F test_claude_md_reproduces_spec_11_verbatim >/dev/null 2>&1; then
-    test_claude_md_reproduces_spec_11_verbatim
-  fi
   if declare -F test_skill_md_version_matches_latest_migration_to_version >/dev/null 2>&1; then
     test_skill_md_version_matches_latest_migration_to_version
   elif [ -n "$FILTER" ]; then
