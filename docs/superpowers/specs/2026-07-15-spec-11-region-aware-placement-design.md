@@ -230,8 +230,19 @@ proves only the anchor rule.
 here were justified by code inspection and landed while the suite stayed green
 with the fix reverted — twice the review caught it, once by mutation-testing the
 fix itself. A fix without a mutation-proven covering test is an unverified claim,
-regardless of how obviously correct it reads. Every guard in this migration must
-have a fixture that goes RED when the guard is removed.
+regardless of how obviously correct it reads.
+
+The rule, stated precisely: **every guard whose refusal set is not strictly
+subsumed by another guard must have a fixture that goes RED when the guard is
+removed.** The subsumption clause is not a loophole — it is load-bearing, and an
+earlier absolutist phrasing of this rule was falsified by this very migration.
+Pre-flight's `test -s "$SPEC_BLOCK"` is unbound *by construction*: its refusal
+set is a strict subset of the tail sentinel's (`grep -q` never matches in an
+empty file, and exits non-zero on a missing one), so no fixture can bind it
+while the sentinel stands. It is kept anyway as defence in depth — ordered
+first, it emits a clean actionable ABORT where the sentinel alone would leak a
+raw `grep: No such file` to stderr first. "Unbound" and "dead" are different
+claims; only the second is a defect.
 
 The fixtures deliberately bypass pre-flight (they extract and run Step 1's Apply
 directly), which is why `10-corrupt-mirror-refused` must exercise the **pre-flight
