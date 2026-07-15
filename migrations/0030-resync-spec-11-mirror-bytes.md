@@ -126,25 +126,70 @@ that is *exactly* `<!-- gitnexus:start -->` — the same alternation migration
 byte replacement straight through a GitNexus-managed region and destroy it on
 any project 0029 already healed.
 
+**Auto-repair scope.** Byte inequality between the extracted block and the
+mirror does not by itself mean the block is stale. Spec §11 (~line 119 of
+`agenticapps-workflow-core/spec/11-coding-discipline.md`) explicitly permits
+host customization: "**MAY** add host-specific anti-pattern bullets to any of
+the four rules to cover failure modes peculiar to the host runtime. Additions
+do not satisfy or alter the canonical bullets; they layer on top." A project
+that exercised that MAY clause carries a block whose bytes differ from the
+mirror by design, not by drift — replacing it wholesale would silently
+destroy the lawful addition. Byte equality cannot distinguish "stale" from
+"lawfully customized," so it is the wrong idempotency test for the DIFFER
+branch (it remains the right test for the equal branch — see "Why
+provenance-based idempotency is structurally blind here," above). Step 1's
+Apply therefore narrows what it will repair automatically: it strips blank
+lines from both the extracted block and the mirror and compares what
+remains. Identical → only blank-line placement differs, safe to replace. Not
+identical → refuse, print a diff of the non-blank content, and leave
+`CLAUDE.md` untouched for the operator to reconcile by hand. This also
+neutralizes an unrelated failure mode: if the block's region boundary (see
+"The block region," above) accidentally swallows content it should not
+have — a heading indented under CommonMark's 1-3-space/tab allowance, which
+the `^## ` terminator does not recognize, or prose a user wrote between the
+block and its terminator (see "Known limitations," below) — that swallowed
+content also fails the non-blank comparison, and 0030 refuses instead of
+destroying it.
+
 **Known limitations (not fixed here, shared with 0014/0029):**
 
-- **Prose between the block and its terminator is deleted.** This is the only
-  limitation here that destroys data rather than refusing, so it is stated
-  first. The managed block has no end marker: the region is implicitly
-  "provenance → the last non-blank line before the next `## ` or
-  `<!-- gitnexus:start -->`". Anything a user writes *after* the block's closing
-  paragraph but *before* that terminator is inside the region and is replaced
-  along with it. Migration 0029, already applied across the fleet, deletes the
-  identical line — 0030 inherits this boundary, it does not introduce it, and
-  fixing it means giving §11 an end marker, which is a change to 0014's on-disk
-  contract and belongs in its own migration. All five fleet repos were checked:
-  none has content in that position, and every E2E run deletes zero lines.
 - **CRLF.** A CRLF `CLAUDE.md` fails the line-oriented anchors, since `^...$`
   never matches a line ending in `\r`. The effect is a clean pre-flight refusal
   (rule 3 counts zero provenance lines), not corruption.
-- **Markers inside fenced code blocks.** A provenance or `gitnexus:start` marker
-  written literally inside a fence is treated as a real marker, since awk has no
-  fence awareness. The effect is a refusal or a no-op, not corruption.
+- **Markers inside fenced code blocks.** A provenance or `gitnexus:start`
+  marker written literally inside a fence is treated as a real marker, since
+  awk has no fence awareness — that is still true, and is not fixed here.
+  What the blank-line-drift guard (above) changes is what happens next: the
+  extraction's terminator scan has no fence awareness either, so a real
+  terminator following the fence is *not* recognized as ending the block —
+  the fence's closing ` ``` ` line, and anything up to the real terminator,
+  is captured as trailing block content instead. That line never matches the
+  canonical mirror, so the guard's non-blank comparison now refuses rather
+  than writing through it. Verified by probe: a fenced example containing
+  the sole §11 provenance/heading pair, followed by a real `## ` heading,
+  now REFUSES with `CLAUDE.md` left byte-identical, where the guard-less
+  migration corrupted it — consuming the fence's closing delimiter and
+  merging the example into the surrounding document (also verified by
+  probe, against the pre-guard Apply block). An earlier revision of this
+  section claimed the effect was "a refusal or a no-op, not corruption";
+  that claim was false as written — probing the guard-less Apply
+  reproduces the corruption above — and is only true now, because of the
+  guard, not because awk gained fence awareness.
+- **Prose between the block and its terminator.** The managed block has no
+  end marker: the region is implicitly "provenance → the last non-blank line
+  before the next `## ` or `<!-- gitnexus:start -->`". Content a user writes
+  *after* the block's closing paragraph but *before* that terminator falls
+  inside H..E. Migration 0029, already applied across the fleet, has the
+  identical boundary and is unaffected by anything below — 0030 does not
+  alter 0029's on-disk contract. Before the blank-line-drift guard (above),
+  this content was captured inside 0030's own block region and silently
+  replaced along with a genuine re-sync. With the guard in place, that is no
+  longer data loss for 0030: the trailing content makes the block's
+  non-blank bytes differ from the mirror, so the guard refuses rather than
+  writing through it. Verified by probe: trailing prose after the block, and
+  before a real `## ` heading, now causes a refusal and the prose survives
+  byte-identical. All five fleet repos were checked: none has content in
+  that position.
 
 Neither CRLF nor an in-fence marker has a live instance in the fleet today.
 
@@ -288,6 +333,68 @@ CANON="$(cat "$SPEC_BLOCK")"
 set -eu
 SPEC_BLOCK="$HOME/.claude/skills/agenticapps-workflow/templates/spec-mirrors/11-coding-discipline-0.4.0.md"
 PROV_RE='^<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->$'
+
+# Guard: auto-repair BLANK-LINE DRIFT ONLY. The idempotency check already
+# established the block's raw bytes differ from the mirror, but byte
+# inequality alone does not mean the block is stale — spec §11 (~line 119)
+# explicitly permits hosts to customize it: "MAY add host-specific
+# anti-pattern bullets to any of the four rules to cover failure modes
+# peculiar to the host runtime. Additions do not satisfy or alter the
+# canonical bullets; they layer on top." A wholesale byte replacement cannot
+# tell a lawful addition apart from genuine drift, and would silently
+# destroy the addition. The same blindness lets an unrecognised region
+# (e.g. a swallowed `  ## User Section` — an indented heading, which
+# CommonMark permits with 1-3 leading spaces or a tab but this migration's
+# `^## ` terminator does not recognise) get replaced along with real user
+# content.
+#
+# The fix: re-extract the block exactly as the idempotency check does,
+# strip blank lines from both it and the mirror, and diff what remains. If
+# the non-blank content is identical, only blank-line placement differs —
+# safe to replace. If anything else differs, refuse and let the operator
+# reconcile by hand. This narrows 0030 honestly to what it actually
+# repairs: blank-line drift, nothing else.
+CURRENT_BLOCK="$(awk -v prov="$PROV_RE" '
+  !seen && $0 ~ prov { seen=1; next }
+  seen && !inb && /^## Coding Discipline \(NON-NEGOTIABLE\)$/ { inb=1; buf=$0; next }
+  inb && (/^## / || /^<!-- gitnexus:start -->$/) { exit }
+  inb {
+    if ($0 == "") { pending = pending "\n"; next }
+    buf = buf pending "\n" $0; pending = ""
+  }
+  END { if (inb) print buf }
+' CLAUDE.md)"
+
+CURRENT_STRIPPED="CLAUDE.md.0030.current-stripped.tmp"
+CANON_STRIPPED="CLAUDE.md.0030.canon-stripped.tmp"
+DRIFT_DIFF="CLAUDE.md.0030.drift.diff.tmp"
+printf '%s\n' "$CURRENT_BLOCK" | sed '/^[[:space:]]*$/d' > "$CURRENT_STRIPPED"
+sed '/^[[:space:]]*$/d' "$SPEC_BLOCK" > "$CANON_STRIPPED"
+
+if ! diff -u "$CANON_STRIPPED" "$CURRENT_STRIPPED" > "$DRIFT_DIFF" 2>&1; then
+  echo "ABORT: migration 0030 Step 1 — the §11 block's non-blank content"
+  echo "       differs from the canonical mirror. Refusing to replace it."
+  echo ""
+  echo "       This may be a LAWFUL host-specific addition — spec §11 (Rule"
+  echo "       'MAY') permits a host to add anti-pattern bullets to any of"
+  echo "       the four rules: additions do not satisfy or alter the"
+  echo "       canonical bullets, they layer on top. Or it may be"
+  echo "       unrecognised drift (including content this migration's"
+  echo "       region boundary mistakenly swallowed). Byte comparison alone"
+  echo "       cannot tell these apart, so 0030 only auto-repairs BLANK-LINE"
+  echo "       placement and refuses everything else."
+  echo ""
+  echo "       Reconcile manually: compare CLAUDE.md's §11 block against"
+  echo "       $SPEC_BLOCK"
+  echo "       — keep any lawful local addition as-is, or remove genuine"
+  echo "       drift by hand. Diff of non-blank content (- canonical mirror"
+  echo "       / + current CLAUDE.md block):"
+  echo ""
+  sed 's/^/       /' "$DRIFT_DIFF"
+  rm -f "$CURRENT_STRIPPED" "$CANON_STRIPPED" "$DRIFT_DIFF"
+  exit 1
+fi
+rm -f "$CURRENT_STRIPPED" "$CANON_STRIPPED" "$DRIFT_DIFF"
 
 # Emit: lines 1..P (through the provenance line), the mirror's bytes verbatim,
 # then lines E+1..EOF (the separator blanks and everything after, untouched).
