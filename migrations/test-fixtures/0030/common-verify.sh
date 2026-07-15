@@ -8,7 +8,7 @@
 #           apply_step1()  — runs Step 1's Apply block in the current directory.
 #           rollback_step1() — runs Step 1's Rollback block.
 
-MIGRATION_0030="$REPO_ROOT/migrations/0030-spec-11-mirror-resync.md"
+MIGRATION_0030="$REPO_ROOT/migrations/0030-resync-spec-11-mirror-bytes.md"
 
 [ -f "$MIGRATION_0030" ] || {
   echo "PRE: migration doc not found at $MIGRATION_0030"
