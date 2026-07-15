@@ -956,7 +956,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ## Task 3: Setup-path parity + the anchor-parity guard
 
 **Files:**
-- Modify: `setup/SKILL.md` (step e2's awk, ~lines 221–232)
+- Modify: `setup/SKILL.md` (step e2's awk ~lines 221–232; the byte-identity claim at :198; the branch-count reasoning at :240-243; the END-branch prose at :237-238)
 - Modify: `migrations/run-tests.sh` (add the `anchor-parity` guard inside `test_migration_0029`)
 
 **Interfaces:**
@@ -983,6 +983,47 @@ Replace with:
        !done && (/^## / || /<!-- gitnexus:start -->/) { emit(); done = 1 }
        { print }
        END { if (!done) emit() }
+```
+
+- [ ] **Step 1b: Fix step e2's now-false byte-identity claim (`setup/SKILL.md:198`)**
+
+Step 1 makes the existing claim false, so it must move in the same commit. The
+sentence currently reads:
+
+```markdown
+e2. **§11 canonical block (spec §11 — CLAUDE.md)** — inject the canonical
+   "Coding Discipline" block into `CLAUDE.md` behind a provenance anchor,
+   byte-identical to what migration 0014 produces on the replay path. §11
+```
+
+0014 anchors on the first `## ` heading; after Step 1 setup anchors on the first
+`## ` **or** `<!-- gitnexus:start -->`. Setup now deliberately produces something
+0014 does not. Replace with a claim that is true and names the guard:
+
+```markdown
+e2. **§11 canonical block (spec §11 — CLAUDE.md)** — inject the canonical
+   "Coding Discipline" block into `CLAUDE.md` behind a provenance anchor,
+   carrying the same region-aware anchor rule as migration 0029 (enforced by
+   `migrations/run-tests.sh`'s `anchor-parity` guard). §11
+```
+
+Do **not** claim byte-identity with 0029's full output: the `END` fallback
+branches genuinely differ (0029 emits a leading blank before the provenance,
+setup's `emit()` does not — the pre-existing Minor T1-#1 in
+`.superpowers/sdd/progress-0027-spec-0.9.0.md`). That branch is unreachable
+because step `e` guarantees a `## ` heading, and fixing it is out of scope here
+(Surgical Changes). Claiming only what the `anchor-parity` guard actually proves
+is the honest scope.
+
+Also update the stale reasoning at `setup/SKILL.md:240-243`, which counts
+"migration 0014's three branches". Replace `0014` with `0029` in both places —
+0029 is now the migration whose shape setup mirrors:
+
+```markdown
+   Setup needs only two of migration 0029's three branches: setup refuses to
+   re-run on an installed project (it routes to `/update`), so a CLAUDE.md
+   already carrying OUR provenance anchor is unreachable here. 0029's
+   move/replace branch is therefore dead code on this path.
 ```
 
 - [ ] **Step 2: Update the prose under step e2 to explain the alternation**
