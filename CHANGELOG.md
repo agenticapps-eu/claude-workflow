@@ -79,19 +79,40 @@ for downstream projects to re-run.
   stat line inside the region and left the block untouched). This is also the
   earliest point in the file, per §11's placement SHOULD. Note migration 0014
   injects §11 *before the first `## ` heading*, which for a GitNexus-managed
-  CLAUDE.md would land **inside** the regenerated region — see Known issues.
+  CLAUDE.md would land **inside** the regenerated region — fixed forward by
+  migration 0029 (2.7.0, below).
 
   Cost: an `analyze` that changes the graph rewrites the stat line inside the
   GitNexus region, producing a diff in a tracked file. That is the price of
   having a project-instruction file at all.
 
-### Known issues
-- **Migration 0014 can inject §11 inside a GitNexus-managed region.** 0014
-  inserts before the first `## ` heading; in a project whose `CLAUDE.md` leads
-  with the `<!-- gitnexus:start -->` block, that heading is *inside* the region,
-  so a later `gitnexus analyze` would drop the block. Not fixed here (0014 is
-  immutable and this repo is not self-scaffolded, so it is unaffected); recorded
-  for a follow-up migration.
+
+## [2.7.0] — 2026-07-15 — Region-aware §11 placement
+
+### Fixed
+- **Migration 0029 — §11 could be injected inside a GitNexus-managed region.**
+  0014 anchors the block before the first `## ` heading; in a `CLAUDE.md` that
+  leads with the GitNexus block that heading is inside
+  `<!-- gitnexus:start -->…<!-- gitnexus:end -->`, so a later `gitnexus analyze`
+  destroyed the block silently. Recovery was closed — 0014's `to_version`
+  (1.14.0) makes it permanently not-pending for 2.x repos, and its pre-flight
+  refuses the `--migration` force path. 0029 fixes forward: anchor before the
+  first `## ` heading **or** an anchored `<!-- gitnexus:start -->` line,
+  whichever comes first. An unanchored marker regex would substring-match
+  prose *mentioning* the marker — this repo's own `CLAUDE.md` line 2 does, and
+  an unanchored anchor would have injected the block inside that guard
+  comment. The alternation also had to widen every terminator (the strip pass
+  and Rollback), not just the insert point — see ADR-0041. Heals four states
+  (no-op / move-out-of-region / inject / refuse-hand-pasted-heading), covered
+  by ten fixtures. Retires the Known issue recorded under Unreleased.
+- **`agenticapps-dashboard` carried no §11 block while stamping
+  `implements_spec: 0.9.0`.** Snapshot-installed at 2.3.0, before the setup
+  flow's §11 step existed (#84, 2.5.0), with 0014 already past — so neither
+  install path ever gave it the block. 0029 repairs it (`/update` chains 0028
+  then 0029).
+- **`setup/SKILL.md` step e2 carried the same naive anchor.** Mirrored to the
+  region-aware rule and locked by a new `anchor-parity` guard (spec §08: setup
+  end-state ≡ full replay), modelled on #87's predicate-parity guard.
 
 
 ## [2.6.0] — 2026-07-15 — Register .claude/hooks in .prettierignore
