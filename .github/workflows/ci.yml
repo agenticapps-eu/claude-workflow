@@ -3,6 +3,17 @@ on:
   push:
     branches: [main]
   pull_request:
+  # ci.yml only runs on push/pull_request to THIS repo — a commit to
+  # agenticapps-workflow-core cannot start this workflow by itself, no
+  # matter how unpinned the checkout ref below is. This daily timer is
+  # what actually turns "ref: main" into a notification: it re-runs the
+  # mirror-vs-core guard once a day even if nobody pushes here, so an
+  # in-place upstream edit is observed within a day instead of only on
+  # the next incidental push. GitHub only fires `schedule:` on the
+  # default branch (verified against GitHub's docs), which is fine here
+  # since that's the branch the guard needs to protect.
+  schedule:
+    - cron: "17 6 * * *" # daily, off-peak UTC
 jobs:
   migrations-and-snapshot:
     runs-on: ubuntu-latest

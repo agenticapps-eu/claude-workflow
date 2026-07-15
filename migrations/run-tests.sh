@@ -2503,10 +2503,22 @@ test_claude_md_reproduces_spec_11_verbatim() {
 # was unbound to the spec it claims to transcribe. This guard closes that hole by
 # diffing the mirror against a live extraction of core's spec on every run.
 #
-# This is also why ref: main is deliberately unpinned in ci.yml. Had this guard
-# existed on 2026-05-25, core's 10f2c96 would have turned CI red that day — which
-# is exactly the notification that was missing. A pinned SHA would have hidden it
-# and merely moved the hole to "who remembers to bump the pin".
+# This is also why ref: main is deliberately unpinned in ci.yml. But ci.yml only
+# runs on push/pull_request to THIS repo — an upstream commit to core cannot
+# start this workflow by itself. ci.yml also carries a daily schedule: trigger
+# (see the workflow file) for exactly this reason, so an in-place upstream edit
+# is observed within a day even if nobody pushes here — on the next scheduled
+# run, or the next push/PR, whichever comes first. Had both existed on
+# 2026-05-25, core's 10f2c96 would have turned CI red within a day, not
+# instantly and not "that same day" as a guarantee. A pinned SHA would have
+# hidden the drift entirely and only moved the hole to "who remembers to bump
+# the pin".
+#
+# The extraction below is anchored to the FOUR-BACKTICK fence in core's spec
+# (the canonical block's own delimiter — see spec/11-coding-discipline.md),
+# not to any prose sentence inside it. A prose anchor breaks the moment
+# upstream adds a paragraph after the anchor line but before the fence;
+# the fence is the one boundary the spec itself commits to.
 #
 # CORE_SPEC_DIR defaults to the sibling clone so local runs work unchanged.
 # CORE_SPEC_REQUIRED is a declared flag, not an inferred "am I in CI?" check —
@@ -2536,11 +2548,33 @@ test_mirror_matches_core_spec_11() {
 
   local mirror="$REPO_ROOT/templates/spec-mirrors/11-coding-discipline-0.4.0.md"
   local tmp; tmp="$(mktemp -t core-spec-11-XXXXXX)"
-  awk '/^## Coding Discipline \(NON-NEGOTIABLE\)$/{f=1} f{print} f && /session-level discipline the model brings to every diff\.$/{exit}' \
-    "$core_spec" > "$tmp"
+
+  # The canonical block is delimited by a line of exactly four backticks
+  # (````) on each side — not by any prose sentence inside it — because the
+  # block's own content may legitimately contain three-backtick fences, and
+  # upstream can append prose after the closing sentence but before the
+  # closing fence without moving that fence. The fence is the boundary the
+  # spec itself commits to; anchor the extractor there.
+  local fence_count
+  fence_count="$(grep -c '^````$' "$core_spec")"
+  if [ "$fence_count" -ne 2 ]; then
+    echo "  ${RED}✗${RESET} expected exactly 2 four-backtick fence lines delimiting"
+    echo "      the canonical block in $core_spec, found $fence_count"
+    FAIL=$((FAIL+1)); rm -f "$tmp"; return
+  fi
+
+  awk '
+    /^````$/ {
+      if (started) { exit }
+      started = 1
+      next
+    }
+    started { print }
+  ' "$core_spec" > "$tmp"
 
   if [ ! -s "$tmp" ]; then
     echo "  ${RED}✗${RESET} could not extract the §11 block from $core_spec"
+    echo "      (fence lines found, but nothing between them)"
     FAIL=$((FAIL+1)); rm -f "$tmp"; return
   fi
 

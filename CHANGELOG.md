@@ -126,9 +126,11 @@ for downstream projects to re-run.
   commit-by-commit account.
 
   A new CI guard, `test_mirror_matches_core_spec_11`, binds this repo's
-  mirror to workflow-core's spec §11 at `ref: main` — unpinned — so the next
-  such in-place upstream revision turns this repo's suite red the same day
-  instead of drifting silently for weeks.
+  mirror to workflow-core's spec §11 at `ref: main` — unpinned — and `ci.yml`
+  now also runs on a daily `schedule:` (an upstream commit to core cannot
+  trigger this repo's workflow by itself, so the timer is what actually
+  observes drift), so the next such in-place upstream revision turns this
+  repo's suite red within a day instead of drifting silently for weeks.
 
 ## [2.7.0] — 2026-07-15 — Region-aware §11 placement
 

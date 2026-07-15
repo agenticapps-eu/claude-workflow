@@ -68,16 +68,31 @@ stranded every project that had already consumed the old bytes. A mirror is
 consumed by copy, not by reference, so an edit to it is a fleet-wide change
 the moment any consumer exists — never a local one.
 
-`test_mirror_matches_core_spec_11` (`migrations/run-tests.sh`) enforces the
-second half of this by binding the mirror itself to a live extraction of
-core's spec §11 on every run, with `ci.yml` checking core out at `ref: main`
-— deliberately unpinned. Had this guard existed on 2026-05-25, core's
-`10f2c96` would have turned this repo's CI red that same day; that is
-precisely the notification that was missing for seven weeks. A pinned SHA
-would have hidden the same drift and only relocated the hole to "who
-remembers to bump the pin." The guard is mutation-proven against the real
-historical bytes: installing `git show 913360e:templates/spec-mirrors/11-coding-discipline-0.4.0.md`
+`test_mirror_matches_core_spec_11` (`migrations/run-tests.sh`) enforces only
+the first half of this rule: it binds the mirror itself to a live extraction
+of core's spec §11 (delimited by the canonical block's four-backtick fence)
+on every run, with `ci.yml` checking core out at `ref: main` — deliberately
+unpinned — and, since `ci.yml` only triggers on this repo's own push/PR
+events, also polled on a daily `schedule:` so an in-place upstream edit is
+observed within a day rather than only on the next incidental push. Had both
+existed on 2026-05-25, core's `10f2c96` would have turned this repo's CI red
+within a day of shipping — not instantly, and not guaranteed same-day. A
+pinned SHA would have hidden the same drift and only relocated the hole to
+"who remembers to bump the pin." The guard is mutation-proven against the
+real historical bytes: installing `git show 913360e:templates/spec-mirrors/11-coding-discipline-0.4.0.md`
 over the current mirror turns it red.
+
+**What the guard does not enforce — a known gap.** The guard only compares
+mirror bytes to upstream bytes; it has no way to tell whether a mirror edit
+that makes the two match again shipped with a re-sync migration for already-
+migrated consumers. A PR that hand-edits the mirror to track a core change,
+with no `migrations/NNNN-*.md` alongside it, turns this guard green — that is
+exactly the `34ee72e` failure mode this ADR exists to prevent, still
+possible. Enforcing the second half of the rule would need a separate CI
+check on the PR's changed-files list (mirror touched ⇒ a new
+`migrations/NNNN-*.md` required); that check is not implemented in this
+change and remains an open gap, not a "the second half is machine-enforced"
+claim.
 
 ## Alternatives Rejected
 
@@ -102,9 +117,10 @@ over the current mirror turns it red.
 - `test_mirror_matches_core_spec_11` runs on every `migrations/run-tests.sh`
   invocation where a sibling `agenticapps-workflow-core` clone is present
   (`CORE_SPEC_DIR`), and is a hard CI failure (`CORE_SPEC_REQUIRED=1`) rather
-  than a skip. Any future in-place revision to core's §11 prose — with or
-  without a `spec_version` bump — now fails this repo's CI the same day
-  instead of silently forking.
+  than a skip. `ci.yml` runs this on every push/PR to this repo AND on a
+  daily `schedule:`, so any future in-place revision to core's §11 prose —
+  with or without a `spec_version` bump — now fails this repo's CI within a
+  day of shipping instead of silently forking for weeks.
 - The rule generalizes to any future vendored spec-mirror payload: an edit to
   a mirror file always ships alongside a migration, and any drift check
   written against it should compare bytes, not the provenance stamp.
