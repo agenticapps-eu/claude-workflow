@@ -1,5 +1,6 @@
 ---
 id: 0030
+slug: resync-spec-11-mirror-bytes
 title: Re-sync stale spec §11 block bytes to the canonical mirror (v2.7.0 -> 2.8.0)
 from_version: 2.7.0
 to_version: 2.8.0
