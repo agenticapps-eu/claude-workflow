@@ -1895,12 +1895,14 @@ test_migration_0029() {
   done
 
   # ── setup flow ≡ migration replay (spec/08 Conformance) ────────────────────
-  # The anchor rule is written twice: migration 0029's Step 1 apply (3 copies:
-  # the strip pass, the insert pass, and Rollback), and the setup flow's step
-  # e2 (1 copy). The fixtures only exercise the migration, so the setup copy
-  # can drift unnoticed — which is exactly what happened to 0028's predicate
-  # (#87). Collect every copy across both files and require exactly one
-  # distinct value, AND require each file to contribute at least one copy —
+  # The anchor rule lives in two files: migration 0029, which carries 3
+  # copies (Step 1 Apply's strip pass, Step 1 Apply's insert pass, and Step 1
+  # Rollback — Rollback is a sibling of Apply, not part of it), and the setup
+  # flow's step e2, which carries 1. The fixtures only exercise the
+  # migration, so the setup copy can drift unnoticed — which is exactly what
+  # happened to 0028's predicate (#87). Collect every copy across both files
+  # and require exactly one distinct value, AND require each file to
+  # contribute at least one copy —
   # an aggregate-only check can't tell "setup dropped its copy" apart from
   # "migration dropped its copies" (both just make the total go down), so
   # each side needs its own floor and its own failure message.
@@ -1937,7 +1939,7 @@ test_migration_0029() {
   setup_count=$(printf '%s\n' "$setup_matches" | grep -c .)
 
   if [ "$mig_count" -lt 1 ]; then
-    echo "  ${RED}✗${RESET} anchor-parity — migration 0029's Step 1 apply is missing the anchor rule"
+    echo "  ${RED}✗${RESET} anchor-parity — migration 0029 carries no copy of the anchor rule anywhere in the file"
     echo "      (migration has 0 copies, setup/SKILL.md step e2 has $setup_count)"
     FAIL=$((FAIL+1))
   elif [ "$setup_count" -lt 1 ]; then
@@ -1946,7 +1948,7 @@ test_migration_0029() {
     FAIL=$((FAIL+1))
   elif [ "$distinct" -ne 1 ]; then
     echo "  ${RED}✗${RESET} anchor-parity — the anchor rule disagrees between migration and setup (spec/08 setup ≡ replay)"
-    echo "      migration 0029's Step 1 apply ($mig_count copies):"
+    echo "      migration 0029 ($mig_count copies):"
     printf '%s\n' "$mig_matches" | sort -u | sed 's/^/        /'
     echo "      setup/SKILL.md step e2 ($setup_count copies):"
     printf '%s\n' "$setup_matches" | sort -u | sed 's/^/        /'

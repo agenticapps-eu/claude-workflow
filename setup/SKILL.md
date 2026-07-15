@@ -251,15 +251,23 @@ e2. **§11 canonical block (spec §11 — CLAUDE.md)** — inject the canonical
    comment → abort; else → strip the block from wherever it currently sits,
    then re-insert it at the anchor (0029 notes the strip is a no-op when the
    block is absent, so "inject" and "move" are the same code path — there is
-   no separate move/replace branch to skip). Setup implements the abort
-   branch verbatim above, and only the *insert* half of the else branch — it
-   has no strip pass at all. It omits the no-`CLAUDE.md` branch because step
-   `e`, immediately above, already guarantees `CLAUDE.md` exists by the time
-   e2 runs. And it never needs the strip pass because, on a first run,
-   nothing can require stripping: a pre-existing heading with no provenance
-   is already caught by the abort above, and a block already carrying OUR
-   provenance anchor can't exist yet, since setup refuses to re-run on an
-   installed project (it routes to `/update` instead).
+   no separate move/replace branch to skip). Setup implements the same abort
+   predicate above (installer-specific wording — an `if` here versus 0029's
+   `elif`, and a one-line remediation instead of 0029's (a)/(b) block), and
+   only the *insert* half of the else branch — it has no strip pass at all.
+   It omits the no-`CLAUDE.md` branch because step `e`, immediately above,
+   already guarantees `CLAUDE.md` exists by the time e2 runs. And it never
+   needs the strip pass because, on a first run, a pre-existing heading with
+   no provenance is already caught by the abort above, and when a block
+   already carrying OUR provenance anchor exists, line 221's own
+   `if ! grep -qE "$PROV_RE" CLAUDE.md` guard skips e2 entirely, so the
+   would-need-stripping case never reaches this code path. (Such a block CAN
+   exist on a first run — the Pre-flight re-run guard keys on
+   `.claude/skills/agentic-apps-workflow/SKILL.md`, not on CLAUDE.md's
+   provenance, so a CLAUDE.md copied in from a sibling repo, routine in this
+   family, can carry the anchor while the skill dir is still absent. In that
+   case e2 silently no-ops rather than healing the block's placement — a
+   pre-existing, out-of-scope gap.)
 
    - In `--dry-run`: show the diff instead of writing.
 
