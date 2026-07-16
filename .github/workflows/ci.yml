@@ -3,6 +3,20 @@ on:
   push:
     branches: [main]
   pull_request:
+  # ci.yml only runs on push to main / pull_request to THIS repo — a commit to
+  # agenticapps-workflow-core cannot start this workflow by itself, no matter
+  # how unpinned the checkout ref below is. The timer below is what re-runs the
+  # mirror-vs-core guard when nobody is pushing here.
+  #
+  # It is a BACKSTOP, NOT A GUARANTEE, and the comment must not imply one.
+  # GitHub documents that scheduled events can be delayed under load and that
+  # queued runs may be dropped, and it disables schedules entirely after a
+  # period of repository inactivity. `schedule:` also only fires on the default
+  # branch. So the honest statement is: upstream drift is caught on the next run
+  # of this workflow — a PR, a push to main, or this timer, whichever actually
+  # happens first. No latency is promised.
+  schedule:
+    - cron: "17 6 * * *" # off-peak UTC; best-effort, see above
 jobs:
   migrations-and-snapshot:
     runs-on: ubuntu-latest
@@ -10,9 +24,18 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+      - name: Check out workflow-core (canonical spec)
+        uses: actions/checkout@v4
+        with:
+          repository: agenticapps-eu/agenticapps-workflow-core
+          ref: main
+          path: .core-spec
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
       - name: Migration test suite
+        env:
+          CORE_SPEC_DIR: ${{ github.workspace }}/.core-spec
+          CORE_SPEC_REQUIRED: "1"
         run: bash migrations/run-tests.sh
       - name: Snapshot drift guard
         run: bash migrations/check-snapshot-parity.sh

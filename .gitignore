@@ -36,3 +36,7 @@ claude-workflow-update-prompt.md
 
 # /cso security audit reports — keep local
 .gstack/
+
+# CI-only sibling checkout of agenticapps-workflow-core (canonical spec source
+# for the mirror ↔ core-spec guard; see migrations/run-tests.sh)
+.core-spec/

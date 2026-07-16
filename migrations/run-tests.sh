@@ -1967,6 +1967,78 @@ test_migration_0029() {
 }
 
 
+test_migration_0030() {
+  echo ""
+  echo "${YELLOW}━━━ Migration 0030 — Re-sync stale spec §11 block bytes ━━━${RESET}"
+
+  local fixtures="$REPO_ROOT/migrations/test-fixtures/0030"
+  if [ ! -d "$fixtures" ]; then
+    echo "  ${RED}SKIP${RESET}: fixtures directory missing"
+    SKIP=$((SKIP+1))
+    return
+  fi
+
+  # Until the GREEN commit lands the migration body this check fails — that is
+  # the RED state the TDD discipline requires (test before unit-under-test).
+  local migration_file="$REPO_ROOT/migrations/0030-resync-spec-11-mirror-bytes.md"
+  if [ ! -f "$migration_file" ]; then
+    echo "  ${RED}✗${RESET} migration file missing: $migration_file — RED state"
+    FAIL=$((FAIL+1))
+    return
+  fi
+
+  run_0030_fixture() {
+    local fixname="$1"
+    local fixdir="$fixtures/$fixname"
+    local tmp; tmp="$(mktemp -d -t "migration-0030-${fixname}-XXXXXX")"
+    local fake_home="$tmp/home"
+    mkdir -p "$fake_home"
+
+    if [ -x "$fixdir/setup.sh" ]; then
+      (
+        cd "$tmp" && \
+        HOME="$fake_home" REPO_ROOT="$REPO_ROOT" FIXTURES_ROOT="$fixtures" \
+          "$fixdir/setup.sh" >/dev/null 2>&1
+      ) || {
+        echo "  ${RED}✗${RESET} $fixname — setup.sh failed"
+        FAIL=$((FAIL+1))
+        rm -rf "$tmp"
+        return
+      }
+    fi
+
+    local verify_out verify_exit
+    verify_out=$(
+      cd "$tmp" && \
+      HOME="$fake_home" REPO_ROOT="$REPO_ROOT" FIXTURES_ROOT="$fixtures" \
+        "$fixdir/verify.sh" 2>&1
+    )
+    verify_exit=$?
+
+    local expected_exit
+    expected_exit="$(cat "$fixdir/expected-exit" 2>/dev/null || echo 0)"
+
+    if [ "$verify_exit" -ne "$expected_exit" ]; then
+      echo "  ${RED}✗${RESET} $fixname — exit $verify_exit, expected $expected_exit"
+      printf '%s\n' "$verify_out" | sed 's/^/      /'
+      FAIL=$((FAIL+1))
+      rm -rf "$tmp"
+      return
+    fi
+
+    echo "  ${GREEN}✓${RESET} $fixname"
+    PASS=$((PASS+1))
+    rm -rf "$tmp"
+  }
+
+  for fix in "$fixtures"/[0-9]*-*/; do
+    local name
+    name="$(basename "${fix%/}")"
+    run_0030_fixture "$name"
+  done
+}
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Phase Sentinel hook (GH #58 / D-07) — deterministic Stop gate exit-code cases
 # WORKFLOW — inline test (no fixture dir): runs the template hook under a temp
@@ -2415,6 +2487,116 @@ test_claude_md_reproduces_spec_11_verbatim() {
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Binds templates/spec-mirrors/11-coding-discipline-0.4.0.md to the upstream
+# spec it transcribes: agenticapps-workflow-core's spec/11-coding-discipline.md.
+# WORKFLOW — policy specific to this repo's mirror-fidelity claim; stays here.
+#
+# Why this exists: on 2026-05-25 upstream core 10f2c96 added four blank lines to
+# §11's canonical prose WITHOUT bumping spec_version, and this repo mirrored that
+# edit in 34ee72e with no migration to carry already-migrated projects forward.
+# cparx and fx-signal-agent had run 0014 four days earlier and were stranded on
+# the older — and, at the time, entirely correct — bytes. Nobody mis-transcribed
+# anything: 913360e's mirror was byte-identical to core at the moment it shipped.
+#
+# Nothing detected the drift for seven weeks. test_claude_md_reproduces_spec_11_-
+# verbatim above binds this repo's CLAUDE.md TO THE MIRROR, but the mirror itself
+# was unbound to the spec it claims to transcribe. This guard closes that hole by
+# diffing the mirror against a live extraction of core's spec on every run.
+#
+# This is also why ref: main is deliberately unpinned in ci.yml. But ci.yml only
+# runs on push/pull_request to THIS repo — an upstream commit to core cannot
+# start this workflow by itself. ci.yml also carries a daily schedule: trigger
+# (see the workflow file) for exactly this reason: it re-runs this guard when
+# nobody is pushing here. It promises no latency — GitHub delays scheduled
+# events under load, may drop queued runs, and disables schedules after a
+# period of repo inactivity. The honest statement: drift is caught on the next
+# run of this workflow — a PR, a push to main, or the timer, whichever actually
+# happens first. What unpinning buys is that whenever that run happens, it
+# compares against upstream's CURRENT main rather than a frozen copy. A pinned
+# SHA would have stayed green through the drift entirely and only moved the
+# hole to "who remembers to bump
+# the pin".
+#
+# The extraction below is anchored to the FOUR-BACKTICK fence in core's spec
+# (the canonical block's own delimiter — see spec/11-coding-discipline.md),
+# not to any prose sentence inside it. A prose anchor breaks the moment
+# upstream adds a paragraph after the anchor line but before the fence;
+# the fence is the one boundary the spec itself commits to.
+#
+# CORE_SPEC_DIR defaults to the sibling clone so local runs work unchanged.
+# CORE_SPEC_REQUIRED is a declared flag, not an inferred "am I in CI?" check —
+# unset it SKIPs loudly when the sibling clone isn't present; CI sets it to 1
+# so a missing core spec there is a hard failure, not a silent no-op.
+# ─────────────────────────────────────────────────────────────────────────────
+
+test_mirror_matches_core_spec_11() {
+  echo ""
+  echo "${YELLOW}━━━ Mirror ≡ workflow-core spec §11 ━━━${RESET}"
+
+  local core_dir="${CORE_SPEC_DIR:-$REPO_ROOT/../agenticapps-workflow-core}"
+  local core_spec="$core_dir/spec/11-coding-discipline.md"
+
+  if [ ! -f "$core_spec" ]; then
+    if [ "${CORE_SPEC_REQUIRED:-}" = "1" ]; then
+      echo "  ${RED}✗${RESET} core spec not found at $core_spec"
+      echo "      CORE_SPEC_REQUIRED=1 — a missing core spec is a hard failure."
+      FAIL=$((FAIL+1))
+    else
+      echo "  ${YELLOW}SKIP${RESET}: workflow-core not cloned at $core_dir"
+      echo "      (set CORE_SPEC_DIR, or CORE_SPEC_REQUIRED=1 to make this fatal)"
+      SKIP=$((SKIP+1))
+    fi
+    return
+  fi
+
+  local mirror="$REPO_ROOT/templates/spec-mirrors/11-coding-discipline-0.4.0.md"
+  local tmp; tmp="$(mktemp -t core-spec-11-XXXXXX)"
+
+  # The canonical block is delimited by a line of exactly four backticks
+  # (````) on each side — not by any prose sentence inside it — because the
+  # block's own content may legitimately contain three-backtick fences, and
+  # upstream can append prose after the closing sentence but before the
+  # closing fence without moving that fence. The fence is the boundary the
+  # spec itself commits to; anchor the extractor there.
+  local fence_count
+  fence_count="$(grep -c '^````$' "$core_spec")"
+  if [ "$fence_count" -ne 2 ]; then
+    echo "  ${RED}✗${RESET} expected exactly 2 four-backtick fence lines delimiting"
+    echo "      the canonical block in $core_spec, found $fence_count"
+    FAIL=$((FAIL+1)); rm -f "$tmp"; return
+  fi
+
+  awk '
+    /^````$/ {
+      if (started) { exit }
+      started = 1
+      next
+    }
+    started { print }
+  ' "$core_spec" > "$tmp"
+
+  if [ ! -s "$tmp" ]; then
+    echo "  ${RED}✗${RESET} could not extract the §11 block from $core_spec"
+    echo "      (fence lines found, but nothing between them)"
+    FAIL=$((FAIL+1)); rm -f "$tmp"; return
+  fi
+
+  if diff -u "$tmp" "$mirror" > /dev/null; then
+    echo "  ${GREEN}✓${RESET} mirror matches workflow-core spec §11 byte-for-byte"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} mirror has DRIFTED from workflow-core spec §11:"
+    diff -u "$tmp" "$mirror" | sed 's/^/      /'
+    echo "      The spec moved, or the mirror was transcribed wrong. Re-sync the"
+    echo "      mirror AND ship a migration to carry consumers forward — a mirror"
+    echo "      edit without one is what stranded cparx and fx-signal-agent."
+    FAIL=$((FAIL+1))
+  fi
+  rm -f "$tmp"
+}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Dispatcher
 # SHARED — generic filter-driven test dispatcher; the if/FILTER pattern is
 #   repo-agnostic framework machinery; consumer repos replace the per-migration
@@ -2481,6 +2663,10 @@ if [ -z "$FILTER" ] || [ "$FILTER" = "0029" ]; then
   test_migration_0029
 fi
 
+if [ -z "$FILTER" ] || [ "$FILTER" = "0030" ]; then
+  test_migration_0030
+fi
+
 if [ -z "$FILTER" ] || [ "$FILTER" = "phase-sentinel" ]; then
   test_phase_sentinel
 fi
@@ -2503,6 +2689,10 @@ fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "spec-11-self-conformance" ]; then
   test_claude_md_reproduces_spec_11_verbatim
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "spec11" ]; then
+  test_mirror_matches_core_spec_11
 fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "test-skill-md-version-matches-latest-migration-to-version" ]; then
