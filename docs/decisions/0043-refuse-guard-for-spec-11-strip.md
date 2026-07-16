@@ -111,11 +111,20 @@ under the CHANGELOG `[Unreleased]` section.
   rewriting away a Markdown hard break (two trailing spaces). Refusing on
   non-blank drift is the deliberate refuse-loudly trade the user chose.
 
-- The presence and count checks use `grep -a` (text mode): a stray NUL byte
-  anywhere in `CLAUDE.md` would otherwise make BSD grep classify the file
-  "binary" and report no match, skipping the guard entirely while the awk-based
-  strip still deletes the block — a silent data-loss bypass. `grep -a` keeps the
-  guard firing (found in cross-AI review round 2).
+- **Clean-text gate (cross-AI review rounds 2–3).** NUL and CR bytes make the
+  line-oriented toolchain behave in undefined, locale-dependent ways: a NUL can
+  make BSD grep report "binary, no match" so the guard is skipped while the awk
+  strip still runs to EOF; BSD awk truncates a record at a NUL, so the guard can
+  validate a canonical *prefix* while the strip deletes the whole line including
+  a hidden suffix (a guard-*approved* data loss); and a CRLF file makes every
+  `^…$` anchor miss while the insert anchor still fires, duplicating the block.
+  A `grep -a` patch (round 2) proved insufficient — the awk truncation defeats
+  it, and its effect is locale-dependent. Step 1 therefore refuses any
+  `CLAUDE.md` containing a NUL or CR byte, before the guard and strip both run
+  (`LC_ALL=C tr -dc '\000\015' | wc -c`). A real `CLAUDE.md` is clean LF
+  Markdown, so this only refuses pathological input, turning several
+  undefined-behaviour paths into one clean, defined refusal. `grep -a` is kept
+  in the guard as harmless defence-in-depth.
 
 - Fixtures mutation-prove the guard on **reachable** shapes (each asserts the
   real idempotency check reports not-applied, so the updater would run Apply —
@@ -125,15 +134,13 @@ under the CHANGELOG `[Unreleased]` section.
   Direct probes confirm a lawful interior host bullet is preserved and the two
   HIGH data-loss shapes now refuse with content intact.
 
-- **Known limitations** (documented in the migration, narrow): refusal on
-  trailing-whitespace-only drift (refuse-loudly, matches 0030); back-to-back
-  duplicate provenance lines above one block refuse a heal the strip could
-  perform (conservative refusal on a degenerate shape, never data loss); a NUL
-  *within* a managed block line still reads as blank to BSD awk (pathological
-  Markdown, shared with the strip); and the guard's predictable temp paths are
-  hardened with `rm -f`-before-write against a pre-planted symlink, though a
-  pre-existing directory at those names still fails `rm -f`, and the older
-  strip/insert temps carry the same predictable-name pattern as 0030/0031
-  (family-wide temp hardening is out of scope). The temp cases all require an
-  attacker who can already write into the project directory before a
-  user-initiated run.
+- **Known limitations** (documented in the migration, narrow, none a data-loss
+  path): refusal on trailing-whitespace-only drift (refuse-loudly, matches
+  0030); back-to-back duplicate provenance lines above one block refuse a heal
+  the strip could perform (conservative refusal on a degenerate shape); and the
+  guard's predictable temp paths are hardened with `rm -f`-before-write against a
+  pre-planted symlink, though a pre-existing directory at those names still fails
+  `rm -f`, and the older strip/insert temps carry the same predictable-name
+  pattern as 0030/0031 (family-wide temp hardening is out of scope). The temp
+  cases all require an attacker who can already write into the project directory
+  before a user-initiated run.

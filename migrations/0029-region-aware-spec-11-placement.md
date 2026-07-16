@@ -182,6 +182,25 @@ if [ ! -f CLAUDE.md ]; then
   echo "INFO: migration 0029 Step 1 — no CLAUDE.md in project; §11 heal skipped."
   echo "      Scaffold a CLAUDE.md (e.g. via /setup-agenticapps-workflow) and"
   echo "      re-run /update-agenticapps-workflow to pick up §11 on the next pass."
+elif [ "$(LC_ALL=C tr -dc '\000\015' < CLAUDE.md | wc -c | tr -d '[:space:]')" != 0 ]; then
+  # Clean-text gate. This heal is built entirely from line-oriented tools
+  # (grep/awk/sed) whose behaviour on NUL and CR bytes is undefined and
+  # locale-dependent on the target BSD toolchain: a NUL can make grep report
+  # "binary, no match" (skipping the guard while the awk strip still runs to
+  # EOF), and BSD awk truncates a record at its first NUL (so the guard
+  # validates a canonical prefix while the strip deletes the whole record,
+  # suffix and all). CR (a CRLF file) makes every `^...$` anchor miss, so the
+  # block is neither recognised nor validated yet the insert anchor still
+  # fires, duplicating the block. A real `CLAUDE.md` is clean LF Markdown, so
+  # rather than chase each divergence we refuse any file containing a NUL or CR
+  # byte — before the provenance/heading greps and the strip both run — turning
+  # undefined behaviour into one clean, defined refusal. `LC_ALL=C` forces byte
+  # semantics; `tr -dc '\000\015'` keeps only NUL/CR, and a non-zero count refuses.
+  echo "ABORT: migration 0029 Step 1 — CLAUDE.md contains NUL or CR bytes; it is"
+  echo "       not clean LF Markdown. The line-oriented §11 heal cannot process"
+  echo "       it safely, so it is left untouched. Normalise line endings"
+  echo "       (e.g. strip CR, remove any NUL) and re-run."
+  exit 3
 elif grep -q '^## Coding Discipline (NON-NEGOTIABLE)$' CLAUDE.md \
      && ! grep -qE "$PROV_RE" CLAUDE.md; then
   echo "ABORT: CLAUDE.md contains a '## Coding Discipline (NON-NEGOTIABLE)'"
@@ -221,10 +240,10 @@ else
   # provenance line is present: the greenfield inject path (state C) has no
   # block to protect. Comparison is on non-blank content only (like 0030): a
   # block that differs from the mirror in any non-blank byte — including
-  # trailing whitespace — refuses rather than being silently rewritten. `grep
-  # -a` forces text mode so a stray NUL byte anywhere in the file cannot make
-  # BSD grep classify it "binary", return no-match, and skip the guard while
-  # the awk-based strip still runs (a bypass a plain `grep` would allow).
+  # trailing whitespace — refuses rather than being silently rewritten. NUL/CR
+  # inputs never reach here (the clean-text gate above refuses them); `grep -a`
+  # is kept as defence-in-depth so the presence check and count stay consistent
+  # on any residual control byte.
   if grep -aqE "$PROV_RE" CLAUDE.md; then
     # Defence in depth: the guard reads $SPEC_BLOCK. Pre-flight already proved
     # it non-empty for real operation, but a caller that reaches here with a
@@ -402,6 +421,18 @@ fi
 # failed/truncated rollback must not destroy the file, and must not leak a
 # stray `.0029.tmp` into the project.
 if [ -f CLAUDE.md ]; then
+  # Clean-text gate (same reason as Step 1 Apply): NUL or CR bytes make the
+  # line-oriented tools behave in undefined, locale-dependent ways — a NUL can
+  # skip the guard while the awk removal still runs to EOF, or truncate a record
+  # so the guard validates a canonical prefix while the removal deletes the
+  # whole line; CR makes every anchor miss. Refuse any file containing a NUL or
+  # CR byte before the guard or removal runs. A real CLAUDE.md is clean LF text.
+  if [ "$(LC_ALL=C tr -dc '\000\015' < CLAUDE.md | wc -c | tr -d '[:space:]')" != 0 ]; then
+    echo "ABORT: migration 0029 Step 1 rollback — CLAUDE.md contains NUL or CR"
+    echo "       bytes; it is not clean LF Markdown. Left untouched. Normalise"
+    echo "       line endings and re-run."
+    exit 3
+  fi
   # Same guard as Step 1 Apply, and for the same reason: Rollback's removal pass
   # (below) deletes everything from each provenance line to its terminator, so
   # operator prose, a lawful host-added §11 bullet, content before the heading,
@@ -412,8 +443,8 @@ if [ -f CLAUDE.md ]; then
   # remainder to equal the canonical mirror (non-blank content) repeated once
   # per provenance block. Identical → safe to remove. Anything else → refuse
   # (exit 3), leave CLAUDE.md untouched. Skipped when no provenance line is
-  # present (nothing to remove). `grep -a` forces text mode so a stray NUL byte
-  # cannot skip the guard while the awk removal still runs.
+  # present (nothing to remove). NUL/CR inputs never reach here (the clean-text
+  # gate above refuses them); `grep -a` is kept as defence-in-depth.
   if grep -aqE '^<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->$' CLAUDE.md; then
     ROLLBACK_SPEC_BLOCK="$HOME/.claude/skills/agenticapps-workflow/templates/spec-mirrors/11-coding-discipline-0.4.0.md"
     # Rollback has no pre-flight, so it must check the mirror itself: a missing
@@ -497,16 +528,22 @@ Rollback removes the block rather than restoring its previous (unsafe)
 position. Re-running 0014 is not possible on a 2.x project, so there is no
 "put it back inside the region" state worth reconstructing.
 
-**Guard scope and known limitations.** The strip guard (Apply and Rollback)
-validates *exactly* the line set the strip deletes — every provenance block,
-including content before the heading and a headingless second region that would
-otherwise run to EOF — so a divergent span refuses rather than being destroyed.
-It compares non-blank content only, exactly like migration 0030; it does not
-normalise trailing whitespace, so a block that differs from the mirror in any
-non-blank byte refuses rather than being silently rewritten (a normalisation
-pass was tried and removed — it could not repair a trailing-whitespace heading
-without diverging the guard's state machine from the strip's, and it risked
-rewriting a Markdown hard break away). These limitations remain, all narrow:
+**Guard scope and known limitations.** Step 1 first refuses any `CLAUDE.md`
+containing a NUL or CR byte (the clean-text gate) — the line-oriented
+grep/awk/sed toolchain has undefined, locale-dependent behaviour on those bytes
+(a NUL can skip the guard while the strip runs, or truncate a record so the
+guard validates a canonical prefix while the strip deletes the whole line; CR
+makes every anchor miss yet the insert still fires and duplicates the block), so
+a real clean-LF file passes and anything else is refused before the guard or
+strip run. Past that gate, the guard (Apply and Rollback) validates *exactly*
+the line set the strip deletes — every provenance block, including content
+before the heading and a headingless second region that would otherwise run to
+EOF — so a divergent span refuses rather than being destroyed. It compares
+non-blank content only, exactly like migration 0030; it does not normalise
+trailing whitespace (a normalisation pass was tried and removed — it could not
+repair a trailing-whitespace heading without diverging the guard's state machine
+from the strip's, and it risked rewriting a Markdown hard break away). Remaining
+limitations, all narrow and none a data-loss path:
 
 - **Refusal on non-blank drift.** A canonical block that has drifted only in
   trailing whitespace refuses rather than re-anchoring — the deliberate
@@ -515,11 +552,6 @@ rewriting a Markdown hard break away). These limitations remain, all narrow:
   single canonical block make the block count (provenance lines) exceed the
   bodies present, so the guard refuses a heal the strip could safely perform.
   This is a conservative refusal on a degenerate shape, never data loss.
-- **NUL bytes.** `grep -a` keeps a stray NUL from skipping the guard entirely.
-  A NUL *within a managed block's line* still reads as an empty record on the
-  target BSD awk, so both the strip and the guard treat that line as blank — a
-  pathological Markdown input the whole line-oriented toolchain (0014/0029/0030)
-  shares; not closed here.
 - **Predictable guard temp paths.** The guard writes `CLAUDE.md.0029.guard-*`
   in the project directory and `rm -f`s each path immediately before writing it,
   so a pre-planted symlink at those names is unlinked rather than followed. A

@@ -28,16 +28,20 @@ Nothing for downstream projects to re-run.
   state machine in reverse, across every provenance block): if that content is
   anything but provenance lines, blanks, and canonical block bytes, they refuse
   (exit 3) and leave `CLAUDE.md` untouched. The guard is skipped when no
-  provenance line is present (the greenfield inject path has no block to protect),
-  compares non-blank content only (like 0030 — a block differing in any non-blank
-  byte refuses rather than being rewritten), and uses `grep -a` so a stray NUL
-  byte cannot make BSD grep skip the guard while the strip still runs. Fixtures
+  provenance line is present (the greenfield inject path has no block to protect)
+  and compares non-blank content only (like 0030 — a block differing in any
+  non-blank byte refuses rather than being rewritten). Step 1 also refuses any
+  `CLAUDE.md` containing a NUL or CR byte before the guard or strip run (a
+  clean-text gate): the line-oriented grep/awk/sed toolchain has undefined,
+  locale-dependent behaviour on those bytes — a NUL can skip the guard or make
+  BSD awk truncate a record so the guard validates a canonical prefix while the
+  strip deletes a hidden suffix; a CRLF file duplicates the block. Fixtures
   `12`/`13` (prose in-region), `14` (content before the heading), `15` (malformed
-  second region), and `16` (NUL-byte bypass) mutation-prove it on reachable
-  shapes; ADR-0043 records the decision, two rounds of cross-AI review (which
-  caught a first-block hole and a NUL bypass in earlier revisions), and the
-  accepted cost (a customized **and** mis-anchored repo now refuses to re-anchor
-  rather than re-anchoring).
+  second region), `16` (NUL in the heading), and `17` (CRLF) mutation-prove it on
+  reachable shapes; ADR-0043 records the decision, three rounds of cross-AI
+  review (which caught a first-block hole, a NUL bypass, and awk NUL-truncation
+  in earlier revisions), and the accepted cost (a customized **and** mis-anchored
+  repo now refuses to re-anchor rather than re-anchoring).
 
 - **Migration 0028 appended a redundant entry under a subsuming `.claude`.**
   Step 1's idempotency check grepped `^\.claude/hooks/?$`, so a project already
