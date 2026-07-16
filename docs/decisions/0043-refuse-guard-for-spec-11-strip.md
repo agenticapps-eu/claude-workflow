@@ -34,20 +34,33 @@ application across the fleet.
 
 ## Decision
 
-Add 0030's guard to 0029's Step 1, in **both** the Apply strip and the Rollback
-strip. When a provenance line is present, re-extract H..E with the same
-buffered-blank-line `extract_block` awk 0030 uses, strip blank lines from it and
-the canonical mirror, and diff the remainder:
+Add a guard to 0029's Step 1, in **both** the Apply strip and the Rollback
+strip, that validates **exactly the line set the strip deletes** — not a
+convenient subset of it. When a provenance line is present, re-run the strip's
+own state machine *in reverse* to emit precisely the lines it would delete
+(mirroring `in_block` / `swallowed_own_h2` line-for-line, across **all**
+provenance blocks), then, after normalising trailing whitespace and dropping
+provenance lines and blanks, require the remainder to equal the canonical mirror
+repeated once per provenance block:
 
-- **Identical** (only blank-line placement differs) → the region holds exactly
-  the canonical block; strip-and-re-anchor is safe (only canonical content
-  moves). Proceed.
+- **Identical** → the strip removes nothing but provenance lines, blank
+  separators, and canonical block bytes; strip-and-re-anchor is safe. Proceed.
 - **Differs** → refuse (exit 3), print the diff, leave `CLAUDE.md`
   byte-identical for the operator to reconcile by hand.
 
 The guard is **skipped when no provenance line is present** — the greenfield
 inject path (state C) has no block to protect, and must not be turned into a
 refusal.
+
+An earlier revision of this fix copied 0030's `extract_block`, which validates
+only the *first* block from its heading onward. Cross-AI review (codex) proved
+that insufficient for 0029: 0030 only *edits* its first block, but 0029's strip
+*reacts to every provenance line* and deletes from the provenance line (not the
+heading). So `extract_block` left two live data-loss paths — content **before**
+the heading, and a malformed **second** provenance region that makes the strip
+run to end-of-file. Both are now reproduced as fixtures and closed by validating
+the strip's exact deletion set. This is why the guard re-implements the strip in
+reverse rather than reusing `extract_block`.
 
 This is an **engine bugfix to an existing migration, fixed in place**: no new
 migration, no version bump (0029's `to_version` is unchanged), matching the
@@ -82,16 +95,27 @@ under the CHANGELOG `[Unreleased]` section.
   block" risk is mitigated (not eliminated) by migration 0031's
   `--skip-agents-md`.
 
-- The guard's `extract_block` bounds the region with the same terminator
-  alternation as the strip it gates, so it is now a fourth and fifth copy of the
-  anchor rule. `run-tests.sh`'s `anchor-parity` guard is updated to require 5
+- Each guard re-runs the strip's state machine in reverse and so carries the
+  same terminator alternation as the strip it gates — a fourth and fifth copy of
+  the anchor rule. `run-tests.sh`'s `anchor-parity` guard is updated to require 5
   copies in the migration (was 3) and still requires all copies — migration and
   setup — to agree.
 
-- Scope matches 0030's guard exactly, including its **first-block limitation**:
-  a `CLAUDE.md` carrying two provenance blocks where only the second holds
-  non-canonical content is not independently validated. The primary,
-  fleet-relevant shape (a single block with trailing prose or a host bullet) is
-  fully closed. Fixtures `12-prose-in-region-refused` (Apply) and
-  `13-rollback-prose-refused` (Rollback) mutation-prove the guard; a direct
-  probe confirms a lawful interior host bullet is preserved.
+- Trailing whitespace is normalised before comparison, so a cosmetically drifted
+  but otherwise canonical block (e.g. a trailing space prettier left on a line)
+  still heals rather than falsely refusing to re-anchor.
+
+- Fixtures mutation-prove the guard on **reachable** shapes (each asserts the
+  real idempotency check reports not-applied, so the updater would run Apply —
+  an isolated-guard fixture on an unreachable shape proves nothing about
+  production): `12`/`13` (prose after the block, in-region), `14` (content
+  before the heading), `15` (malformed second provenance region → run-to-EOF).
+  Direct probes confirm a lawful interior host bullet is preserved and the two
+  HIGH data-loss shapes now refuse with content intact.
+
+- **Known limitations** (documented in the migration, narrow, shared with the
+  strip): a NUL-prefixed line is invisible to BSD awk (pathological in Markdown);
+  and the guard's predictable temp paths are hardened with `rm -f`-before-write,
+  while the older strip/insert temps carry the same predictable-name pattern as
+  0030/0031 and are left for a family-wide fix. Both require an attacker who can
+  already write into the project directory before a user-initiated run.

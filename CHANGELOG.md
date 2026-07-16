@@ -18,19 +18,23 @@ Nothing for downstream projects to re-run.
   0029 re-anchors the spec §11 block by stripping everything from its provenance
   line to the next `## ` / `<!-- gitnexus:start -->` terminator, then re-inserting
   the canonical mirror. §11 has no end marker, so that region also captured
-  anything a user placed under the block — operator prose, or a lawful host-added
-  anti-pattern bullet (spec §11 permits hosts to add them) — and deleted it
-  silently; the `[ -s ]` non-empty guards could not see the loss because the
-  whole-file output stays non-empty. Both the Apply strip and the Rollback strip
-  now run migration 0030's blank-line-strip-and-compare guard first: if the
-  block region's non-blank content differs from the mirror, they refuse (exit 3)
-  and leave `CLAUDE.md` untouched, rather than destroying the divergent content.
-  The guard is skipped when no provenance line is present (the greenfield inject
-  path has no block to protect). Fixtures `12-prose-in-region-refused` and
-  `13-rollback-prose-refused` mutation-prove it; ADR-0043 records the decision
-  and the accepted cost (a customized **and** mis-anchored repo now refuses to
-  re-anchor rather than re-anchoring). Matches 0030's guard and its first-block
-  scope.
+  anything a user placed under the block — operator prose, a lawful host-added
+  anti-pattern bullet (spec §11 permits hosts to add them), content **before** the
+  heading, or the **entire file tail** when a second headingless provenance line
+  makes the strip run to end-of-file — and deleted it silently; the `[ -s ]`
+  non-empty guards could not see the loss because the whole-file output stays
+  non-empty. Both the Apply strip and the Rollback strip now run a guard that
+  validates **exactly the line set the strip deletes** (re-running the strip's
+  state machine in reverse, across every provenance block): if that content is
+  anything but provenance lines, blanks, and canonical block bytes, they refuse
+  (exit 3) and leave `CLAUDE.md` untouched. The guard is skipped when no
+  provenance line is present (the greenfield inject path has no block to protect),
+  and normalises trailing whitespace so a cosmetically drifted canonical block
+  still heals. Fixtures `12`/`13` (prose in-region), `14` (content before the
+  heading), and `15` (malformed second region) mutation-prove it on reachable
+  shapes; ADR-0043 records the decision, the cross-AI review that caught the
+  first-block hole in an earlier revision, and the accepted cost (a customized
+  **and** mis-anchored repo now refuses to re-anchor rather than re-anchoring).
 
 - **Migration 0028 appended a redundant entry under a subsuming `.claude`.**
   Step 1's idempotency check grepped `^\.claude/hooks/?$`, so a project already

@@ -1898,9 +1898,9 @@ test_migration_0029() {
   # The anchor rule lives in two files: migration 0029, which carries 5
   # copies (Step 1 Apply's strip pass, Step 1 Apply's insert pass, Step 1
   # Apply's prose-preservation guard, Step 1 Rollback, and Step 1 Rollback's
-  # guard — Rollback is a sibling of Apply, not part of it; each guard's
-  # extract_block bounds the region with the same terminator alternation, so it
-  # must agree with the strip it gates), and the setup
+  # guard — Rollback is a sibling of Apply, not part of it; each guard re-runs
+  # the strip's state machine in reverse and carries the same terminator
+  # alternation, so it must agree with the strip it gates), and the setup
   # flow's step e2, which carries 1. The fixtures only exercise the
   # migration, so the setup copy can drift unnoticed — which is exactly what
   # happened to 0028's predicate (#87). Collect every copy across both files

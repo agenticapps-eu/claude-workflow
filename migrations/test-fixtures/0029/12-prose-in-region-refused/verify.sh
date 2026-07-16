@@ -13,6 +13,13 @@ set -eu
 
 . "$REPO_ROOT/migrations/test-fixtures/0029/common-verify.sh"
 
+# Reachability: the block is in-region, so idempotency must report not-applied.
+set +e; check_step1_idempotent; idem=$?; set -e
+[ "$idem" -ne 0 ] || {
+  echo "FAIL: shape is already-applied (idempotency=0); Apply would be skipped"
+  exit 1
+}
+
 before="$(cat CLAUDE.md)"
 
 set +e

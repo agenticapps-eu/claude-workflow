@@ -18,11 +18,17 @@ set -eu
 
 BLOCK="$HOME/.claude/skills/agenticapps-workflow/templates/spec-mirrors/11-coding-discipline-0.4.0.md"
 
+# Block INSIDE a GitNexus region, so the real idempotency check reports
+# not-applied and the updater would run Apply — a REACHABLE shape (verify.sh
+# asserts this). The operator prose sits after the block body, before the
+# region's next `## ` heading.
 {
   printf '# CLAUDE.md\n\nGuidance.\n\n'
+  printf '<!-- gitnexus:start -->\n# GitNexus — Code Intelligence\n\n'
   printf '<!-- spec-source: agenticapps-workflow-core@0.4.0 §11 -->\n'
   cat "$BLOCK"
   printf '\nOPERATOR PROSE: how our team applies these four rules in practice.\n'
   printf 'This paragraph is mine, not the spec block, and must survive.\n\n'
+  printf '## Always Do\n- x\n<!-- gitnexus:end -->\n\n'
   printf '## Project Overview\nStuff.\n'
 } > CLAUDE.md
