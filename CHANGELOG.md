@@ -7,12 +7,31 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 
-**No version bump.** Neither change touches a migration's `to_version`: 0028 is
-corrected in place (it is applied in zero downstream repos), and the §11 work is
-this repo's own conformance rather than a change to what it scaffolds. Nothing
-for downstream projects to re-run.
+**No version bump.** No change here touches a migration's `to_version`: 0028 and
+0029 are corrected in place (0028 is applied in zero downstream repos; 0029's
+guard only makes it refuse shapes it should never have stripped), and the §11
+work is this repo's own conformance rather than a change to what it scaffolds.
+Nothing for downstream projects to re-run.
 
 ### Fixed
+- **Migration 0029's §11 strip deleted operator prose and lawful host bullets.**
+  0029 re-anchors the spec §11 block by stripping everything from its provenance
+  line to the next `## ` / `<!-- gitnexus:start -->` terminator, then re-inserting
+  the canonical mirror. §11 has no end marker, so that region also captured
+  anything a user placed under the block — operator prose, or a lawful host-added
+  anti-pattern bullet (spec §11 permits hosts to add them) — and deleted it
+  silently; the `[ -s ]` non-empty guards could not see the loss because the
+  whole-file output stays non-empty. Both the Apply strip and the Rollback strip
+  now run migration 0030's blank-line-strip-and-compare guard first: if the
+  block region's non-blank content differs from the mirror, they refuse (exit 3)
+  and leave `CLAUDE.md` untouched, rather than destroying the divergent content.
+  The guard is skipped when no provenance line is present (the greenfield inject
+  path has no block to protect). Fixtures `12-prose-in-region-refused` and
+  `13-rollback-prose-refused` mutation-prove it; ADR-0043 records the decision
+  and the accepted cost (a customized **and** mis-anchored repo now refuses to
+  re-anchor rather than re-anchoring). Matches 0030's guard and its first-block
+  scope.
+
 - **Migration 0028 appended a redundant entry under a subsuming `.claude`.**
   Step 1's idempotency check grepped `^\.claude/hooks/?$`, so a project already
   ignoring the whole `.claude` directory did not match and got `.claude/hooks/`

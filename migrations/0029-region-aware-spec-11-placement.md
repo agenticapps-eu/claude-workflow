@@ -76,12 +76,15 @@ short-circuiting Apply entirely — each already reads "already applied," so
 Apply never runs against them.
 
 **Fresh installs** get the same rule from the setup flow's step e2, which
-carries a byte-identical anchor condition. This migration carries three
+carries a byte-identical anchor condition. This migration carries five
 copies of the rule (Step 1 Apply's strip pass, Step 1 Apply's insert pass,
-and Step 1 Rollback) and setup carries one; `migrations/run-tests.sh`'s
-`anchor-parity` guard fails the build if setup's copy diverges from the
-migration's shared value, or if either file's copy count drifts from 3/1
-(spec §08: the setup flow's end state must equal a full replay).
+Step 1 Apply's prose-preservation guard, Step 1 Rollback, and Step 1
+Rollback's guard) and setup carries one; each guard's `extract_block` bounds
+the region with the same terminator alternation, so it must agree with the
+strip it gates. `migrations/run-tests.sh`'s `anchor-parity` guard fails the
+build if setup's copy diverges from the migration's shared value, or if
+either file's copy count drifts from 5/1 (spec §08: the setup flow's end
+state must equal a full replay).
 
 ## Pre-flight (hard aborts on failure)
 
@@ -193,6 +196,63 @@ elif grep -q '^## Coding Discipline (NON-NEGOTIABLE)$' CLAUDE.md \
   echo "           immediately above the heading to adopt it as managed."
   exit 3
 else
+  # Guard: refuse to strip a §11 region that is not the canonical block. §11
+  # has no end marker, so the strip below (and the re-anchor after it) treats
+  # everything from the provenance line to the next `## `/`<!-- gitnexus:start
+  # -->` terminator as the block — region H..E: the heading through the last
+  # non-blank line before the terminator. Anything a user placed after the
+  # block's closing paragraph but before that terminator — operator prose, or a
+  # lawful host-added anti-pattern bullet (spec §11 permits hosts to add them;
+  # they layer on top of the canonical bullets) — falls inside H..E and would be
+  # deleted, then the canonical mirror re-inserted without it. The `[ -s ]`
+  # checks below cannot see that loss: the whole-file output stays non-empty.
+  #
+  # So when a block is present, re-extract H..E exactly as migration 0030's
+  # re-sync does (buffering blank lines so they are only kept when a later
+  # non-blank line proves them interior — this pins the region to E, the last
+  # non-blank line, not T-1), strip blank lines from it and the mirror, and diff
+  # the remainder. Identical → only the canonical block occupies the region,
+  # safe to strip and re-anchor. Anything else → refuse, print the diff, and
+  # leave CLAUDE.md untouched for the operator to reconcile by hand. Skipped
+  # entirely when no provenance line is present: that is the greenfield inject
+  # path (state C), which has no block to protect. This matches 0030's guard,
+  # including its first-block scope — a second provenance block's region is not
+  # independently validated here (0030 carries the identical limitation).
+  if grep -qE "$PROV_RE" CLAUDE.md; then
+    CURRENT_BLOCK="$(awk -v prov="$PROV_RE" '
+      !seen && $0 ~ prov { seen=1; next }
+      seen && !inb && /^## Coding Discipline \(NON-NEGOTIABLE\)$/ { inb=1; buf=$0; next }
+      inb && (/^## / || /^<!-- gitnexus:start -->$/) { exit }
+      inb {
+        if ($0 == "") { pending = pending "\n"; next }
+        buf = buf pending "\n" $0; pending = ""
+      }
+      END { if (inb) print buf }
+    ' CLAUDE.md)"
+    printf '%s\n' "$CURRENT_BLOCK" | sed '/^[[:space:]]*$/d' > CLAUDE.md.0029.guard-current.tmp
+    sed '/^[[:space:]]*$/d' "$SPEC_BLOCK" > CLAUDE.md.0029.guard-canon.tmp
+    if ! diff -u CLAUDE.md.0029.guard-canon.tmp CLAUDE.md.0029.guard-current.tmp \
+         > CLAUDE.md.0029.guard.diff.tmp 2>&1; then
+      echo "ABORT: migration 0029 Step 1 — the §11 block's non-blank content"
+      echo "       differs from the canonical mirror. Refusing to strip and"
+      echo "       re-anchor it, which would delete the divergent content."
+      echo ""
+      echo "       This may be operator prose written after the block, or a"
+      echo "       LAWFUL host-specific addition (spec §11 permits hosts to add"
+      echo "       anti-pattern bullets: they layer on top of the canonical"
+      echo "       ones). §11 has no end marker, so the strip cannot tell such"
+      echo "       content apart from the block itself. Reconcile manually: move"
+      echo "       any local addition or prose out from under the §11 block"
+      echo "       (above the next '## ' heading) and re-run. Diff of non-blank"
+      echo "       content (- canonical mirror / + current CLAUDE.md block):"
+      echo ""
+      sed 's/^/       /' CLAUDE.md.0029.guard.diff.tmp
+      rm -f CLAUDE.md.0029.guard-current.tmp CLAUDE.md.0029.guard-canon.tmp CLAUDE.md.0029.guard.diff.tmp
+      exit 3
+    fi
+    rm -f CLAUDE.md.0029.guard-current.tmp CLAUDE.md.0029.guard-canon.tmp CLAUDE.md.0029.guard.diff.tmp
+  fi
+
   # Two passes: strip the managed block wherever it currently sits, then
   # re-insert it at the region-aware anchor. Strip is a no-op when the block is
   # absent (state C), so both "inject" and "move" are the same code path.
@@ -318,6 +378,45 @@ fi
 # failed/truncated rollback must not destroy the file, and must not leak a
 # stray `.0029.tmp` into the project.
 if [ -f CLAUDE.md ]; then
+  # Same guard as Step 1 Apply, and for the same reason: Rollback's removal pass
+  # (below) strips the entire region H..E between the provenance line and its
+  # terminator, so operator prose or a lawful host-added §11 bullet placed under
+  # the block would be deleted along with it. Before removing, when a block is
+  # present, re-extract H..E, strip blank lines from it and the mirror, and diff
+  # the remainder. Identical → only the canonical block is in the region, safe
+  # to remove. Anything else → refuse and leave CLAUDE.md untouched. Skipped
+  # when no provenance line is present (nothing to remove). Matches 0030's guard
+  # and its first-block scope.
+  if grep -qE '^<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->$' CLAUDE.md; then
+    ROLLBACK_SPEC_BLOCK="$HOME/.claude/skills/agenticapps-workflow/templates/spec-mirrors/11-coding-discipline-0.4.0.md"
+    CURRENT_BLOCK="$(awk -v prov='^<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->$' '
+      !seen && $0 ~ prov { seen=1; next }
+      seen && !inb && /^## Coding Discipline \(NON-NEGOTIABLE\)$/ { inb=1; buf=$0; next }
+      inb && (/^## / || /^<!-- gitnexus:start -->$/) { exit }
+      inb {
+        if ($0 == "") { pending = pending "\n"; next }
+        buf = buf pending "\n" $0; pending = ""
+      }
+      END { if (inb) print buf }
+    ' CLAUDE.md)"
+    printf '%s\n' "$CURRENT_BLOCK" | sed '/^[[:space:]]*$/d' > CLAUDE.md.0029.guard-current.tmp
+    sed '/^[[:space:]]*$/d' "$ROLLBACK_SPEC_BLOCK" > CLAUDE.md.0029.guard-canon.tmp
+    if ! diff -u CLAUDE.md.0029.guard-canon.tmp CLAUDE.md.0029.guard-current.tmp \
+         > CLAUDE.md.0029.guard.diff.tmp 2>&1; then
+      echo "ABORT: migration 0029 Step 1 rollback — the §11 block's non-blank"
+      echo "       content differs from the canonical mirror. Refusing to remove"
+      echo "       it, which would delete the divergent content (operator prose,"
+      echo "       or a lawful host-added §11 anti-pattern bullet). Reconcile"
+      echo "       manually: move any local addition or prose out from under the"
+      echo "       §11 block (above the next '## ' heading) and re-run. Diff of"
+      echo "       non-blank content (- canonical mirror / + current block):"
+      echo ""
+      sed 's/^/       /' CLAUDE.md.0029.guard.diff.tmp
+      rm -f CLAUDE.md.0029.guard-current.tmp CLAUDE.md.0029.guard-canon.tmp CLAUDE.md.0029.guard.diff.tmp
+      exit 3
+    fi
+    rm -f CLAUDE.md.0029.guard-current.tmp CLAUDE.md.0029.guard-canon.tmp CLAUDE.md.0029.guard.diff.tmp
+  fi
   if awk '
     BEGIN { in_block = 0; swallowed_own_h2 = 0 }
     /^<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->$/ {
