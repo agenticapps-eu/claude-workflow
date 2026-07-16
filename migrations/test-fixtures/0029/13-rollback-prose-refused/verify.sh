@@ -7,7 +7,7 @@ set -eu
 
 . "$REPO_ROOT/migrations/test-fixtures/0029/common-verify.sh"
 
-before="$(cat CLAUDE.md)"
+orig="$(mktemp)"; trap 'rm -f "$orig"' EXIT; cp CLAUDE.md "$orig"
 
 set +e
 out="$(rollback_step1 2>&1)"
@@ -18,10 +18,9 @@ set -e
   echo "FAIL: expected exit 3 (refuse) on rollback of prose-in-region, got $rc: $out"
   exit 1
 }
-[ "$before" = "$(cat CLAUDE.md)" ] || {
-  echo "FAIL: rollback refused but still modified CLAUDE.md"
-  printf '%s\n' "$before" > CLAUDE.md.before
-  diff CLAUDE.md.before CLAUDE.md || true
+cmp -s "$orig" CLAUDE.md || {
+  echo "FAIL: rollback refused but still modified CLAUDE.md (byte comparison)"
+  diff "$orig" CLAUDE.md || true
   exit 1
 }
 grep -q 'OPERATOR PROSE' CLAUDE.md || {

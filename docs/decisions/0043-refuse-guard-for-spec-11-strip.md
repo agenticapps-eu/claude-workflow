@@ -101,9 +101,21 @@ under the CHANGELOG `[Unreleased]` section.
   copies in the migration (was 3) and still requires all copies — migration and
   setup — to agree.
 
-- Trailing whitespace is normalised before comparison, so a cosmetically drifted
-  but otherwise canonical block (e.g. a trailing space prettier left on a line)
-  still heals rather than falsely refusing to re-anchor.
+- Comparison is on non-blank content only, exactly like 0030 — no
+  trailing-whitespace normalisation. A block that differs from the mirror in any
+  non-blank byte (including trailing whitespace) refuses rather than being
+  silently rewritten. A normalisation pass was tried and removed after cross-AI
+  review (round 2): it could not repair a trailing-whitespace *heading* without
+  diverging the guard's state machine from the strip's (which would break the
+  "guard validates exactly what the strip deletes" invariant), and it risked
+  rewriting away a Markdown hard break (two trailing spaces). Refusing on
+  non-blank drift is the deliberate refuse-loudly trade the user chose.
+
+- The presence and count checks use `grep -a` (text mode): a stray NUL byte
+  anywhere in `CLAUDE.md` would otherwise make BSD grep classify the file
+  "binary" and report no match, skipping the guard entirely while the awk-based
+  strip still deletes the block — a silent data-loss bypass. `grep -a` keeps the
+  guard firing (found in cross-AI review round 2).
 
 - Fixtures mutation-prove the guard on **reachable** shapes (each asserts the
   real idempotency check reports not-applied, so the updater would run Apply —
@@ -113,9 +125,15 @@ under the CHANGELOG `[Unreleased]` section.
   Direct probes confirm a lawful interior host bullet is preserved and the two
   HIGH data-loss shapes now refuse with content intact.
 
-- **Known limitations** (documented in the migration, narrow, shared with the
-  strip): a NUL-prefixed line is invisible to BSD awk (pathological in Markdown);
-  and the guard's predictable temp paths are hardened with `rm -f`-before-write,
-  while the older strip/insert temps carry the same predictable-name pattern as
-  0030/0031 and are left for a family-wide fix. Both require an attacker who can
-  already write into the project directory before a user-initiated run.
+- **Known limitations** (documented in the migration, narrow): refusal on
+  trailing-whitespace-only drift (refuse-loudly, matches 0030); back-to-back
+  duplicate provenance lines above one block refuse a heal the strip could
+  perform (conservative refusal on a degenerate shape, never data loss); a NUL
+  *within* a managed block line still reads as blank to BSD awk (pathological
+  Markdown, shared with the strip); and the guard's predictable temp paths are
+  hardened with `rm -f`-before-write against a pre-planted symlink, though a
+  pre-existing directory at those names still fails `rm -f`, and the older
+  strip/insert temps carry the same predictable-name pattern as 0030/0031
+  (family-wide temp hardening is out of scope). The temp cases all require an
+  attacker who can already write into the project directory before a
+  user-initiated run.

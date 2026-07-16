@@ -219,10 +219,13 @@ else
   # nothing but provenance, blanks, and canonical block bytes: safe. Anything
   # else → refuse, print the diff, leave CLAUDE.md untouched. Skipped when no
   # provenance line is present: the greenfield inject path (state C) has no
-  # block to protect. Trailing whitespace is normalised on both sides so a
-  # cosmetically drifted-but-canonical block (a trailing space prettier left on
-  # a line) still heals rather than falsely refusing.
-  if grep -qE "$PROV_RE" CLAUDE.md; then
+  # block to protect. Comparison is on non-blank content only (like 0030): a
+  # block that differs from the mirror in any non-blank byte — including
+  # trailing whitespace — refuses rather than being silently rewritten. `grep
+  # -a` forces text mode so a stray NUL byte anywhere in the file cannot make
+  # BSD grep classify it "binary", return no-match, and skip the guard while
+  # the awk-based strip still runs (a bypass a plain `grep` would allow).
+  if grep -aqE "$PROV_RE" CLAUDE.md; then
     # Defence in depth: the guard reads $SPEC_BLOCK. Pre-flight already proved
     # it non-empty for real operation, but a caller that reaches here with a
     # missing mirror must refuse (exit 3), never proceed to a strip it cannot
@@ -232,24 +235,23 @@ else
       echo "       $SPEC_BLOCK — cannot validate the block before stripping it."
       exit 3
     }
-    PROVCOUNT=$(grep -cE "$PROV_RE" CLAUDE.md)
+    PROVCOUNT=$(grep -acE "$PROV_RE" CLAUDE.md)
     rm -f CLAUDE.md.0029.guard-del.tmp CLAUDE.md.0029.guard-exp.tmp CLAUDE.md.0029.guard.diff.tmp
     # Emit exactly the lines the strip deletes (provenance lines excluded — they
-    # are counted separately and re-created by the insert), normalise trailing
-    # whitespace, drop blanks.
+    # are counted separately and re-created by the insert), drop blanks.
     awk '
       /^<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->$/ { in_block = 1; next }
       in_block && !swallowed_own_h2 && /^## Coding Discipline \(NON-NEGOTIABLE\)$/ { swallowed_own_h2 = 1; print; next }
       in_block && swallowed_own_h2 && (/^## / || /^<!-- gitnexus:start -->$/) { in_block = 0; swallowed_own_h2 = 0; next }
       in_block { print; next }
       !in_block { next }
-    ' CLAUDE.md | sed 's/[[:space:]]*$//' | sed '/^$/d' > CLAUDE.md.0029.guard-del.tmp
-    # Expected: the canonical mirror (trailing-ws-normalised, blanks dropped)
-    # repeated once per provenance block.
+    ' CLAUDE.md | sed '/^[[:space:]]*$/d' > CLAUDE.md.0029.guard-del.tmp
+    # Expected: the canonical mirror (blanks dropped) repeated once per
+    # provenance block.
     : > CLAUDE.md.0029.guard-exp.tmp
     guard_i=0
     while [ "$guard_i" -lt "$PROVCOUNT" ]; do
-      sed 's/[[:space:]]*$//' "$SPEC_BLOCK" | sed '/^$/d' >> CLAUDE.md.0029.guard-exp.tmp
+      sed '/^[[:space:]]*$/d' "$SPEC_BLOCK" >> CLAUDE.md.0029.guard-exp.tmp
       guard_i=$((guard_i + 1))
     done
     if ! diff -u CLAUDE.md.0029.guard-exp.tmp CLAUDE.md.0029.guard-del.tmp \
@@ -406,12 +408,13 @@ if [ -f CLAUDE.md ]; then
   # or the whole tail after a malformed second region would be deleted with it.
   # Before removing, when a provenance line is present, validate EXACTLY what the
   # removal pass deletes: re-run its state machine in reverse to emit the deleted
-  # lines across ALL blocks, normalise trailing whitespace, drop blanks and
-  # provenance lines, and require the remainder to equal the canonical mirror
-  # repeated once per provenance block. Identical → safe to remove. Anything
-  # else → refuse (exit 3), leave CLAUDE.md untouched. Skipped when no provenance
-  # line is present (nothing to remove).
-  if grep -qE '^<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->$' CLAUDE.md; then
+  # lines across ALL blocks, drop blanks and provenance lines, and require the
+  # remainder to equal the canonical mirror (non-blank content) repeated once
+  # per provenance block. Identical → safe to remove. Anything else → refuse
+  # (exit 3), leave CLAUDE.md untouched. Skipped when no provenance line is
+  # present (nothing to remove). `grep -a` forces text mode so a stray NUL byte
+  # cannot skip the guard while the awk removal still runs.
+  if grep -aqE '^<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->$' CLAUDE.md; then
     ROLLBACK_SPEC_BLOCK="$HOME/.claude/skills/agenticapps-workflow/templates/spec-mirrors/11-coding-discipline-0.4.0.md"
     # Rollback has no pre-flight, so it must check the mirror itself: a missing
     # mirror means the block cannot be validated, so refuse rather than remove
@@ -421,7 +424,7 @@ if [ -f CLAUDE.md ]; then
       echo "       empty at $ROLLBACK_SPEC_BLOCK — cannot validate before removing."
       exit 3
     }
-    ROLLBACK_PROVCOUNT=$(grep -cE '^<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->$' CLAUDE.md)
+    ROLLBACK_PROVCOUNT=$(grep -acE '^<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->$' CLAUDE.md)
     rm -f CLAUDE.md.0029.guard-del.tmp CLAUDE.md.0029.guard-exp.tmp CLAUDE.md.0029.guard.diff.tmp
     awk '
       /^<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->$/ { in_block = 1; next }
@@ -429,11 +432,11 @@ if [ -f CLAUDE.md ]; then
       in_block && swallowed_own_h2 && (/^## / || /^<!-- gitnexus:start -->$/) { in_block = 0; swallowed_own_h2 = 0; next }
       in_block { print; next }
       !in_block { next }
-    ' CLAUDE.md | sed 's/[[:space:]]*$//' | sed '/^$/d' > CLAUDE.md.0029.guard-del.tmp
+    ' CLAUDE.md | sed '/^[[:space:]]*$/d' > CLAUDE.md.0029.guard-del.tmp
     : > CLAUDE.md.0029.guard-exp.tmp
     guard_i=0
     while [ "$guard_i" -lt "$ROLLBACK_PROVCOUNT" ]; do
-      sed 's/[[:space:]]*$//' "$ROLLBACK_SPEC_BLOCK" | sed '/^$/d' >> CLAUDE.md.0029.guard-exp.tmp
+      sed '/^[[:space:]]*$/d' "$ROLLBACK_SPEC_BLOCK" >> CLAUDE.md.0029.guard-exp.tmp
       guard_i=$((guard_i + 1))
     done
     if ! diff -u CLAUDE.md.0029.guard-exp.tmp CLAUDE.md.0029.guard-del.tmp \
@@ -498,21 +501,34 @@ position. Re-running 0014 is not possible on a 2.x project, so there is no
 validates *exactly* the line set the strip deletes — every provenance block,
 including content before the heading and a headingless second region that would
 otherwise run to EOF — so a divergent span refuses rather than being destroyed.
-Two limitations remain, both narrow and shared with the strip itself:
+It compares non-blank content only, exactly like migration 0030; it does not
+normalise trailing whitespace, so a block that differs from the mirror in any
+non-blank byte refuses rather than being silently rewritten (a normalisation
+pass was tried and removed — it could not repair a trailing-whitespace heading
+without diverging the guard's state machine from the strip's, and it risked
+rewriting a Markdown hard break away). These limitations remain, all narrow:
 
-- **NUL-bearing lines.** On the target BSD awk a line whose first byte is NUL is
-  exposed as an empty record, so the guard treats it as a blank and the strip
-  deletes it unseen. A NUL byte in a Markdown `CLAUDE.md` is pathological and
-  the whole line-oriented toolchain (0014/0029/0030) shares the assumption; not
-  closed here.
+- **Refusal on non-blank drift.** A canonical block that has drifted only in
+  trailing whitespace refuses rather than re-anchoring — the deliberate
+  refuse-loudly trade (see ADR-0043), identical to 0030's guard.
+- **Back-to-back duplicate provenance.** Two adjacent provenance lines above a
+  single canonical block make the block count (provenance lines) exceed the
+  bodies present, so the guard refuses a heal the strip could safely perform.
+  This is a conservative refusal on a degenerate shape, never data loss.
+- **NUL bytes.** `grep -a` keeps a stray NUL from skipping the guard entirely.
+  A NUL *within a managed block's line* still reads as an empty record on the
+  target BSD awk, so both the strip and the guard treat that line as blank — a
+  pathological Markdown input the whole line-oriented toolchain (0014/0029/0030)
+  shares; not closed here.
 - **Predictable guard temp paths.** The guard writes `CLAUDE.md.0029.guard-*`
   in the project directory and `rm -f`s each path immediately before writing it,
-  so a pre-planted symlink at those names is unlinked rather than followed. The
-  older strip/insert temps (`CLAUDE.md.0029.strip`, `.tmp`) predate this fix and
-  carry the same predictable-name pattern as 0030/0031; hardening those
-  family-wide is out of scope for this bugfix. Both require an attacker who can
-  already write into the project working directory before a user-initiated
-  migration run.
+  so a pre-planted symlink at those names is unlinked rather than followed. A
+  pre-existing *directory* at one of those names still makes `rm -f` fail; and
+  the older strip/insert temps (`CLAUDE.md.0029.strip`, `.tmp`) predate this fix
+  and share the same predictable-name pattern as 0030/0031. Hardening the temp
+  scheme family-wide is out of scope for this bugfix. All require an attacker
+  who can already write into the project working directory before a
+  user-initiated migration run.
 
 ### Step 2 — Bump the installed scaffolder version 2.6.0 -> 2.7.0
 

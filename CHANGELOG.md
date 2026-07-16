@@ -29,12 +29,15 @@ Nothing for downstream projects to re-run.
   anything but provenance lines, blanks, and canonical block bytes, they refuse
   (exit 3) and leave `CLAUDE.md` untouched. The guard is skipped when no
   provenance line is present (the greenfield inject path has no block to protect),
-  and normalises trailing whitespace so a cosmetically drifted canonical block
-  still heals. Fixtures `12`/`13` (prose in-region), `14` (content before the
-  heading), and `15` (malformed second region) mutation-prove it on reachable
-  shapes; ADR-0043 records the decision, the cross-AI review that caught the
-  first-block hole in an earlier revision, and the accepted cost (a customized
-  **and** mis-anchored repo now refuses to re-anchor rather than re-anchoring).
+  compares non-blank content only (like 0030 — a block differing in any non-blank
+  byte refuses rather than being rewritten), and uses `grep -a` so a stray NUL
+  byte cannot make BSD grep skip the guard while the strip still runs. Fixtures
+  `12`/`13` (prose in-region), `14` (content before the heading), `15` (malformed
+  second region), and `16` (NUL-byte bypass) mutation-prove it on reachable
+  shapes; ADR-0043 records the decision, two rounds of cross-AI review (which
+  caught a first-block hole and a NUL bypass in earlier revisions), and the
+  accepted cost (a customized **and** mis-anchored repo now refuses to re-anchor
+  rather than re-anchoring).
 
 - **Migration 0028 appended a redundant entry under a subsuming `.claude`.**
   Step 1's idempotency check grepped `^\.claude/hooks/?$`, so a project already
