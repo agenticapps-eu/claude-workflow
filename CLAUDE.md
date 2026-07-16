@@ -1,10 +1,14 @@
 <!--
-  This block MUST stay ABOVE the `<!-- gitnexus:start -->` region below.
-  `gitnexus setup` regenerates everything between its start/end markers, so a
-  §11 block placed inside them (e.g. before the first `## ` heading, which is
-  where migration 0014 injects it into scaffolded projects) would be silently
-  dropped on the next run. Above the region is also the earliest point in the
-  file, which is what spec §11's placement SHOULD asks for.
+  This block sits at the top of the file, which is what spec §11's placement
+  SHOULD asks for.
+
+  There is no longer a `<!-- gitnexus:start -->` region below it: the GitNexus
+  section was removed from this repo's instruction files (v2.9.0), and the
+  reindex engine now passes `--skip-agents-md` so `analyze` cannot recreate it.
+  Migration 0029's anchor rule still exists and still matters — consumers that
+  DO carry a region need §11 anchored above it, or the next `analyze` silently
+  eats the block. Do not read this file's lack of a region as evidence the rule
+  is obsolete.
 
   Verbatim from the spec — do not edit. Substitution is permitted only inside
   `{{...}}`; altering any surrounding prose, the rule numbers, or the
@@ -92,47 +96,3 @@ These four rules apply to every code-touching turn. They do not
 replace the commitment ritual, the rationalisation table, the red
 flags, or the evidence rules — they sit alongside them as the
 session-level discipline the model brings to every diff.
-
-<!-- gitnexus:start -->
-# GitNexus — Code Intelligence
-
-This project is indexed by GitNexus as **claude-workflow** (2306 symbols, 2439 relationships, 2 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
-
-> If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
-
-## Always Do
-
-- **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `gitnexus_impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
-- **MUST run `gitnexus_detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows.
-- **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
-- When exploring unfamiliar code, use `gitnexus_query({query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
-- When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `gitnexus_context({name: "symbolName"})`.
-
-## Never Do
-
-- NEVER edit a function, class, or method without first running `gitnexus_impact` on it.
-- NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
-- NEVER rename symbols with find-and-replace — use `gitnexus_rename` which understands the call graph.
-- NEVER commit changes without running `gitnexus_detect_changes()` to check affected scope.
-
-## Resources
-
-| Resource | Use for |
-|----------|---------|
-| `gitnexus://repo/claude-workflow/context` | Codebase overview, check index freshness |
-| `gitnexus://repo/claude-workflow/clusters` | All functional areas |
-| `gitnexus://repo/claude-workflow/processes` | All execution flows |
-| `gitnexus://repo/claude-workflow/process/{name}` | Step-by-step execution trace |
-
-## CLI
-
-| Task | Read this skill file |
-|------|---------------------|
-| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md` |
-| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
-| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md` |
-| Rename / extract / split / refactor | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md` |
-| Tools, resources, schema reference | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md` |
-| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
-
-<!-- gitnexus:end -->
