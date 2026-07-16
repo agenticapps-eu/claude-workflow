@@ -126,6 +126,20 @@ under the CHANGELOG `[Unreleased]` section.
   undefined-behaviour paths into one clean, defined refusal. `grep -a` is kept
   in the guard as harmless defence-in-depth.
 
+- **Byte-deterministic locale (cross-AI review round 4).** The NUL/CR gate was
+  not enough: under a UTF-8 locale BSD grep and BSD awk disagree about
+  `[^[:space:]]` over a **Unicode-whitespace** byte run (U+2028 and kin), so a
+  provenance line can match the guard's grep presence check but not its awk
+  reproduction (or the reverse) — valid UTF-8, not caught by the gate — letting
+  the strip delete a line the guard never validated. All three file-processing
+  blocks (idempotency, Apply, Rollback) now `export LC_ALL=C`, so every
+  grep/awk/sed treats each non-ASCII byte as an ordinary non-space byte and the
+  presence check, reproduction, and strip agree line-for-line. This also settles
+  a portability wart (some locales made BSD awk error on the literal `§` in the
+  regex). The idempotency check additionally runs the clean-text `tr` test, so a
+  NUL/CR file reports *not applied* and routes to the gate's loud refusal instead
+  of being silently skipped as already-applied.
+
 - Fixtures mutation-prove the guard on **reachable** shapes (each asserts the
   real idempotency check reports not-applied, so the updater would run Apply —
   an isolated-guard fixture on an unreachable shape proves nothing about

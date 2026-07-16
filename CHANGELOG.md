@@ -30,17 +30,23 @@ Nothing for downstream projects to re-run.
   (exit 3) and leave `CLAUDE.md` untouched. The guard is skipped when no
   provenance line is present (the greenfield inject path has no block to protect)
   and compares non-blank content only (like 0030 — a block differing in any
-  non-blank byte refuses rather than being rewritten). Step 1 also refuses any
-  `CLAUDE.md` containing a NUL or CR byte before the guard or strip run (a
-  clean-text gate): the line-oriented grep/awk/sed toolchain has undefined,
-  locale-dependent behaviour on those bytes — a NUL can skip the guard or make
-  BSD awk truncate a record so the guard validates a canonical prefix while the
-  strip deletes a hidden suffix; a CRLF file duplicates the block. Fixtures
-  `12`/`13` (prose in-region), `14` (content before the heading), `15` (malformed
-  second region), `16` (NUL in the heading), and `17` (CRLF) mutation-prove it on
-  reachable shapes; ADR-0043 records the decision, three rounds of cross-AI
-  review (which caught a first-block hole, a NUL bypass, and awk NUL-truncation
-  in earlier revisions), and the accepted cost (a customized **and** mis-anchored
+  non-blank byte refuses rather than being rewritten). All three file-processing
+  blocks (idempotency, Apply, Rollback) `export LC_ALL=C` so grep/awk/sed use
+  byte semantics and agree on marker lines — under a UTF-8 locale they disagree
+  about `[^[:space:]]` on a Unicode-whitespace byte run (U+2028 and kin), which
+  could otherwise let the strip delete a line the guard never validated. Step 1
+  also refuses any `CLAUDE.md` containing a NUL or CR byte before the guard or
+  strip run (a clean-text gate), since those are byte-level hazards a locale does
+  not resolve — a NUL can skip the guard or make BSD awk truncate a record so the
+  guard validates a canonical prefix while the strip deletes a hidden suffix; a
+  CRLF file duplicates the block. The idempotency check applies the same clean
+  test, so a NUL/CR file routes to the gate's loud refusal rather than a silent
+  skip. Fixtures `12`/`13` (prose in-region), `14` (content before the heading),
+  `15` (malformed second region), `16` (NUL in the heading), `17` (CRLF), and
+  `18` (rollback NUL) mutation-prove it on reachable shapes; ADR-0043 records the
+  decision, four rounds of cross-AI review (which caught a first-block hole, a
+  NUL bypass, awk NUL-truncation, and a Unicode-whitespace locale split in
+  earlier revisions), and the accepted cost (a customized **and** mis-anchored
   repo now refuses to re-anchor rather than re-anchoring).
 
 - **Migration 0028 appended a redundant entry under a subsuming `.claude`.**

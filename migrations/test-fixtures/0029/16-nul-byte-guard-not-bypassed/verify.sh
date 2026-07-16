@@ -8,6 +8,16 @@ set -eu
 
 . "$REPO_ROOT/migrations/test-fixtures/0029/common-verify.sh"
 
+# Dispatch reachability: the idempotency check must report NOT-applied (nonzero)
+# on this dirty file, so the real updater runs Apply and reaches the gate rather
+# than skipping it as already-applied.
+set +e; check_step1_idempotent; idem=$?; set -e
+[ "$idem" -ne 0 ] || {
+  echo "FAIL: idempotency reports a NUL file as already-applied; Apply would be"
+  echo "      skipped and the clean-text gate never runs"
+  exit 1
+}
+
 orig="$(mktemp)"; trap 'rm -f "$orig"' EXIT; cp CLAUDE.md "$orig"
 
 set +e

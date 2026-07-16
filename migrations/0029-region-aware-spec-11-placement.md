@@ -141,7 +141,16 @@ informational message and Step 2 still runs (0014's idiom).
 **Idempotency check:**
 
 ```bash
+# LC_ALL=C pins grep/awk to byte semantics so they agree on what a
+# provenance/heading/terminator line is: under a UTF-8 locale grep and awk
+# disagree about `[^[:space:]]` on a Unicode-whitespace byte sequence (U+2028
+# et al.), which otherwise lets a marker match one tool but not the other. The
+# `tr` clean check makes a NUL/CR file report NOT applied, so it routes to
+# Step 1's clean-text gate (a loud refusal) rather than being silently skipped
+# as already-applied.
+export LC_ALL=C
 [ -f CLAUDE.md ] \
+  && [ "$(tr -dc '\000\015' < CLAUDE.md | wc -c | tr -d '[:space:]')" = 0 ] \
   && grep -q '^<!-- spec-source: agenticapps-workflow-core@0\.4\.0 §11 -->$' CLAUDE.md \
   && ! awk '
        /^<!-- gitnexus:start -->$/ { r = 1; next }
@@ -177,6 +186,18 @@ non-empty, and is not truncated (its final section is present).
 PROV='<!-- spec-source: agenticapps-workflow-core@0.4.0 §11 -->'
 PROV_RE='^<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->$'
 SPEC_BLOCK="$HOME/.claude/skills/agenticapps-workflow/templates/spec-mirrors/11-coding-discipline-0.4.0.md"
+
+# Pin every grep/awk/sed below to byte semantics. Under a UTF-8 locale BSD grep
+# and BSD awk disagree about `[^[:space:]]` on a Unicode-whitespace byte run
+# (U+2028 and kin) — grep stops the provenance `@[^[:space:]]+` match there
+# while awk does not — so a marker can match the presence check but not the
+# reproduction (or vice versa), letting the strip delete a line the guard never
+# validated. `LC_ALL=C` makes both treat every non-ASCII byte as an ordinary
+# non-space byte, so the presence check, the guard's reproduction, and the strip
+# agree line-for-line. The NUL/CR clean-text gate below is still required: those
+# are byte-level hazards (grep binary mode, awk NUL truncation, CR anchor miss)
+# that a byte locale does not resolve.
+export LC_ALL=C
 
 if [ ! -f CLAUDE.md ]; then
   echo "INFO: migration 0029 Step 1 — no CLAUDE.md in project; §11 heal skipped."
@@ -408,6 +429,11 @@ fi
 **Rollback:**
 
 ```bash
+# Pin grep/awk/sed to byte semantics (see Step 1 Apply for why: a UTF-8 locale
+# makes grep and awk disagree on `[^[:space:]]` over a Unicode-whitespace byte
+# run, which can desync the clean-text gate, the guard, and the removal below).
+export LC_ALL=C
+
 # Remove the managed block. Same shape as 0014's rollback, widened by the same
 # alternation as Step 1's strip: the terminator must recognize a `## ` line OR
 # an anchored `<!-- gitnexus:start -->` marker (or EOF) — a healed region-led
@@ -535,7 +561,11 @@ grep/awk/sed toolchain has undefined, locale-dependent behaviour on those bytes
 guard validates a canonical prefix while the strip deletes the whole line; CR
 makes every anchor miss yet the insert still fires and duplicates the block), so
 a real clean-LF file passes and anything else is refused before the guard or
-strip run. Past that gate, the guard (Apply and Rollback) validates *exactly*
+strip run. All three file-processing blocks (idempotency, Apply, Rollback) also
+`export LC_ALL=C` so grep/awk/sed use byte semantics and agree on marker lines —
+without it a UTF-8 locale splits grep and awk over `[^[:space:]]` on a
+Unicode-whitespace byte run (U+2028 and kin), letting a marker match one tool but
+not the other. Past that gate, the guard (Apply and Rollback) validates *exactly*
 the line set the strip deletes — every provenance block, including content
 before the heading and a headingless second region that would otherwise run to
 EOF — so a divergent span refuses rather than being destroyed. It compares
