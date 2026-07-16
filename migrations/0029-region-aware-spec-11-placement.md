@@ -76,12 +76,15 @@ short-circuiting Apply entirely — each already reads "already applied," so
 Apply never runs against them.
 
 **Fresh installs** get the same rule from the setup flow's step e2, which
-carries a byte-identical anchor condition. This migration carries three
+carries a byte-identical anchor condition. This migration carries five
 copies of the rule (Step 1 Apply's strip pass, Step 1 Apply's insert pass,
-and Step 1 Rollback) and setup carries one; `migrations/run-tests.sh`'s
-`anchor-parity` guard fails the build if setup's copy diverges from the
-migration's shared value, or if either file's copy count drifts from 3/1
-(spec §08: the setup flow's end state must equal a full replay).
+Step 1 Apply's prose-preservation guard, Step 1 Rollback, and Step 1
+Rollback's guard) and setup carries one; each guard re-runs the strip's own
+state machine in reverse and so carries the same terminator alternation, which
+must agree with the strip it gates. `migrations/run-tests.sh`'s `anchor-parity` guard fails the
+build if setup's copy diverges from the migration's shared value, or if
+either file's copy count drifts from 5/1 (spec §08: the setup flow's end
+state must equal a full replay).
 
 ## Pre-flight (hard aborts on failure)
 
@@ -138,7 +141,16 @@ informational message and Step 2 still runs (0014's idiom).
 **Idempotency check:**
 
 ```bash
+# LC_ALL=C pins grep/awk to byte semantics so they agree on what a
+# provenance/heading/terminator line is: under a UTF-8 locale grep and awk
+# disagree about `[^[:space:]]` on a Unicode-whitespace byte sequence (U+2028
+# et al.), which otherwise lets a marker match one tool but not the other. The
+# `tr` clean check makes a NUL/CR file report NOT applied, so it routes to
+# Step 1's clean-text gate (a loud refusal) rather than being silently skipped
+# as already-applied.
+export LC_ALL=C
 [ -f CLAUDE.md ] \
+  && [ "$(tr -dc '\000\015' < CLAUDE.md | wc -c | tr -d '[:space:]')" = 0 ] \
   && grep -q '^<!-- spec-source: agenticapps-workflow-core@0\.4\.0 §11 -->$' CLAUDE.md \
   && ! awk '
        /^<!-- gitnexus:start -->$/ { r = 1; next }
@@ -175,10 +187,41 @@ PROV='<!-- spec-source: agenticapps-workflow-core@0.4.0 §11 -->'
 PROV_RE='^<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->$'
 SPEC_BLOCK="$HOME/.claude/skills/agenticapps-workflow/templates/spec-mirrors/11-coding-discipline-0.4.0.md"
 
+# Pin every grep/awk/sed below to byte semantics. Under a UTF-8 locale BSD grep
+# and BSD awk disagree about `[^[:space:]]` on a Unicode-whitespace byte run
+# (U+2028 and kin) — grep stops the provenance `@[^[:space:]]+` match there
+# while awk does not — so a marker can match the presence check but not the
+# reproduction (or vice versa), letting the strip delete a line the guard never
+# validated. `LC_ALL=C` makes both treat every non-ASCII byte as an ordinary
+# non-space byte, so the presence check, the guard's reproduction, and the strip
+# agree line-for-line. The NUL/CR clean-text gate below is still required: those
+# are byte-level hazards (grep binary mode, awk NUL truncation, CR anchor miss)
+# that a byte locale does not resolve.
+export LC_ALL=C
+
 if [ ! -f CLAUDE.md ]; then
   echo "INFO: migration 0029 Step 1 — no CLAUDE.md in project; §11 heal skipped."
   echo "      Scaffold a CLAUDE.md (e.g. via /setup-agenticapps-workflow) and"
   echo "      re-run /update-agenticapps-workflow to pick up §11 on the next pass."
+elif [ "$(LC_ALL=C tr -dc '\000\015' < CLAUDE.md | wc -c | tr -d '[:space:]')" != 0 ]; then
+  # Clean-text gate. This heal is built entirely from line-oriented tools
+  # (grep/awk/sed) whose behaviour on NUL and CR bytes is undefined and
+  # locale-dependent on the target BSD toolchain: a NUL can make grep report
+  # "binary, no match" (skipping the guard while the awk strip still runs to
+  # EOF), and BSD awk truncates a record at its first NUL (so the guard
+  # validates a canonical prefix while the strip deletes the whole record,
+  # suffix and all). CR (a CRLF file) makes every `^...$` anchor miss, so the
+  # block is neither recognised nor validated yet the insert anchor still
+  # fires, duplicating the block. A real `CLAUDE.md` is clean LF Markdown, so
+  # rather than chase each divergence we refuse any file containing a NUL or CR
+  # byte — before the provenance/heading greps and the strip both run — turning
+  # undefined behaviour into one clean, defined refusal. `LC_ALL=C` forces byte
+  # semantics; `tr -dc '\000\015'` keeps only NUL/CR, and a non-zero count refuses.
+  echo "ABORT: migration 0029 Step 1 — CLAUDE.md contains NUL or CR bytes; it is"
+  echo "       not clean LF Markdown. The line-oriented §11 heal cannot process"
+  echo "       it safely, so it is left untouched. Normalise line endings"
+  echo "       (e.g. strip CR, remove any NUL) and re-run."
+  exit 3
 elif grep -q '^## Coding Discipline (NON-NEGOTIABLE)$' CLAUDE.md \
      && ! grep -qE "$PROV_RE" CLAUDE.md; then
   echo "ABORT: CLAUDE.md contains a '## Coding Discipline (NON-NEGOTIABLE)'"
@@ -193,6 +236,87 @@ elif grep -q '^## Coding Discipline (NON-NEGOTIABLE)$' CLAUDE.md \
   echo "           immediately above the heading to adopt it as managed."
   exit 3
 else
+  # Guard: refuse to strip any §11 region that is not exactly the canonical
+  # block. §11 has no end marker, so the strip below deletes everything from
+  # each provenance line to the next `## ` / `<!-- gitnexus:start -->`
+  # terminator (after swallowing the block's own heading). Anything else caught
+  # in that span — operator prose, a lawful host-added anti-pattern bullet
+  # (spec §11 permits hosts to add them; they layer on top of the canonical
+  # bullets), content the user wrote *before* the heading, or the entire file
+  # tail when a second, headingless provenance line makes the strip run to EOF
+  # — is deleted and the canonical mirror re-inserted without it. The `[ -s ]`
+  # checks below cannot see that loss: the whole-file output stays non-empty.
+  #
+  # The guard therefore validates EXACTLY what the strip removes, not a
+  # convenient subset. It re-runs the strip's own state machine in reverse —
+  # emitting precisely the lines the strip DELETES (mirroring `in_block` /
+  # `swallowed_own_h2` line-for-line, so the two never disagree about the
+  # deleted set), across ALL provenance blocks, not just the first. Those
+  # deleted lines, minus provenance lines and blanks and trailing whitespace,
+  # must equal the canonical mirror's content repeated once per provenance
+  # block (the strip removes N blocks; the insert re-adds one — a lawful heal
+  # only when every removed block was canonical). Identical → the strip removes
+  # nothing but provenance, blanks, and canonical block bytes: safe. Anything
+  # else → refuse, print the diff, leave CLAUDE.md untouched. Skipped when no
+  # provenance line is present: the greenfield inject path (state C) has no
+  # block to protect. Comparison is on non-blank content only (like 0030): a
+  # block that differs from the mirror in any non-blank byte — including
+  # trailing whitespace — refuses rather than being silently rewritten. NUL/CR
+  # inputs never reach here (the clean-text gate above refuses them); `grep -a`
+  # is kept as defence-in-depth so the presence check and count stay consistent
+  # on any residual control byte.
+  if grep -aqE "$PROV_RE" CLAUDE.md; then
+    # Defence in depth: the guard reads $SPEC_BLOCK. Pre-flight already proved
+    # it non-empty for real operation, but a caller that reaches here with a
+    # missing mirror must refuse (exit 3), never proceed to a strip it cannot
+    # validate. (Also avoids a `set -e` caller aborting on the sed below.)
+    test -s "$SPEC_BLOCK" || {
+      echo "ABORT: migration 0029 Step 1 — vendored §11 mirror missing or empty at"
+      echo "       $SPEC_BLOCK — cannot validate the block before stripping it."
+      exit 3
+    }
+    PROVCOUNT=$(grep -acE "$PROV_RE" CLAUDE.md)
+    rm -f CLAUDE.md.0029.guard-del.tmp CLAUDE.md.0029.guard-exp.tmp CLAUDE.md.0029.guard.diff.tmp
+    # Emit exactly the lines the strip deletes (provenance lines excluded — they
+    # are counted separately and re-created by the insert), drop blanks.
+    awk '
+      /^<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->$/ { in_block = 1; next }
+      in_block && !swallowed_own_h2 && /^## Coding Discipline \(NON-NEGOTIABLE\)$/ { swallowed_own_h2 = 1; print; next }
+      in_block && swallowed_own_h2 && (/^## / || /^<!-- gitnexus:start -->$/) { in_block = 0; swallowed_own_h2 = 0; next }
+      in_block { print; next }
+      !in_block { next }
+    ' CLAUDE.md | sed '/^[[:space:]]*$/d' > CLAUDE.md.0029.guard-del.tmp
+    # Expected: the canonical mirror (blanks dropped) repeated once per
+    # provenance block.
+    : > CLAUDE.md.0029.guard-exp.tmp
+    guard_i=0
+    while [ "$guard_i" -lt "$PROVCOUNT" ]; do
+      sed '/^[[:space:]]*$/d' "$SPEC_BLOCK" >> CLAUDE.md.0029.guard-exp.tmp
+      guard_i=$((guard_i + 1))
+    done
+    if ! diff -u CLAUDE.md.0029.guard-exp.tmp CLAUDE.md.0029.guard-del.tmp \
+         > CLAUDE.md.0029.guard.diff.tmp 2>&1; then
+      echo "ABORT: migration 0029 Step 1 — the content the §11 strip would delete"
+      echo "       is not exactly the canonical block(s). Refusing to strip and"
+      echo "       re-anchor, which would delete the divergent content."
+      echo ""
+      echo "       This may be operator prose under (or before) the block, a"
+      echo "       LAWFUL host-specific addition (spec §11 permits hosts to add"
+      echo "       anti-pattern bullets: they layer on top of the canonical"
+      echo "       ones), or a malformed second §11 region that makes the strip"
+      echo "       run to end-of-file. §11 has no end marker, so the strip cannot"
+      echo "       tell such content apart from the block itself. Reconcile"
+      echo "       manually: move any local addition or prose out from under the"
+      echo "       §11 block (above the next '## ' heading) and re-run. Diff of"
+      echo "       what would be deleted (- expected canonical / + actual):"
+      echo ""
+      sed 's/^/       /' CLAUDE.md.0029.guard.diff.tmp
+      rm -f CLAUDE.md.0029.guard-del.tmp CLAUDE.md.0029.guard-exp.tmp CLAUDE.md.0029.guard.diff.tmp
+      exit 3
+    fi
+    rm -f CLAUDE.md.0029.guard-del.tmp CLAUDE.md.0029.guard-exp.tmp CLAUDE.md.0029.guard.diff.tmp
+  fi
+
   # Two passes: strip the managed block wherever it currently sits, then
   # re-insert it at the region-aware anchor. Strip is a no-op when the block is
   # absent (state C), so both "inject" and "move" are the same code path.
@@ -305,6 +429,11 @@ fi
 **Rollback:**
 
 ```bash
+# Pin grep/awk/sed to byte semantics (see Step 1 Apply for why: a UTF-8 locale
+# makes grep and awk disagree on `[^[:space:]]` over a Unicode-whitespace byte
+# run, which can desync the clean-text gate, the guard, and the removal below).
+export LC_ALL=C
+
 # Remove the managed block. Same shape as 0014's rollback, widened by the same
 # alternation as Step 1's strip: the terminator must recognize a `## ` line OR
 # an anchored `<!-- gitnexus:start -->` marker (or EOF) — a healed region-led
@@ -318,6 +447,72 @@ fi
 # failed/truncated rollback must not destroy the file, and must not leak a
 # stray `.0029.tmp` into the project.
 if [ -f CLAUDE.md ]; then
+  # Clean-text gate (same reason as Step 1 Apply): NUL or CR bytes make the
+  # line-oriented tools behave in undefined, locale-dependent ways — a NUL can
+  # skip the guard while the awk removal still runs to EOF, or truncate a record
+  # so the guard validates a canonical prefix while the removal deletes the
+  # whole line; CR makes every anchor miss. Refuse any file containing a NUL or
+  # CR byte before the guard or removal runs. A real CLAUDE.md is clean LF text.
+  if [ "$(LC_ALL=C tr -dc '\000\015' < CLAUDE.md | wc -c | tr -d '[:space:]')" != 0 ]; then
+    echo "ABORT: migration 0029 Step 1 rollback — CLAUDE.md contains NUL or CR"
+    echo "       bytes; it is not clean LF Markdown. Left untouched. Normalise"
+    echo "       line endings and re-run."
+    exit 3
+  fi
+  # Same guard as Step 1 Apply, and for the same reason: Rollback's removal pass
+  # (below) deletes everything from each provenance line to its terminator, so
+  # operator prose, a lawful host-added §11 bullet, content before the heading,
+  # or the whole tail after a malformed second region would be deleted with it.
+  # Before removing, when a provenance line is present, validate EXACTLY what the
+  # removal pass deletes: re-run its state machine in reverse to emit the deleted
+  # lines across ALL blocks, drop blanks and provenance lines, and require the
+  # remainder to equal the canonical mirror (non-blank content) repeated once
+  # per provenance block. Identical → safe to remove. Anything else → refuse
+  # (exit 3), leave CLAUDE.md untouched. Skipped when no provenance line is
+  # present (nothing to remove). NUL/CR inputs never reach here (the clean-text
+  # gate above refuses them); `grep -a` is kept as defence-in-depth.
+  if grep -aqE '^<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->$' CLAUDE.md; then
+    ROLLBACK_SPEC_BLOCK="$HOME/.claude/skills/agenticapps-workflow/templates/spec-mirrors/11-coding-discipline-0.4.0.md"
+    # Rollback has no pre-flight, so it must check the mirror itself: a missing
+    # mirror means the block cannot be validated, so refuse rather than remove
+    # (also avoids a `set -e` caller aborting on the sed below and leaking temps).
+    test -s "$ROLLBACK_SPEC_BLOCK" || {
+      echo "ABORT: migration 0029 Step 1 rollback — vendored §11 mirror missing or"
+      echo "       empty at $ROLLBACK_SPEC_BLOCK — cannot validate before removing."
+      exit 3
+    }
+    ROLLBACK_PROVCOUNT=$(grep -acE '^<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->$' CLAUDE.md)
+    rm -f CLAUDE.md.0029.guard-del.tmp CLAUDE.md.0029.guard-exp.tmp CLAUDE.md.0029.guard.diff.tmp
+    awk '
+      /^<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->$/ { in_block = 1; next }
+      in_block && !swallowed_own_h2 && /^## Coding Discipline \(NON-NEGOTIABLE\)$/ { swallowed_own_h2 = 1; print; next }
+      in_block && swallowed_own_h2 && (/^## / || /^<!-- gitnexus:start -->$/) { in_block = 0; swallowed_own_h2 = 0; next }
+      in_block { print; next }
+      !in_block { next }
+    ' CLAUDE.md | sed '/^[[:space:]]*$/d' > CLAUDE.md.0029.guard-del.tmp
+    : > CLAUDE.md.0029.guard-exp.tmp
+    guard_i=0
+    while [ "$guard_i" -lt "$ROLLBACK_PROVCOUNT" ]; do
+      sed '/^[[:space:]]*$/d' "$ROLLBACK_SPEC_BLOCK" >> CLAUDE.md.0029.guard-exp.tmp
+      guard_i=$((guard_i + 1))
+    done
+    if ! diff -u CLAUDE.md.0029.guard-exp.tmp CLAUDE.md.0029.guard-del.tmp \
+         > CLAUDE.md.0029.guard.diff.tmp 2>&1; then
+      echo "ABORT: migration 0029 Step 1 rollback — the content the §11 removal"
+      echo "       would delete is not exactly the canonical block(s). Refusing to"
+      echo "       remove it, which would delete the divergent content (operator"
+      echo "       prose, a lawful host-added §11 anti-pattern bullet, or a"
+      echo "       malformed second region that makes removal run to end-of-file)."
+      echo "       Reconcile manually: move any local addition or prose out from"
+      echo "       under the §11 block (above the next '## ' heading) and re-run."
+      echo "       Diff of what would be deleted (- expected canonical / + actual):"
+      echo ""
+      sed 's/^/       /' CLAUDE.md.0029.guard.diff.tmp
+      rm -f CLAUDE.md.0029.guard-del.tmp CLAUDE.md.0029.guard-exp.tmp CLAUDE.md.0029.guard.diff.tmp
+      exit 3
+    fi
+    rm -f CLAUDE.md.0029.guard-del.tmp CLAUDE.md.0029.guard-exp.tmp CLAUDE.md.0029.guard.diff.tmp
+  fi
   if awk '
     BEGIN { in_block = 0; swallowed_own_h2 = 0 }
     /^<!-- spec-source: agenticapps-workflow-core@[^[:space:]]+ §11 -->$/ {
@@ -358,6 +553,44 @@ fi
 Rollback removes the block rather than restoring its previous (unsafe)
 position. Re-running 0014 is not possible on a 2.x project, so there is no
 "put it back inside the region" state worth reconstructing.
+
+**Guard scope and known limitations.** Step 1 first refuses any `CLAUDE.md`
+containing a NUL or CR byte (the clean-text gate) — the line-oriented
+grep/awk/sed toolchain has undefined, locale-dependent behaviour on those bytes
+(a NUL can skip the guard while the strip runs, or truncate a record so the
+guard validates a canonical prefix while the strip deletes the whole line; CR
+makes every anchor miss yet the insert still fires and duplicates the block), so
+a real clean-LF file passes and anything else is refused before the guard or
+strip run. All three file-processing blocks (idempotency, Apply, Rollback) also
+`export LC_ALL=C` so grep/awk/sed use byte semantics and agree on marker lines —
+without it a UTF-8 locale splits grep and awk over `[^[:space:]]` on a
+Unicode-whitespace byte run (U+2028 and kin), letting a marker match one tool but
+not the other. Past that gate, the guard (Apply and Rollback) validates *exactly*
+the line set the strip deletes — every provenance block, including content
+before the heading and a headingless second region that would otherwise run to
+EOF — so a divergent span refuses rather than being destroyed. It compares
+non-blank content only, exactly like migration 0030; it does not normalise
+trailing whitespace (a normalisation pass was tried and removed — it could not
+repair a trailing-whitespace heading without diverging the guard's state machine
+from the strip's, and it risked rewriting a Markdown hard break away). Remaining
+limitations, all narrow and none a data-loss path:
+
+- **Refusal on non-blank drift.** A canonical block that has drifted only in
+  trailing whitespace refuses rather than re-anchoring — the deliberate
+  refuse-loudly trade (see ADR-0043), identical to 0030's guard.
+- **Back-to-back duplicate provenance.** Two adjacent provenance lines above a
+  single canonical block make the block count (provenance lines) exceed the
+  bodies present, so the guard refuses a heal the strip could safely perform.
+  This is a conservative refusal on a degenerate shape, never data loss.
+- **Predictable guard temp paths.** The guard writes `CLAUDE.md.0029.guard-*`
+  in the project directory and `rm -f`s each path immediately before writing it,
+  so a pre-planted symlink at those names is unlinked rather than followed. A
+  pre-existing *directory* at one of those names still makes `rm -f` fail; and
+  the older strip/insert temps (`CLAUDE.md.0029.strip`, `.tmp`) predate this fix
+  and share the same predictable-name pattern as 0030/0031. Hardening the temp
+  scheme family-wide is out of scope for this bugfix. All require an attacker
+  who can already write into the project working directory before a
+  user-initiated migration run.
 
 ### Step 2 — Bump the installed scaffolder version 2.6.0 -> 2.7.0
 

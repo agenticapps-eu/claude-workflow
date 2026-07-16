@@ -7,12 +7,48 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 
-**No version bump.** Neither change touches a migration's `to_version`: 0028 is
-corrected in place (it is applied in zero downstream repos), and the §11 work is
-this repo's own conformance rather than a change to what it scaffolds. Nothing
-for downstream projects to re-run.
+**No version bump.** No change here touches a migration's `to_version`: 0028 and
+0029 are corrected in place (0028 is applied in zero downstream repos; 0029's
+guard only makes it refuse shapes it should never have stripped), and the §11
+work is this repo's own conformance rather than a change to what it scaffolds.
+Nothing for downstream projects to re-run.
 
 ### Fixed
+- **Migration 0029's §11 strip deleted operator prose and lawful host bullets.**
+  0029 re-anchors the spec §11 block by stripping everything from its provenance
+  line to the next `## ` / `<!-- gitnexus:start -->` terminator, then re-inserting
+  the canonical mirror. §11 has no end marker, so that region also captured
+  anything a user placed under the block — operator prose, a lawful host-added
+  anti-pattern bullet (spec §11 permits hosts to add them), content **before** the
+  heading, or the **entire file tail** when a second headingless provenance line
+  makes the strip run to end-of-file — and deleted it silently; the `[ -s ]`
+  non-empty guards could not see the loss because the whole-file output stays
+  non-empty. Both the Apply strip and the Rollback strip now run a guard that
+  validates **exactly the line set the strip deletes** (re-running the strip's
+  state machine in reverse, across every provenance block): if that content is
+  anything but provenance lines, blanks, and canonical block bytes, they refuse
+  (exit 3) and leave `CLAUDE.md` untouched. The guard is skipped when no
+  provenance line is present (the greenfield inject path has no block to protect)
+  and compares non-blank content only (like 0030 — a block differing in any
+  non-blank byte refuses rather than being rewritten). All three file-processing
+  blocks (idempotency, Apply, Rollback) `export LC_ALL=C` so grep/awk/sed use
+  byte semantics and agree on marker lines — under a UTF-8 locale they disagree
+  about `[^[:space:]]` on a Unicode-whitespace byte run (U+2028 and kin), which
+  could otherwise let the strip delete a line the guard never validated. Step 1
+  also refuses any `CLAUDE.md` containing a NUL or CR byte before the guard or
+  strip run (a clean-text gate), since those are byte-level hazards a locale does
+  not resolve — a NUL can skip the guard or make BSD awk truncate a record so the
+  guard validates a canonical prefix while the strip deletes a hidden suffix; a
+  CRLF file duplicates the block. The idempotency check applies the same clean
+  test, so a NUL/CR file routes to the gate's loud refusal rather than a silent
+  skip. Fixtures `12`/`13` (prose in-region), `14` (content before the heading),
+  `15` (malformed second region), `16` (NUL in the heading), `17` (CRLF), and
+  `18` (rollback NUL) mutation-prove it on reachable shapes; ADR-0043 records the
+  decision, four rounds of cross-AI review (which caught a first-block hole, a
+  NUL bypass, awk NUL-truncation, and a Unicode-whitespace locale split in
+  earlier revisions), and the accepted cost (a customized **and** mis-anchored
+  repo now refuses to re-anchor rather than re-anchoring).
+
 - **Migration 0028 appended a redundant entry under a subsuming `.claude`.**
   Step 1's idempotency check grepped `^\.claude/hooks/?$`, so a project already
   ignoring the whole `.claude` directory did not match and got `.claude/hooks/`

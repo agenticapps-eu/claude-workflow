@@ -1895,9 +1895,12 @@ test_migration_0029() {
   done
 
   # ── setup flow ≡ migration replay (spec/08 Conformance) ────────────────────
-  # The anchor rule lives in two files: migration 0029, which carries 3
-  # copies (Step 1 Apply's strip pass, Step 1 Apply's insert pass, and Step 1
-  # Rollback — Rollback is a sibling of Apply, not part of it), and the setup
+  # The anchor rule lives in two files: migration 0029, which carries 5
+  # copies (Step 1 Apply's strip pass, Step 1 Apply's insert pass, Step 1
+  # Apply's prose-preservation guard, Step 1 Rollback, and Step 1 Rollback's
+  # guard — Rollback is a sibling of Apply, not part of it; each guard re-runs
+  # the strip's state machine in reverse and carries the same terminator
+  # alternation, so it must agree with the strip it gates), and the setup
   # flow's step e2, which carries 1. The fixtures only exercise the
   # migration, so the setup copy can drift unnoticed — which is exactly what
   # happened to 0028's predicate (#87). Collect every copy across both files
@@ -1944,10 +1947,10 @@ test_migration_0029() {
   mig_count=$(printf '%s\n' "$mig_matches" | grep -c .)
   setup_count=$(printf '%s\n' "$setup_matches" | grep -c .)
 
-  if [ "$mig_count" -ne 3 ]; then
-    echo "  ${RED}✗${RESET} anchor-parity — migration 0029 carries $mig_count copies of the anchor rule, expected 3"
-    echo "      (Step 1 Apply's strip pass, Step 1 Apply's insert pass, Step 1 Rollback;"
-    echo "      setup/SKILL.md step e2 has $setup_count)"
+  if [ "$mig_count" -ne 5 ]; then
+    echo "  ${RED}✗${RESET} anchor-parity — migration 0029 carries $mig_count copies of the anchor rule, expected 5"
+    echo "      (Step 1 Apply's strip pass, insert pass, and prose-preservation guard;"
+    echo "      Step 1 Rollback and its guard; setup/SKILL.md step e2 has $setup_count)"
     FAIL=$((FAIL+1))
   elif [ "$setup_count" -ne 1 ]; then
     echo "  ${RED}✗${RESET} anchor-parity — setup/SKILL.md step e2 carries $setup_count copies of the anchor rule, expected 1"
