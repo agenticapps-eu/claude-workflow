@@ -137,7 +137,14 @@ function main() {
   // is cleared on the child's exit, which fires in this parent before it
   // returns; unref() keeps the parent off the critical path regardless.
   // GITNEXUS_INVOCATION pins the write to the local build (storage parity).
-  const child = spawn('gitnexus', ['analyze'], {
+  //
+  // --skip-agents-md: `gitnexus analyze` REWRITES the `<!-- gitnexus:start -->`
+  // section of AGENTS.md / CLAUDE.md as a side effect of indexing. Without this
+  // flag every commit silently regenerates that section — so a project that has
+  // deliberately removed it (or edited it) has that decision reverted, by us,
+  // automatically, with no diff anyone asked for. Indexing should index; it has
+  // no business rewriting a project's instruction files behind their back.
+  const child = spawn('gitnexus', ['analyze', '--skip-agents-md'], {
     cwd: root,
     detached: true,
     stdio: 'ignore',
