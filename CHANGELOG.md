@@ -87,6 +87,32 @@ for downstream projects to re-run.
   having a project-instruction file at all.
 
 
+## [2.9.0] — 2026-07-16 — Reindex must not rewrite AGENTS.md / CLAUDE.md
+
+### Fixed
+- **The background reindex hook silently regenerated the GitNexus section of
+  every project's `AGENTS.md` / `CLAUDE.md`, after every commit.**
+  `gitnexus analyze` rewrites the `<!-- gitnexus:start -->`…`<!-- gitnexus:end -->`
+  section as a side effect of indexing. Our vendored engine
+  (`.claude/hooks/gitnexus-reindex.cjs`, shipped by migration 0026) spawned bare
+  `gitnexus analyze` detached on every PostToolUse Bash event, so a project that
+  deliberately removed or edited that section had the change reverted — by us,
+  automatically, in a diff nobody asked for and no one was watching. Indexing
+  should index; it has no business rewriting a project's instruction files.
+
+  The engine now spawns `gitnexus analyze --skip-agents-md` ("Skip updating the
+  gitnexus section in AGENTS.md and CLAUDE.md" — documented in GitNexus's own
+  `analyze --help` and README). Migration **0031** re-syncs the engine into
+  projects that already carry the old one; a re-copy rather than a patch, so the
+  invariant is "byte-identical to the vendored engine" instead of "contains a
+  flag". Verified affected and now fixed: `agenticapps-dashboard`, `callbot`,
+  `cparx`, `fx-signal-agent`. Projects without the engine installed are skipped
+  and gain nothing — 0031 never installs one where 0026 did not.
+
+  `implements_spec` stays `0.9.0`; no spec moved. Related: GitNexus issue #2510
+  argues the usage policy belongs in MCP server instructions rather than in a
+  block written into the host's instruction file at all.
+
 ## [2.8.0] — 2026-07-15 — Re-sync stale spec §11 mirror bytes
 
 ### Fixed
