@@ -1016,6 +1016,55 @@ test_migration_0006() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# Retired gitnexus migrations (v3.0.0, ADR-0044 / migration 0032)
+# ─────────────────────────────────────────────────────────────────────────────
+# GitNexus was removed from the workflow in 3.0.0. Migrations 0007 (integration),
+# 0026 (background reindex) and 0031 (--skip-agents-md re-sync) are retained on
+# disk as history (§08 supersede-don't-delete) but the scaffolder no longer ships
+# their payload, so their fixtures have no subject left to exercise.
+#
+# We do NOT delete the tests and we do NOT stub the payload. Migration 0011's
+# SPLIT-03 precedent stubs a payload the scaffolder stopped shipping, but that
+# works because 0011's subject is project-local state the stub stands in for.
+# 0026/0031's subject IS the engine binary and its behaviour; a stub would only
+# assert that the stub works. Instead each retired migration asserts the two
+# invariants that must hold forever after removal:
+#   1. the migration doc still exists  (history was superseded, not erased)
+#   2. no gitnexus payload ships       (the removal is real, not just unwired)
+# A revert that reintroduces the engine therefore fails the suite.
+retired_gitnexus_migration() {
+  local id="$1" label="$2"
+  echo ""
+  echo "${YELLOW}━━━ Migration $id — $label (RETIRED in 3.0.0) ━━━${RESET}"
+
+  local doc
+  doc="$(find "$REPO_ROOT/migrations" -maxdepth 1 -name "$id-*.md" -print -quit 2>/dev/null)"
+  if [ -n "$doc" ] && [ -f "$doc" ]; then
+    echo "  ${GREEN}✓${RESET} migration doc retained as history: $(basename "$doc")"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} migration $id doc missing — history must be superseded, not deleted (§08)"
+    FAIL=$((FAIL+1))
+  fi
+
+  local stray
+  stray="$(find "$REPO_ROOT/templates" "$REPO_ROOT/setup/snapshot" \
+             -name '*gitnexus*' -print 2>/dev/null | head -5)"
+  if [ -z "$stray" ]; then
+    echo "  ${GREEN}✓${RESET} no gitnexus payload ships from templates/ or the snapshot"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} gitnexus payload reappeared (removed in 3.0.0 — ADR-0044):"
+    printf '%s\n' "$stray" | sed 's/^/      /'
+    FAIL=$((FAIL+1))
+  fi
+
+  echo "  ${YELLOW}note${RESET}: fixtures under test-fixtures/$id/ are kept for the record;"
+  echo "        migration 0032 removes gitnexus from already-installed projects."
+}
+
+
 # test_migration_0007 — GitNexus code-graph integration (setup-only)
 # WORKFLOW — verify body specific to migration 0007 content; stays in claude-workflow
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1026,115 +1075,7 @@ test_migration_0006() {
 # stubbed node/npm/gitnexus binaries in $HOME/bin (PATH-prepended).
 
 test_migration_0007() {
-  echo ""
-  echo "${YELLOW}━━━ Migration 0007 — GitNexus code-graph integration ━━━${RESET}"
-
-  local fixtures="$REPO_ROOT/migrations/test-fixtures/0007"
-  local install_script="$REPO_ROOT/templates/.claude/scripts/install-gitnexus.sh"
-  local rollback_script="$REPO_ROOT/templates/.claude/scripts/rollback-gitnexus.sh"
-  local helper_script="$REPO_ROOT/templates/.claude/scripts/index-family-repos.sh"
-
-  if [ ! -d "$fixtures" ]; then
-    echo "  ${RED}SKIP${RESET}: fixtures directory missing"
-    SKIP=$((SKIP+1))
-    return
-  fi
-  for s in "$install_script" "$rollback_script" "$helper_script"; do
-    if [ ! -x "$s" ]; then
-      echo "  ${RED}✗${RESET} script missing: $s — RED state"
-      FAIL=$((FAIL+1))
-      return
-    fi
-  done
-
-  # Sandbox-escape guard
-  if grep -E '/(Users/donald|home/[a-z][a-z]*/)' "$install_script" >/dev/null 2>&1; then
-    echo "  ${RED}✗${RESET} install script contains hardcoded real-home paths"
-    FAIL=$((FAIL+1))
-    return
-  fi
-
-  run_0007_fixture() {
-    local fixname="$1"
-    local fixdir="$fixtures/$fixname"
-    local tmp; tmp="$(mktemp -d -t "migration-0007-${fixname}-XXXXXX")"
-    local fake_home="$tmp/home"
-    mkdir -p "$fake_home"
-
-    # setup.sh runs with HOME=fake_home + REPO_ROOT + FIXTURES_ROOT
-    if [ -x "$fixdir/setup.sh" ]; then
-      ( cd "$tmp" && HOME="$fake_home" REPO_ROOT="$REPO_ROOT" FIXTURES_ROOT="$fixtures" "$fixdir/setup.sh" >/dev/null 2>&1 )
-    fi
-
-    # Run install in a hermetic env: env -i strips host PATH (so an
-    # fnm-managed `gitnexus` on the developer's $PATH can't shadow the
-    # missing-stub case in 03-no-gitnexus) and also clears any host
-    # GITNEXUS_* / WIKI_SKILL_MD env vars that the script reads. Only
-    # HOME + a curated PATH ($fake_home/bin for stubs, /usr/bin:/bin
-    # for coreutils + system jq) cross the sandbox boundary.
-    local stderr_capture="$tmp/.stderr"
-    local actual_exit
-    ( cd "$fake_home" && env -i HOME="$fake_home" PATH="$fake_home/bin:/usr/bin:/bin" bash "$install_script" 2> "$stderr_capture" >/dev/null )
-    actual_exit=$?
-
-    # Compare exit
-    local expected_exit
-    expected_exit=$(tr -d '\n' < "$fixdir/expected-exit")
-    if [ "$actual_exit" != "$expected_exit" ]; then
-      echo "  ${RED}✗${RESET} $fixname — exit $actual_exit, expected $expected_exit"
-      if [ -s "$stderr_capture" ]; then
-        echo "      actual stderr:"
-        sed 's/^/        /' "$stderr_capture" | head -10
-      fi
-      FAIL=$((FAIL+1))
-      rm -rf "$tmp"
-      return
-    fi
-
-    # Strict stderr line-presence
-    if [ -f "$fixdir/expected-stderr.txt" ] && [ -s "$fixdir/expected-stderr.txt" ]; then
-      local missing_line=""
-      while IFS= read -r line; do
-        [ -z "$line" ] && continue
-        if ! grep -F -q -- "$line" "$stderr_capture"; then
-          missing_line="$line"
-          break
-        fi
-      done < "$fixdir/expected-stderr.txt"
-      if [ -n "$missing_line" ]; then
-        echo "  ${RED}✗${RESET} $fixname — stderr missing line: $missing_line"
-        echo "      actual stderr:"
-        sed 's/^/        /' "$stderr_capture" | head -10
-        FAIL=$((FAIL+1))
-        rm -rf "$tmp"
-        return
-      fi
-    fi
-
-    # verify.sh — same hermetic env as install (plus REPO_ROOT which several
-    # verify scripts need to locate rollback/helper scripts).
-    if [ -x "$fixdir/verify.sh" ]; then
-      local verify_out
-      verify_out=$( cd "$fake_home" && env -i HOME="$fake_home" REPO_ROOT="$REPO_ROOT" PATH="$fake_home/bin:/usr/bin:/bin" bash "$fixdir/verify.sh" 2>&1 )
-      local verify_exit=$?
-      if [ "$verify_exit" != "0" ]; then
-        echo "  ${RED}✗${RESET} $fixname — verify.sh failed: $verify_out"
-        FAIL=$((FAIL+1))
-        rm -rf "$tmp"
-        return
-      fi
-    fi
-
-    echo "  ${GREEN}✓${RESET} $fixname (exit $actual_exit)"
-    PASS=$((PASS+1))
-    rm -rf "$tmp"
-  }
-
-  for fix in "$fixtures"/[0-9]*-*/; do
-    local name
-    name="$(basename "${fix%/}")"
-    run_0007_fixture "$name"
-  done
+  retired_gitnexus_migration 0007 "GitNexus code-graph integration"
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1573,66 +1514,7 @@ test_migration_0025() {
 # asserts idempotency + surgical insert; expected-exit asserts the rc.
 # ─────────────────────────────────────────────────────────────────────────────
 test_migration_0026() {
-  echo ""
-  echo "${YELLOW}━━━ Migration 0026 — GitNexus background reindex ━━━${RESET}"
-
-  local fixtures="$REPO_ROOT/migrations/test-fixtures/0026"
-
-  if [ ! -d "$fixtures" ]; then
-    echo "  ${RED}SKIP${RESET}: fixtures directory missing"
-    SKIP=$((SKIP+1))
-    return
-  fi
-
-  run_0026_fixture() {
-    local fixname="$1"
-    local fixdir="$fixtures/$fixname"
-    local tmp; tmp="$(mktemp -d -t "migration-0026-${fixname}-XXXXXX")"
-    local fake_home="$tmp/home"
-    mkdir -p "$fake_home"
-
-    if [ -x "$fixdir/setup.sh" ]; then
-      (
-        cd "$tmp" && \
-        HOME="$fake_home" REPO_ROOT="$REPO_ROOT" FIXTURES_ROOT="$fixtures" \
-          "$fixdir/setup.sh" >/dev/null 2>&1
-      ) || {
-        echo "  ${RED}✗${RESET} $fixname — setup.sh failed"
-        FAIL=$((FAIL+1))
-        rm -rf "$tmp"
-        return
-      }
-    fi
-
-    local verify_out verify_exit
-    verify_out=$(
-      cd "$tmp" && \
-      HOME="$fake_home" REPO_ROOT="$REPO_ROOT" \
-        bash "$fixdir/verify.sh" 2>&1
-    )
-    verify_exit=$?
-
-    local expected_exit
-    expected_exit=$(tr -d '\n' < "$fixdir/expected-exit")
-    if [ "$verify_exit" != "$expected_exit" ]; then
-      echo "  ${RED}✗${RESET} $fixname — verify exit $verify_exit, expected $expected_exit"
-      echo "      verify output:"
-      printf '%s\n' "$verify_out" | sed 's/^/        /' | head -12
-      FAIL=$((FAIL+1))
-      rm -rf "$tmp"
-      return
-    fi
-
-    echo "  ${GREEN}✓${RESET} $fixname"
-    PASS=$((PASS+1))
-    rm -rf "$tmp"
-  }
-
-  for fix in "$fixtures"/[0-9]*-*/; do
-    local name
-    name="$(basename "${fix%/}")"
-    run_0026_fixture "$name"
-  done
+  retired_gitnexus_migration 0026 "GitNexus background reindex"
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2043,74 +1925,7 @@ test_migration_0030() {
 
 
 test_migration_0031() {
-  echo ""
-  echo "${YELLOW}━━━ Migration 0031 — Re-sync the reindex engine with --skip-agents-md ━━━${RESET}"
-
-  local fixtures="$REPO_ROOT/migrations/test-fixtures/0031"
-  if [ ! -d "$fixtures" ]; then
-    echo "  ${RED}SKIP${RESET}: fixtures directory missing"
-    SKIP=$((SKIP+1))
-    return
-  fi
-
-  # Until the GREEN commit lands the migration body this check fails — that is
-  # the RED state the TDD discipline requires (test before unit-under-test).
-  local migration_file="$REPO_ROOT/migrations/0031-reindex-skip-agents-md.md"
-  if [ ! -f "$migration_file" ]; then
-    echo "  ${RED}✗${RESET} migration file missing: $migration_file — RED state"
-    FAIL=$((FAIL+1))
-    return
-  fi
-
-  run_0031_fixture() {
-    local fixname="$1"
-    local fixdir="$fixtures/$fixname"
-    local tmp; tmp="$(mktemp -d -t "migration-0031-${fixname}-XXXXXX")"
-    local fake_home="$tmp/home"
-    mkdir -p "$fake_home"
-
-    if [ -x "$fixdir/setup.sh" ]; then
-      (
-        cd "$tmp" && \
-        HOME="$fake_home" REPO_ROOT="$REPO_ROOT" FIXTURES_ROOT="$fixtures" \
-          "$fixdir/setup.sh" >/dev/null 2>&1
-      ) || {
-        echo "  ${RED}✗${RESET} $fixname — setup.sh failed"
-        FAIL=$((FAIL+1))
-        rm -rf "$tmp"
-        return
-      }
-    fi
-
-    local verify_out verify_exit
-    verify_out=$(
-      cd "$tmp" && \
-      HOME="$fake_home" REPO_ROOT="$REPO_ROOT" FIXTURES_ROOT="$fixtures" \
-        "$fixdir/verify.sh" 2>&1
-    )
-    verify_exit=$?
-
-    local expected_exit
-    expected_exit="$(cat "$fixdir/expected-exit" 2>/dev/null || echo 0)"
-
-    if [ "$verify_exit" -ne "$expected_exit" ]; then
-      echo "  ${RED}✗${RESET} $fixname — exit $verify_exit, expected $expected_exit"
-      printf '%s\n' "$verify_out" | sed 's/^/      /'
-      FAIL=$((FAIL+1))
-      rm -rf "$tmp"
-      return
-    fi
-
-    echo "  ${GREEN}✓${RESET} $fixname"
-    PASS=$((PASS+1))
-    rm -rf "$tmp"
-  }
-
-  for fix in "$fixtures"/[0-9]*-*/; do
-    local name
-    name="$(basename "${fix%/}")"
-    run_0031_fixture "$name"
-  done
+  retired_gitnexus_migration 0031 "Re-sync the reindex engine with --skip-agents-md"
 }
 
 

@@ -17,7 +17,7 @@ or editing any migration, and the drift guard
 | `planning-config.json` | `.planning/config.json` | end-state of `config-hooks.json` after all hook migrations; includes the `knowledge_capture` block (spec §15) whose `<repo-name>` placeholder setup Step 4d resolves at install time |
 | `claude-md-workflow.md` | `.claude/claude-md/workflow.md` | `templates/.claude/claude-md/workflow.md` |
 | `claude-md-reference-block.md` | appended to `CLAUDE.md` | migration `0000` Step 4b |
-| `hooks/*` | `.claude/hooks/*` | `templates/.claude/hooks/*` (`.sh` + `.cjs`; includes the gitnexus-reindex engine — parity §8) |
+| `hooks/*` | `.claude/hooks/*` | `templates/.claude/hooks/*` (all `.sh`; the `.cjs` gitnexus-reindex engine was removed in v3.0.0 — ADR-0044) |
 | `scripts/*` | `.claude/scripts/*` | `templates/.claude/scripts/*` |
 | `global-claude-additions.md` | `~/.claude/CLAUDE.md` (scope global/both) | `templates/global-claude-additions.md` |
 | `adr-db-security-acceptance.md` | `templates/adr-db-security-acceptance.md` | migration `0001` |

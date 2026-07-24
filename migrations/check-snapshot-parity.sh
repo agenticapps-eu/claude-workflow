@@ -51,7 +51,6 @@ REQUIRED_HOOK_BINDINGS=(
   phase-sentinel.sh
   multi-ai-review-gate.sh
   normalize-claude-md.sh
-  gitnexus-reindex.cjs
 )
 if [ "$have_jq" = 1 ]; then
   bound="$(jq -r '.. | .command? // empty' "$SET" 2>/dev/null)"
@@ -221,26 +220,24 @@ fi
 
 echo
 
-# ── 10. gitnexus background reindex (migration 0026): engine + Bash binding ──
-# The snapshot MUST ship the reindex engine (executable, node shebang) and bind
-# it on a PostToolUse Bash matcher. §4's referential-integrity loop is .sh-only,
-# so the .cjs engine needs its own end-state invariant here.
-GNH="$SNAP/hooks/gitnexus-reindex.cjs"
-if [ -f "$GNH" ]; then
-  ok "gitnexus reindex engine present in snapshot"
-  [ -x "$GNH" ] && ok "gitnexus reindex engine is executable" \
-                || bad "gitnexus reindex engine not executable"
-  head -1 "$GNH" | grep -q '^#!/usr/bin/env node' \
-    && ok "gitnexus reindex engine has a node shebang" \
-    || bad "gitnexus reindex engine missing '#!/usr/bin/env node' shebang"
+# ── 10. gitnexus is GONE (v3.0.0, ADR-0044) ──────────────────────────────────
+# This slot used to assert the reindex engine was present and bound on a Bash
+# PostToolUse matcher. GitNexus was removed from the workflow, so the invariant
+# inverts: its ABSENCE is now the end state. Asserting that (rather than just
+# deleting the check) means a stale seed or a botched revert that reintroduces
+# the engine fails the build instead of silently reinstalling a dependency the
+# workflow no longer has.
+if [ -e "$SNAP/hooks/gitnexus-reindex.cjs" ]; then
+  bad "snapshot still ships hooks/gitnexus-reindex.cjs (removed in v3.0.0 — ADR-0044)"
 else
-  bad "missing hooks/gitnexus-reindex.cjs (migration 0026 engine)"
+  ok "gitnexus reindex engine absent from snapshot (v3.0.0)"
 fi
 if [ "$have_jq" = 1 ]; then
-  jq -e '.hooks.PostToolUse[]? | select(.matcher=="Bash")
-         | .hooks[]?.command? | select(test("gitnexus-reindex"))' "$SET" >/dev/null 2>&1 \
-    && ok "settings binds gitnexus-reindex.cjs on a Bash PostToolUse matcher" \
-    || bad "settings.json does not bind gitnexus-reindex.cjs on a Bash PostToolUse matcher"
+  if jq -e '.. | .command? // empty | select(test("gitnexus"))' "$SET" >/dev/null 2>&1; then
+    bad "settings.json still binds a gitnexus hook (removed in v3.0.0 — ADR-0044)"
+  else
+    ok "settings.json binds no gitnexus hook (v3.0.0)"
+  fi
 fi
 
 echo

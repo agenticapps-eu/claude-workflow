@@ -248,6 +248,14 @@ e2. **§11 canonical block (spec §11 — CLAUDE.md)** — inject the canonical
    region-led `CLAUDE.md`, where the next `gitnexus analyze` would silently
    destroy the block.
 
+   **This alternation is retained deliberately after the v3.0.0 GitNexus
+   removal (ADR-0044).** Nothing this workflow installs creates a region any
+   more, but setup also runs against projects installed *before* 3.0.0 whose
+   `CLAUDE.md` still carries one. For those files the second alternative is
+   the only thing standing between the §11 block and the next `analyze`.
+   Dropping it would turn a dead branch into silent data loss on exactly the
+   repos least likely to notice — migration 0029's original failure mode.
+
    0029's Step 1 Apply has three branches: no `CLAUDE.md` → informational
    skip; a hand-pasted `## Coding Discipline` heading with no provenance
    comment → abort; else → strip the block from wherever it currently sits,
@@ -298,9 +306,12 @@ h. **`.gitignore` (commit phase artifacts — ADR-0037)** — the snapshot's
      `HANDOFF-LOG.md`) MUST remain committed — never re-add `.planning/phases/`.
 
 i. **`.prettierignore` (exclude vendored hooks — migration 0028)** — the
-   GitNexus reindex hook (`.claude/hooks/gitnexus-reindex.cjs`) is a CommonJS
-   Node hook; a project that runs `prettier --check` over `.claude/` would fail
-   on it. **Append-if-exists only** — never create the file:
+   vendored `.claude/hooks/*` are shell tooling, not app code; a project that
+   runs `prettier --check` over `.claude/` would fail on them. (0028 was
+   written for the `.cjs` gitnexus-reindex engine, removed in v3.0.0 —
+   ADR-0044; the remaining `.sh` hooks keep the exclusion earning its keep,
+   and pre-3.0.0 projects may still carry the `.cjs` on disk.)
+   **Append-if-exists only** — never create the file:
    ```bash
    if [ -f .prettierignore ] && ! grep -qE '^\.claude(/\*\*)?/?$|^\.claude/hooks(/\*\*)?/?$' .prettierignore; then
      printf '\n# AgenticApps workflow (0028): vendored .claude hooks are .cjs/.sh Node\n# tooling, not app code; exclude from prettier --check.\n.claude/hooks/\n' >> .prettierignore

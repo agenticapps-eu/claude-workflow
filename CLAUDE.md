@@ -2,13 +2,13 @@
   This block sits at the top of the file, which is what spec §11's placement
   SHOULD asks for.
 
-  There is no longer a `<!-- gitnexus:start -->` region below it: the GitNexus
-  section was removed from this repo's instruction files (v2.9.0), and the
-  reindex engine now passes `--skip-agents-md` so `analyze` cannot recreate it.
-  Migration 0029's anchor rule still exists and still matters — consumers that
-  DO carry a region need §11 anchored above it, or the next `analyze` silently
-  eats the block. Do not read this file's lack of a region as evidence the rule
-  is obsolete.
+  There is no `<!-- gitnexus:start -->` region below it: the GitNexus section
+  was removed from this repo's instruction files (v2.9.0) and GitNexus itself
+  was removed from the workflow entirely in v3.0.0 (ADR-0044). Migration 0029's
+  anchor rule still exists and still matters — a consumer repo installed before
+  3.0.0 may still carry a region, and §11 must stay anchored above it or that
+  project's next `analyze` silently eats the block. Do not read this file's
+  lack of a region as evidence the rule is obsolete.
 
   Verbatim from the spec — do not edit. Substitution is permitted only inside
   `{{...}}`; altering any surrounding prose, the rule numbers, or the
