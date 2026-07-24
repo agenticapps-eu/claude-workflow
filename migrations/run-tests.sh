@@ -774,117 +774,7 @@ EOF
 # artifact under test). SKIP only if the fixtures dir is missing.
 
 test_migration_0005() {
-  echo ""
-  echo "${YELLOW}━━━ Migration 0005 — Multi-AI plan review enforcement gate ━━━${RESET}"
-
-  local fixtures="$REPO_ROOT/migrations/test-fixtures/0005"
-  local script="$REPO_ROOT/templates/.claude/hooks/multi-ai-review-gate.sh"
-
-  if [ ! -d "$fixtures" ]; then
-    echo "  ${RED}SKIP${RESET}: fixtures directory missing at $fixtures"
-    SKIP=$((SKIP+1))
-    return
-  fi
-  if [ ! -x "$script" ]; then
-    echo "  ${RED}✗${RESET} script missing or non-executable at $script — RED state, awaiting GREEN implementation"
-    FAIL=$((FAIL+1))
-    return
-  fi
-
-  # Driver: one fixture invocation.
-  run_0005_fixture() {
-    local fixname="$1"
-    local fixdir="$fixtures/$fixname"
-    local tmp; tmp="$(mktemp -d -t "migration-0005-${fixname}-XXXXXX")"
-
-    # Run setup.sh (if present) with $tmp as CWD.
-    if [ -x "$fixdir/setup.sh" ]; then
-      ( cd "$tmp" && "$fixdir/setup.sh" >/dev/null 2>&1 )
-    fi
-
-    # Build env-prefix from optional env file.
-    local env_args=()
-    if [ -f "$fixdir/env" ]; then
-      while IFS= read -r kv; do
-        [ -z "$kv" ] && continue
-        env_args+=("$kv")
-      done < "$fixdir/env"
-    fi
-
-    # Run the hook.
-    # The `${env_args[@]+"${env_args[@]}"}` form is safe under `set -u` for empty arrays.
-    # NOTE: parent harness uses `set -uo pipefail` (not `set -e`), so we do NOT
-    # toggle `-e` here — doing so would leak `set -e` into later test_migration_*
-    # functions and break them on the first non-zero exit (observed crashing 0009).
-    local stderr_capture="$tmp/.stderr"
-    local actual_exit
-    ( cd "$tmp" && env ${env_args[@]+"${env_args[@]}"} bash "$script" < "$fixdir/stdin.json" 2> "$stderr_capture" >/dev/null )
-    actual_exit=$?
-
-    # Compare exit.
-    local expected_exit
-    expected_exit=$(tr -d '\n' < "$fixdir/expected-exit")
-    if [ "$actual_exit" != "$expected_exit" ]; then
-      echo "  ${RED}✗${RESET} $fixname — exit $actual_exit, expected $expected_exit"
-      if [ -s "$stderr_capture" ]; then
-        echo "      actual stderr:"
-        sed 's/^/        /' "$stderr_capture" | head -10
-      fi
-      FAIL=$((FAIL+1))
-      rm -rf "$tmp"
-      return
-    fi
-
-    # Strict stderr line-presence check (codex F1).
-    # Each non-blank line of expected-stderr.txt must appear (substring match)
-    # somewhere in actual stderr.
-    if [ -s "$fixdir/expected-stderr.txt" ]; then
-      local missing_line=""
-      while IFS= read -r line; do
-        [ -z "$line" ] && continue
-        if ! grep -F -q -- "$line" "$stderr_capture"; then
-          missing_line="$line"
-          break
-        fi
-      done < "$fixdir/expected-stderr.txt"
-
-      if [ -n "$missing_line" ]; then
-        echo "  ${RED}✗${RESET} $fixname — stderr missing line: $missing_line"
-        echo "      actual stderr:"
-        sed 's/^/        /' "$stderr_capture" | head -10
-        FAIL=$((FAIL+1))
-        rm -rf "$tmp"
-        return
-      fi
-    fi
-
-    # Fixture 09 — hostile-filename safety check (codex B4).
-    # The hostile string contains $(rm -rf /tmp/HOSTILE_MARKER). If command
-    # substitution happens, the marker is gone.
-    # NOTE-5 fix: cleanup the marker file after the check so it doesn't
-    # accumulate on disk across harness runs (the fixture's setup.sh
-    # unconditionally touches /tmp/HOSTILE_MARKER per run).
-    if [ "$fixname" = "09-hostile-filename-edit" ]; then
-      if [ ! -f /tmp/HOSTILE_MARKER ]; then
-        echo "  ${RED}✗${RESET} $fixname — /tmp/HOSTILE_MARKER was deleted (command-substitution executed!)"
-        FAIL=$((FAIL+1))
-        rm -rf "$tmp"
-        return
-      fi
-      rm -f /tmp/HOSTILE_MARKER
-    fi
-
-    echo "  ${GREEN}✓${RESET} $fixname (exit $actual_exit)"
-    PASS=$((PASS+1))
-    rm -rf "$tmp"
-  }
-
-  # Run all 16 fixtures, sorted.
-  for fix in "$fixtures"/[0-9]*-*/; do
-    local name
-    name="$(basename "${fix%/}")"
-    run_0005_fixture "$name"
-  done
+  retired_migration 0005 "Multi-AI plan review enforcement gate" 'multi-ai-review-gate.sh'
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1017,12 +907,19 @@ test_migration_0006() {
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ─────────────────────────────────────────────────────────────────────────────
-# Retired gitnexus migrations (v3.0.0, ADR-0044 / migration 0032)
+# Retired migrations (v3.0.0, ADR-0044 / migration 0032)
 # ─────────────────────────────────────────────────────────────────────────────
-# GitNexus was removed from the workflow in 3.0.0. Migrations 0007 (integration),
-# 0026 (background reindex) and 0031 (--skip-agents-md re-sync) are retained on
-# disk as history (§08 supersede-don't-delete) but the scaffolder no longer ships
-# their payload, so their fixtures have no subject left to exercise.
+# Two families of migration lost their subject in 3.0.0:
+#   * gitnexus — 0007 (integration), 0026 (background reindex), 0031
+#     (--skip-agents-md re-sync). GitNexus left the workflow entirely.
+#   * the PLAN.md-era plan-review gate — 0005 (the gate), 0016 (its ADR-0025
+#     phase resolver). Spec §17 MUST NOT ships a standalone plan-review gate
+#     under 1.0.0; the obligation moved into stage 2 and is enforced by the
+#     §18 change-gate, so multi-ai-review-gate.sh is replaced by
+#     openspec-change-gate.sh rather than kept alongside it.
+# All are retained on disk as history (§08 supersede-don't-delete) but the
+# scaffolder no longer ships their payload, so their fixtures have no subject
+# left to exercise.
 #
 # We do NOT delete the tests and we do NOT stub the payload. Migration 0011's
 # SPLIT-03 precedent stubs a payload the scaffolder stopped shipping, but that
@@ -1033,8 +930,8 @@ test_migration_0006() {
 #   1. the migration doc still exists  (history was superseded, not erased)
 #   2. no gitnexus payload ships       (the removal is real, not just unwired)
 # A revert that reintroduces the engine therefore fails the suite.
-retired_gitnexus_migration() {
-  local id="$1" label="$2"
+retired_migration() {
+  local id="$1" label="$2" pattern="$3"
   echo ""
   echo "${YELLOW}━━━ Migration $id — $label (RETIRED in 3.0.0) ━━━${RESET}"
 
@@ -1050,12 +947,12 @@ retired_gitnexus_migration() {
 
   local stray
   stray="$(find "$REPO_ROOT/templates" "$REPO_ROOT/setup/snapshot" \
-             -name '*gitnexus*' -print 2>/dev/null | head -5)"
+             -name "$pattern" -print 2>/dev/null | head -5)"
   if [ -z "$stray" ]; then
-    echo "  ${GREEN}✓${RESET} no gitnexus payload ships from templates/ or the snapshot"
+    echo "  ${GREEN}✓${RESET} no '$pattern' payload ships from templates/ or the snapshot"
     PASS=$((PASS+1))
   else
-    echo "  ${RED}✗${RESET} gitnexus payload reappeared (removed in 3.0.0 — ADR-0044):"
+    echo "  ${RED}✗${RESET} '$pattern' payload reappeared (removed in 3.0.0 — ADR-0044):"
     printf '%s\n' "$stray" | sed 's/^/      /'
     FAIL=$((FAIL+1))
   fi
@@ -1075,7 +972,7 @@ retired_gitnexus_migration() {
 # stubbed node/npm/gitnexus binaries in $HOME/bin (PATH-prepended).
 
 test_migration_0007() {
-  retired_gitnexus_migration 0007 "GitNexus code-graph integration"
+  retired_migration 0007 "GitNexus code-graph integration" '*gitnexus*'
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1514,7 +1411,7 @@ test_migration_0025() {
 # asserts idempotency + surgical insert; expected-exit asserts the rc.
 # ─────────────────────────────────────────────────────────────────────────────
 test_migration_0026() {
-  retired_gitnexus_migration 0026 "GitNexus background reindex"
+  retired_migration 0026 "GitNexus background reindex" '*gitnexus*'
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1925,7 +1822,7 @@ test_migration_0030() {
 
 
 test_migration_0031() {
-  retired_gitnexus_migration 0031 "Re-sync the reindex engine with --skip-agents-md"
+  retired_migration 0031 "Re-sync the reindex engine with --skip-agents-md" '*gitnexus*'
 }
 
 
@@ -2235,42 +2132,7 @@ test_preflight_verify_paths() {
 # carries the ADR-0025 marker (the idempotency anchor), and a directory-style
 # current-phase with an unreviewed/unexecuted plan blocks (the Verify smoke test).
 test_migration_0016() {
-  echo ""
-  echo "${YELLOW}━━━ Migration 0016 — Review gate phase-resolution fix (ADR 0025) ━━━${RESET}"
-
-  local script="$REPO_ROOT/templates/.claude/hooks/multi-ai-review-gate.sh"
-
-  if [ ! -x "$script" ]; then
-    echo "  ${RED}✗${RESET} hook missing or non-executable at $script"
-    FAIL=$((FAIL+1))
-    return
-  fi
-
-  # 1. Idempotency marker present (the string migration 0016 greps for).
-  if grep -q 'resolver: hybrid (ADR 0025)' "$script"; then
-    echo "  ${GREEN}✓${RESET} hook carries ADR-0025 resolver marker"
-    PASS=$((PASS+1))
-  else
-    echo "  ${RED}✗${RESET} hook missing 'resolver: hybrid (ADR 0025)' marker"
-    FAIL=$((FAIL+1))
-  fi
-
-  # 2. Verify smoke test: directory-style current-phase blocks (exit 2).
-  local tmp; tmp="$(mktemp -d -t "migration-0016-XXXXXX")"
-  ( cd "$tmp" \
-    && mkdir -p .planning/current-phase .planning/phases/01-x \
-    && touch .planning/phases/01-x/01-PLAN.md \
-    && echo '{"tool_name":"Edit","tool_input":{"file_path":"src/a.go"}}' \
-       | bash "$script" >/dev/null 2>&1 )
-  local rc=$?
-  if [ "$rc" = "2" ]; then
-    echo "  ${GREEN}✓${RESET} dir-style current-phase blocks (exit 2)"
-    PASS=$((PASS+1))
-  else
-    echo "  ${RED}✗${RESET} dir-style current-phase did not block (exit $rc, expected 2)"
-    FAIL=$((FAIL+1))
-  fi
-  rm -rf "$tmp"
+  retired_migration 0016 "Review gate phase-resolution fix (ADR-0025)" 'multi-ai-review-gate.sh'
 }
 
 
