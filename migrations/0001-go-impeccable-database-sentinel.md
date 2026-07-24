@@ -98,9 +98,16 @@ For mixed-language phases, all matching skill packs trigger; skills self-scope b
 
 **Rollback:** restore the original row text.
 
+> **Shape tolerance (3.0.0).** Steps 4–6 bound three gates that spec 1.0.0
+> relocated: the GSD-shaped `hooks.{pre_phase,post_phase,finishing}` tree became
+> the §17 `lifecycle` block. The gates themselves are unchanged and still bound —
+> only their address moved — so each idempotency check accepts EITHER address.
+> Without this, replaying the chain against a 1.0.0 config would report these
+> steps as un-applied and re-apply them into a tree that no longer exists.
+
 ### Step 4: Add `design_critique` entry to `.planning/config.json` `pre_phase` block
 
-**Idempotency check:** `jq -e '.hooks.pre_phase.design_critique' .planning/config.json >/dev/null`
+**Idempotency check:** `jq -e '.hooks.pre_phase.design_critique // .lifecycle.execute.conditional.design_critique' .planning/config.json >/dev/null`
 **Pre-condition:** `.planning/config.json` parses as JSON and has `.hooks.pre_phase.design_shotgun`
 **Apply:** insert the following entry as a sibling of `design_shotgun`:
 
@@ -117,7 +124,7 @@ For mixed-language phases, all matching skill packs trigger; skills self-scope b
 
 ### Step 5: Extend `.planning/config.json` `post_phase.security` with `sub_gates` array
 
-**Idempotency check:** `jq -e '(.hooks.post_phase.security.sub_gates // []) | any(.skill == "database-sentinel:audit")' .planning/config.json >/dev/null 2>&1`
+**Idempotency check:** `jq -e '((.hooks.post_phase.security.sub_gates // []) | any(.skill == "database-sentinel:audit")) or (.lifecycle.execute.conditional.database_security.skill == "database-sentinel:audit")' .planning/config.json >/dev/null 2>&1`
 **Pre-condition:** `.planning/config.json` has `.hooks.post_phase.security`
 **Apply:** add a `sub_gates` array to the existing `security` entry. The
 fragment to add (sibling of the existing `evidence` key inside `security`):
@@ -148,7 +155,7 @@ jq '.hooks.post_phase.security.sub_gates = [
 
 ### Step 6: Add `impeccable_audit` and `db_pre_launch_audit` entries to `.planning/config.json` `finishing` block
 
-**Idempotency check:** `jq -e '.hooks.finishing.impeccable_audit and .hooks.finishing.db_pre_launch_audit' .planning/config.json >/dev/null`
+**Idempotency check:** `jq -e '(.hooks.finishing.impeccable_audit and .hooks.finishing.db_pre_launch_audit) or (.lifecycle.execute.conditional.impeccable_audit and .lifecycle.execute.conditional.db_pre_launch_audit)' .planning/config.json >/dev/null`
 **Pre-condition:** `.planning/config.json` has `.hooks.finishing.branch_close`
 **Apply:** insert both entries as siblings of `branch_close` inside `.hooks.finishing`:
 

@@ -46,12 +46,12 @@ fi
 # ── 2. settings.json: hook bindings (shape, not strings) ─────────────────────
 # Enumerate every hook command bound in settings.json and check the workflow's
 # programmatic hooks are all wired. Catches the factiv finding that the seed
-# template was missing the multi-ai-review-gate binding.
+# template was missing the pre-code review gate binding — which under spec
+# 1.0.0 is openspec-change-gate.sh (the §18 retarget of multi-ai-review-gate.sh).
 REQUIRED_HOOK_BINDINGS=(
   phase-sentinel.sh
-  multi-ai-review-gate.sh
   normalize-claude-md.sh
-  gitnexus-reindex.cjs
+  openspec-change-gate.sh
 )
 if [ "$have_jq" = 1 ]; then
   bound="$(jq -r '.. | .command? // empty' "$SET" 2>/dev/null)"
@@ -68,13 +68,24 @@ fi
 
 # ── 3. .planning/config.json: end-state key shape ────────────────────────────
 if [ "$have_jq" = 1 ]; then
-  for sec in hooks; do
+  # Spec 1.0.0 replaced the GSD-shaped `.hooks` tree with the §17 `.lifecycle`
+  # block (propose/validate/execute/archive/ship). Assert the new shape AND the
+  # two clauses of the §18 gate — a config that lost either one silently stops
+  # requiring pre-code review, which is the whole point of the front end.
+  for sec in lifecycle openspec front_end; do
     jq -e ".$sec" "$CFG" >/dev/null 2>&1 && ok "config has .$sec" || bad "config missing .$sec"
   done
-  # NOTE: `.workflow` is GSD-owned config (research/plan_check/verifier/…),
-  # written by GSD at its own init — NOT part of the AgenticApps snapshot, which
-  # owns only `.hooks`. Setup merges `.hooks` into any GSD-written config. So we
-  # do NOT assert `.workflow` here.
+  jq -e '.lifecycle.validate.change_gate and .lifecycle.validate.multi_ai_review' "$CFG" >/dev/null 2>&1 \
+    && ok "config binds both §18 clauses (change_gate + multi_ai_review)" \
+    || bad "config missing a §18 validate clause (change_gate / multi_ai_review)"
+  # §17 MUST NOT: no standalone plan-review / spec-review gate under 1.0.0.
+  jq -e '(.hooks.pre_execute_gates.multi_ai_plan_review // .hooks.post_phase.spec_review // null) != null' \
+    "$CFG" >/dev/null 2>&1 \
+    && bad "config still ships a standalone plan-review/spec-review gate (§17 MUST NOT)" \
+    || ok "no standalone plan-review/spec-review gate (§17)"
+  # NOTE: `.workflow` is host-tool-owned config written at that tool's own init —
+  # NOT part of the AgenticApps snapshot, which owns only the blocks above.
+  # Setup merges them into any pre-existing config. So we do NOT assert it here.
   #
   # Observability skill id: 0022 repointed `add-observability` -> `observability`
   # (the obs repo keeps `add-observability` as an alias). Accept either the
@@ -202,13 +213,15 @@ else
   bad "setup/SKILL.md missing the 'spec-source: agenticapps-workflow-core@0.4.0 §11' provenance anchor — §11 laid down but never injected"
 fi
 
-# ── 9. design-critique fires on the spec §02 trigger ─────────────────────────
-# §02 triggers design-critique on a UI plan WITH an existing UI-SPEC.md.
+# ── 9. design-critique fires on the spec §02/§17 trigger ─────────────────────
+# design-critique fires on a UI change WITH an existing design contract.
 # Gating it on design_shotgun_completed inverts this: shotgun's own trigger is
-# no_ui_spec_yet, so with a UI-SPEC.md present shotgun never fires and critique
-# never fires either — exactly when the spec says it must. See ADR-0040.
+# no-design-contract-yet, so with a contract present shotgun never fires and
+# critique never fires either — exactly when the spec says it must. See ADR-0040.
+# Under spec 1.0.0 the gate moved from hooks.pre_phase to the §17 lifecycle
+# block (execute.conditional); the ADR-0040 invariant is unchanged.
 if [ "$have_jq" = 1 ]; then
-  dc="$(jq -r '.hooks.pre_phase.design_critique.trigger // empty' "$CFG")"
+  dc="$(jq -r '.lifecycle.execute.conditional.design_critique.fires_when // empty' "$CFG")"
   case "$dc" in
     *design_shotgun_completed*)
       bad "design_critique trigger '$dc' is inverted vs spec §02 (never fires when UI-SPEC.md exists)" ;;
@@ -221,26 +234,44 @@ fi
 
 echo
 
-# ── 10. gitnexus background reindex (migration 0026): engine + Bash binding ──
-# The snapshot MUST ship the reindex engine (executable, node shebang) and bind
-# it on a PostToolUse Bash matcher. §4's referential-integrity loop is .sh-only,
-# so the .cjs engine needs its own end-state invariant here.
-GNH="$SNAP/hooks/gitnexus-reindex.cjs"
-if [ -f "$GNH" ]; then
-  ok "gitnexus reindex engine present in snapshot"
-  [ -x "$GNH" ] && ok "gitnexus reindex engine is executable" \
-                || bad "gitnexus reindex engine not executable"
-  head -1 "$GNH" | grep -q '^#!/usr/bin/env node' \
-    && ok "gitnexus reindex engine has a node shebang" \
-    || bad "gitnexus reindex engine missing '#!/usr/bin/env node' shebang"
+# ── 9b. no shipped payload is silently gitignored ────────────────────────────
+# A bare `.claude/` ignore pattern matches at every depth, so it swallowed
+# `templates/.claude/hooks/*` — the hook payload this repo ships. Already-tracked
+# files are unaffected by gitignore, so the trap stayed invisible until a NEW
+# hook was added: `git add -A` skipped it silently and CI failed on the missing
+# file. Assert that nothing under templates/ or setup/snapshot/ is ignored, so
+# an un-shippable payload fails here instead of in a downstream install.
+if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  ignored="$(git -C "$ROOT" ls-files --others --ignored --exclude-standard \
+               -- templates setup/snapshot 2>/dev/null || true)"
+  if [ -z "$ignored" ]; then
+    ok "no shipped payload under templates/ or setup/snapshot/ is gitignored"
+  else
+    bad "shipped payload is gitignored and will never reach a consumer:"
+    printf '%s\n' "$ignored" | sed 's/^/         /'
+  fi
+fi
+
+echo
+
+# ── 10. gitnexus is GONE (v3.0.0, ADR-0044) ──────────────────────────────────
+# This slot used to assert the reindex engine was present and bound on a Bash
+# PostToolUse matcher. GitNexus was removed from the workflow, so the invariant
+# inverts: its ABSENCE is now the end state. Asserting that (rather than just
+# deleting the check) means a stale seed or a botched revert that reintroduces
+# the engine fails the build instead of silently reinstalling a dependency the
+# workflow no longer has.
+if [ -e "$SNAP/hooks/gitnexus-reindex.cjs" ]; then
+  bad "snapshot still ships hooks/gitnexus-reindex.cjs (removed in v3.0.0 — ADR-0044)"
 else
-  bad "missing hooks/gitnexus-reindex.cjs (migration 0026 engine)"
+  ok "gitnexus reindex engine absent from snapshot (v3.0.0)"
 fi
 if [ "$have_jq" = 1 ]; then
-  jq -e '.hooks.PostToolUse[]? | select(.matcher=="Bash")
-         | .hooks[]?.command? | select(test("gitnexus-reindex"))' "$SET" >/dev/null 2>&1 \
-    && ok "settings binds gitnexus-reindex.cjs on a Bash PostToolUse matcher" \
-    || bad "settings.json does not bind gitnexus-reindex.cjs on a Bash PostToolUse matcher"
+  if jq -e '.. | .command? // empty | select(test("gitnexus"))' "$SET" >/dev/null 2>&1; then
+    bad "settings.json still binds a gitnexus hook (removed in v3.0.0 — ADR-0044)"
+  else
+    ok "settings.json binds no gitnexus hook (v3.0.0)"
+  fi
 fi
 
 echo

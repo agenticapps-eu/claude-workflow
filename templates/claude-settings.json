@@ -26,13 +26,13 @@
         ]
       },
       {
-        "_hook": "Hook 7 — Multi-AI Plan Review Gate (/gsd-review)",
-        "matcher": "Edit|Write|MultiEdit",
+        "_hook": "Hook 7 — OpenSpec Change Gate (spec §18; retarget of the multi-AI plan-review gate)",
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/multi-ai-review-gate.sh",
-            "timeout": 5000
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/openspec-change-gate.sh",
+            "timeout": 15000
           }
         ]
       }
@@ -56,17 +56,6 @@
           {
             "type": "command",
             "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/normalize-claude-md.sh \"$CLAUDE_PROJECT_DIR/CLAUDE.md\"",
-            "timeout": 5000
-          }
-        ]
-      },
-      {
-        "_hook": "Hook — GitNexus background reindex (migration 0026)",
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/gitnexus-reindex.cjs",
             "timeout": 5000
           }
         ]

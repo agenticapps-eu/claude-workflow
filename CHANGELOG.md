@@ -4,6 +4,84 @@ All notable changes to the AgenticApps Claude Workflow scaffolder are
 documented here. The format follows [Keep a Changelog](https://keepachangelog.com/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [3.0.0] — 2026-07-24
+
+The planning front end becomes **OpenSpec**. Superpowers remains the execution
+discipline, unchanged. Implements core spec §16–§19; see
+[ADR-0044](docs/decisions/0044-openspec-superpowers-adoption.md) and
+[`docs/WORKFLOW.md`](docs/WORKFLOW.md).
+
+**Upgrade:** `/update-agenticapps-workflow` applies migration `0032`
+(2.9.0 → 3.0.0). Requires the `openspec` CLI
+(`npm i -g @fission-ai/openspec`) and **≥2 other-vendor reviewer CLIs** —
+without the latter, the first change cannot clear stage 2. `.planning/` is
+preserved, never deleted.
+
+### Added
+- **The §18 change-gate.** One host-agnostic script
+  (`bin/openspec-change-gate.sh`) with three modes — `PreToolUse` hook,
+  `--pre-commit`, `--ci`. Under an active change it blocks code edits unless
+  `openspec validate --all` is green **and** `REVIEWS.md` carries >= 2 reviewers.
+  Exempts `openspec/**` writes, fails open on malformed stdin (parse error
+  only, never policy), and documents `GSD_SKIP_REVIEWS=1` as the logged
+  override. Verified by direct invocation against every row of §18's truth
+  table. The git pre-commit + CI floor is the actual guarantee — a `PreToolUse`
+  hook only sees one agent and cannot gate its own installing session.
+- **`bin/run-plan-review.sh`** — the multi-AI review producer. Feeds every
+  reviewer `</dev/null` behind a timeout (a bare `codex exec` hangs otherwise),
+  resolves `timeout`/`gtimeout` because macOS ships neither, defaults
+  `AGENT_SELF=claude` so the reviewers are always other-vendor, and publishes
+  only on success so a partial re-run cannot destroy earlier review evidence.
+- **`docs/WORKFLOW.md`** — the lifecycle explainer, including the gate's truth
+  table and the full 0.x -> 1.0.0 gate mapping.
+- **`install.sh --dry-run`** (and `--skip-upstream`); installs the gate and runs
+  `openspec init --tools claude --profile core`.
+- **Migration `0032`** with 5 fixtures and an apply-parity guard that fails the
+  build if the fixtures drift from the migration's own Apply blocks.
+
+### Changed
+- **BREAKING — the gate set is collapsed onto the §17 lifecycle.**
+  `.planning/config.json` moves from the GSD-shaped `hooks` tree to a
+  `lifecycle` block (propose/validate/execute/archive/ship). `spec-review`
+  collapses into `openspec validate`; `plan-review` collapses into stage 2 with
+  its multi-AI review **kept and retargeted** at the active change;
+  `code-review`, `tdd`, `verification`, `security` stay always-on;
+  `database-sentinel`, `qa`, `ui-preview`, the design gates and `impeccable`
+  become conditional; `ts-declare-first` is demoted to a CI lint.
+  `impeccable` and the Go skills remain behind the ADR-0021 measured trial.
+- **BREAKING — the `PreToolUse` binding is retargeted.** `multi-ai-review-gate.sh`
+  is replaced by `openspec-change-gate.sh`, a thin shim onto the one global
+  script. Same hook slot, new predicate.
+- The trigger skill, `CLAUDE.md`, `setup/SKILL.md` and `update/SKILL.md` now
+  describe the OpenSpec lifecycle. Canonical spec prose (§01 ritual, §03 table,
+  §04's 13 red flags, §11 block, §15's trigger names) is carried forward
+  verbatim; only host-added rows were retargeted.
+
+### Removed
+- **BREAKING — GitNexus.** The reindex hook, its install/rollback/index scripts,
+  the settings binding, and the `.gitnexus/` data dir. It rewrote
+  `AGENTS.md`/`CLAUDE.md` as a side effect of indexing, which is what migrations
+  0026/0029/0030/0031/0043 were spent defending against.
+  Migrations 0007/0026/0031, ADRs 0020/0039/0041/0043 and every fixture are
+  **retained as history** (§08) — they are the replay path from a pre-3.0.0
+  version. `setup/SKILL.md` keeps the §11 anchor alternation on purpose: a
+  consumer installed before 3.0.0 may still carry a region.
+- **BREAKING — the PLAN.md-era plan-review gate** (`multi-ai-review-gate.sh`).
+  §17 forbids a standalone plan-review gate under 1.0.0. Migrations 0005/0016
+  are retained as history.
+
+### Fixed
+- Migration `0032` Step 3's `jq` filtered the old hook binding but appended the
+  new one unconditionally, so a re-apply added a second gate binding and the
+  hook fired twice per edit. Caught by fixture `02-idempotent-reapply` before
+  release; the filter now names both.
+- `install.sh` doubled the git hooks path when `git rev-parse --git-path`
+  answered absolutely.
+- Migration `0001`'s Steps 4-6 and `0027`'s section matchers are now
+  address/version tolerant, so the chain still replays against a 1.0.0-shaped
+  tree. `0027` in particular sources its section from the live scaffolder, so a
+  pinned version there would have broken replay on every future spec bump.
+
 ## [Unreleased]
 
 

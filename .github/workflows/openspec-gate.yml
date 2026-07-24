@@ -1,0 +1,22 @@
+# The agent-agnostic enforcement floor in CI (spec §18): every active OpenSpec change
+# must pass `openspec validate --all` AND carry REVIEWS.md with >=2 reviewers before its
+# code lands. The per-agent PreToolUse hook is faster feedback; this is the guarantee —
+# it catches edits from any agent or a human, including the session that installed the hook.
+name: OpenSpec change gate
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install OpenSpec
+        run: npm i -g @fission-ai/openspec
+      - name: Run the change gate
+        # exit 0 = all active changes validate and carry >=2 reviewers; exit 1 = block the PR.
+        run: bash bin/openspec-change-gate.sh --ci

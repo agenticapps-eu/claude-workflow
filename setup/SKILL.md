@@ -1,10 +1,11 @@
 ---
 name: setup-agenticapps-workflow
 description: |
-  Bootstrap a fresh project with the AgenticApps Superpowers + GSD + gstack
-  workflow by installing the LATEST snapshot directly — no migration replay.
-  Lays down the current end-state project artifacts (the workflow skill,
-  CLAUDE.md sections, hooks, settings, planning config, version stamp) in one
+  Bootstrap a fresh project with the AgenticApps OpenSpec + Superpowers +
+  gstack workflow by installing the LATEST snapshot directly — no migration
+  replay. Lays down the current end-state project artifacts (the workflow skill,
+  CLAUDE.md sections, hooks, settings, planning config, version stamp), installs
+  the spec §18 change-gate, and initialises the OpenSpec spec slot, in one
   shot. Use when the user runs "/setup-agenticapps-workflow", "set up the
   workflow", "install agenticapps workflow", or "scaffold this project".
   Idempotent — refuses to re-run on a project that already has
@@ -105,7 +106,9 @@ fi
 
 # Optional tooling (warn, don't fail)
 command -v claude >/dev/null 2>&1 || echo "WARN: claude CLI not on PATH"
-ls ~/.claude/get-shit-done/bin/gsd-tools.cjs >/dev/null 2>&1 || echo "WARN: GSD not installed"
+command -v openspec >/dev/null 2>&1 || echo "WARN: openspec CLI not installed (npm i -g @fission-ai/openspec) — Step 4k will be skipped"
+{ command -v gemini >/dev/null 2>&1 || command -v codex >/dev/null 2>&1; } \
+  || echo "WARN: no other-vendor reviewer CLI found — stage 2 needs >=2 for the §18 gate to pass"
 ls ~/.claude/skills/gstack/VERSION >/dev/null 2>&1 || echo "WARN: gstack not installed"
 ls ~/.claude/plugins/cache/claude-plugins-official/superpowers/ >/dev/null 2>&1 || echo "WARN: superpowers plugin not installed"
 ```
@@ -156,20 +159,26 @@ c. **Hooks + settings** — copy `$SNAP/claude-settings.json` →
    `.claude/settings.json`, and `$SNAP/hooks/*` → `.claude/hooks/` (chmod +x),
    and `$SNAP/scripts/*` → `.claude/scripts/`.
 
-d. **Planning hooks** — `mkdir -p .planning` and:
+d. **Gate bindings (§17 lifecycle)** — `mkdir -p .planning` and:
    - If `.planning/config.json` does **not** exist: copy
      `$SNAP/planning-config.json` → `.planning/config.json`. (The snapshot owns
-     only `.hooks`; `.workflow` is GSD-owned config written by GSD at its own
-     init — setup must not overwrite it.)
-   - If `.planning/config.json` **does** exist (e.g. GSD already wrote it,
-     including its `.workflow` block): merge the snapshot's `.hooks` into the
-     existing file without clobbering other sections:
+     `.lifecycle`, `.openspec`, `.front_end`, and `.implements_spec`. A
+     `.workflow` block belongs to whatever tool wrote it at its own init —
+     setup must not overwrite it.)
+   - If `.planning/config.json` **does** exist: merge the snapshot's blocks into
+     the existing file without clobbering other sections:
      ```bash
      jq -s '.[0] * .[1]' .planning/config.json "$SNAP/planning-config.json" > .planning/config.json.tmp \
        && mv .planning/config.json.tmp .planning/config.json
      ```
-     (Snapshot second so its `.hooks` wins; `*` deep-merges, preserving a
-     GSD-written `.workflow`.)
+     (Snapshot second so its blocks win; `*` deep-merges, preserving anything
+     else the file carried.)
+   - **A pre-3.0.0 project reaching this step is an update, not a setup** — it
+     will still carry the 0.x `.hooks` tree, and the deep-merge leaves that tree
+     in place beside the new `.lifecycle` block. Setup refuses to run on an
+     installed project (Step 1), so this can only happen on a hand-assembled
+     tree; if you see both blocks, run `/update-agenticapps-workflow` instead so
+     migration 0032 does the replacement properly.
    - **Knowledge capture (spec §15)** — the snapshot config seeds a
      `knowledge_capture` block whose `note` carries a literal `<repo-name>`
      placeholder. Resolve it now to the actual repo directory name (per §15.2
@@ -248,6 +257,14 @@ e2. **§11 canonical block (spec §11 — CLAUDE.md)** — inject the canonical
    region-led `CLAUDE.md`, where the next `gitnexus analyze` would silently
    destroy the block.
 
+   **This alternation is retained deliberately after the v3.0.0 GitNexus
+   removal (ADR-0044).** Nothing this workflow installs creates a region any
+   more, but setup also runs against projects installed *before* 3.0.0 whose
+   `CLAUDE.md` still carries one. For those files the second alternative is
+   the only thing standing between the §11 block and the next `analyze`.
+   Dropping it would turn a dead branch into silent data loss on exactly the
+   repos least likely to notice — migration 0029's original failure mode.
+
    0029's Step 1 Apply has three branches: no `CLAUDE.md` → informational
    skip; a hand-pasted `## Coding Discipline` heading with no provenance
    comment → abort; else → strip the block from wherever it currently sits,
@@ -298,9 +315,12 @@ h. **`.gitignore` (commit phase artifacts — ADR-0037)** — the snapshot's
      `HANDOFF-LOG.md`) MUST remain committed — never re-add `.planning/phases/`.
 
 i. **`.prettierignore` (exclude vendored hooks — migration 0028)** — the
-   GitNexus reindex hook (`.claude/hooks/gitnexus-reindex.cjs`) is a CommonJS
-   Node hook; a project that runs `prettier --check` over `.claude/` would fail
-   on it. **Append-if-exists only** — never create the file:
+   vendored `.claude/hooks/*` are shell tooling, not app code; a project that
+   runs `prettier --check` over `.claude/` would fail on them. (0028 was
+   written for the `.cjs` gitnexus-reindex engine, removed in v3.0.0 —
+   ADR-0044; the remaining `.sh` hooks keep the exclusion earning its keep,
+   and pre-3.0.0 projects may still carry the `.cjs` on disk.)
+   **Append-if-exists only** — never create the file:
    ```bash
    if [ -f .prettierignore ] && ! grep -qE '^\.claude(/\*\*)?/?$|^\.claude/hooks(/\*\*)?/?$' .prettierignore; then
      printf '\n# AgenticApps workflow (0028): vendored .claude hooks are .cjs/.sh Node\n# tooling, not app code; exclude from prettier --check.\n.claude/hooks/\n' >> .prettierignore
@@ -321,13 +341,63 @@ i. **`.prettierignore` (exclude vendored hooks — migration 0028)** — the
    for the full set of forms treated as covered.
    - In `--dry-run`: show the diff instead of writing.
 
+j. **The §18 change-gate (spec 1.0.0)** — the enforcement teeth. ONE
+   host-agnostic script; every surface calls it. Install the script + the review
+   producer globally, the PreToolUse shim into the project, and the git floor:
+   ```bash
+   mkdir -p "$HOME/.agenticapps/bin"
+   install -m 0755 "$SCAFFOLDER/bin/openspec-change-gate.sh" "$HOME/.agenticapps/bin/openspec-change-gate.sh"
+   install -m 0755 "$SCAFFOLDER/bin/run-plan-review.sh"      "$HOME/.agenticapps/bin/run-plan-review.sh"
+   install -m 0755 "$SNAP/hooks/openspec-change-gate.sh"     .claude/hooks/openspec-change-gate.sh
+   hooks_dir="$(git rev-parse --git-path hooks)"; mkdir -p "$hooks_dir"
+   if [ -e "$hooks_dir/pre-commit" ] && ! grep -q 'openspec-change-gate' "$hooks_dir/pre-commit" 2>/dev/null; then
+     cp "$hooks_dir/pre-commit" "$hooks_dir/pre-commit.pre-agenticapps"
+     echo "NOTE: existing pre-commit preserved as pre-commit.pre-agenticapps — merge it by hand."
+   fi
+   install -m 0755 "$SCAFFOLDER/bin/git-hooks/pre-commit" "$hooks_dir/pre-commit"
+   ```
+   Never clobber a project's own `pre-commit` — preserve it and say so. The
+   PreToolUse binding itself already ships in `$SNAP/claude-settings.json`
+   (Step 4c), so no settings surgery is needed on a fresh install.
+   - In `--dry-run`: list the targets, write nothing.
+
+   > The per-agent hook is fast feedback only: it sees one agent and cannot gate
+   > the session that installed it (§18 calls this inherent). The pre-commit +
+   > CI pair is the actual guarantee — it catches any agent, and a human.
+
+k. **The OpenSpec spec slot (spec §16)** — bound **upstream**; the CLI generates
+   the slot and the `/opsx:*` command files. Nothing is vendored:
+   ```bash
+   if command -v openspec >/dev/null 2>&1; then
+     [ -d openspec ] || openspec init --tools claude --profile core
+   else
+     echo "WARN: openspec CLI absent — spec slot not created."
+     echo "      npm i -g @fission-ai/openspec && openspec init --tools claude --profile core"
+   fi
+   ```
+   A missing CLI is a **warning, not a failure**: the rest of the workflow still
+   installs, and the gate blocks code under an unvalidatable change until the CLI
+   is present (§18). Adopt the OPSX **Core** profile — the Expanded profile's
+   `/opsx:verify` overlaps `superpowers:verification-before-completion`, and two
+   verification surfaces is how one of them gets skipped.
+   - In `--dry-run`: announce the init, run nothing.
+
+
 ## Step 5: Post-checks and commit
 
 Post-checks (fail the install, do not commit, if any fail):
 
 - `.claude/skills/agentic-apps-workflow/SKILL.md` exists; its `version:` reads `$LATEST`
 - `.claude/workflow-config.md` exists with no `{{...}}` left
-- `.planning/config.json` is valid JSON with the `hooks` block
+- `.planning/config.json` is valid JSON with the §17 `lifecycle` block, and
+  binds both §18 clauses:
+  `jq -e '.lifecycle.validate.change_gate and .lifecycle.validate.multi_ai_review' .planning/config.json`
+- the gate is installed and answers the §18 truth table:
+  `printf '{"tool":"Edit","tool_input":{"file_path":"x.ts"}}' | "$HOME/.agenticapps/bin/openspec-change-gate.sh"`
+  exits 0 (no active change → allow)
+- `.claude/hooks/openspec-change-gate.sh` exists and is bound exactly once in
+  `.claude/settings.json`; `.claude/hooks/multi-ai-review-gate.sh` does NOT exist
+- `openspec/` exists, OR the openspec CLI was absent and that was reported
 - `.planning/config.json` carries the `knowledge_capture` block with its
   `<repo-name>` placeholder resolved:
   `jq -e '.knowledge_capture.enabled | type == "boolean"' .planning/config.json`

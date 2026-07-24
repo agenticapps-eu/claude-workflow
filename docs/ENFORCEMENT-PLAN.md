@@ -169,13 +169,19 @@ failure (see "Verifying hook installation").
 | **4b Session Bootstrap** | `SessionStart` | (none) | Surfaces the last 20 skill invocations on each new session | Informational only; no blocking |
 | **5 Commitment Re-Injector** | `SessionStart` | `compact` | Re-injects `head -50 CLAUDE.md` + current-phase `COMMITMENT.md` after compaction | Informational only; no blocking. **GLOBAL** (cwd-aware, no-ops on non-AgenticApps projects) |
 | **6 Normalize CLAUDE.md** | `PostToolUse` | `Edit\|Write\|MultiEdit` | Re-normalizes `CLAUDE.md` section order/shape after any edit (migration `0010`) | Informational only; no blocking |
-| **7 Multi-AI Plan Review Gate** | `PreToolUse` | `Edit\|Write\|MultiEdit` | Enforces the §02 `plan-review` gate: blocks code-touching edits until `{padded_phase}-REVIEWS.md` exists. Grandfathers already-executed phases (ADR-0025) | `GSD_SKIP_REVIEWS=1` or `.planning/current-phase/multi-ai-review-skipped` sentinel |
-| **8 GitNexus Background Reindex** | `PostToolUse` | `Bash` | Debounced background re-index of the GitNexus code graph after code-touching Bash commands, so impact analysis never runs on a stale index (migration `0026`, ADR-0039) | Informational only; no blocking |
+| **7 OpenSpec Change Gate** | `PreToolUse` | `Edit\|Write\|MultiEdit\|NotebookEdit` | Spec §18. Under an active OpenSpec change, blocks code edits unless `openspec validate --all` is green **AND** `changes/<slug>/REVIEWS.md` carries ≥2 reviewers. No active change → allow; `openspec/**` writes → exempt; malformed stdin → fail open. The project hook is a shim onto `~/.agenticapps/bin/openspec-change-gate.sh`; the same script runs as a git `pre-commit` hook and in CI, which is the real guarantee. Retarget of the 0.x plan-review gate (ADR-0018 → ADR-0044) | `GSD_SKIP_REVIEWS=1` (logged). `OPENSPEC_GATE_STRICT=1` opts into the stricter "no code without a change" posture |
 | **Architecture Audit Check** | `SessionStart` | (none) | Nags when the last architecture audit is > 7 days old | Informational only; no blocking |
+
+> **Retired — 8 GitNexus Background Reindex** (`PostToolUse`/`Bash`, migration
+> `0026`, ADR-0039). GitNexus was removed from the workflow in v3.0.0
+> (ADR-0044); migration `0032` unregisters the hook and deletes the engine.
+> Migrations `0026`/`0029`/`0031` and ADR-0039 are retained as history
+> (§08 supersede-don't-delete) — they are still the replay path for a project
+> upgrading from a pre-3.0.0 version.
 
 The hooks split between two install locations:
 
-- **The 9 project-scoped hooks** (1–4b, 6, 7, 8, and the architecture audit check)
+- **The 8 project-scoped hooks** (1–4b, 6, 7, and the architecture audit check)
   live at `.claude/hooks/<name>.sh` and are registered in the project's
   `.claude/settings.json`. Installed during `/setup-agenticapps-workflow` from
   the snapshot's `hooks/` directory (built from `templates/.claude/hooks/`) and

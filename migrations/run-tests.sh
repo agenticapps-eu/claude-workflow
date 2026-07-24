@@ -206,24 +206,24 @@ test_migration_0001() {
 
   # Step 4: design_critique entry in config.json
   assert_check "Step 4 idempotency: needs apply on v1.2.0" \
-    'jq -e ".hooks.pre_phase.design_critique" .planning/config.json >/dev/null' "$before_dir" not-applied
+    'jq -e ".hooks.pre_phase.design_critique // .lifecycle.execute.conditional.design_critique" .planning/config.json >/dev/null' "$before_dir" not-applied
   assert_check "Step 4 idempotency: skip on v1.3.0" \
-    'jq -e ".hooks.pre_phase.design_critique" .planning/config.json >/dev/null' "$after_dir" applied
+    'jq -e ".hooks.pre_phase.design_critique // .lifecycle.execute.conditional.design_critique" .planning/config.json >/dev/null' "$after_dir" applied
 
   # Step 5: post_phase.security.sub_gates in config.json
   # Use `// []` to handle the missing-path case (jq otherwise exits 4 on null
   # path traversal, which still satisfies "non-zero = not applied" but is
   # noisier than the contract intends).
   assert_check "Step 5 idempotency: needs apply on v1.2.0" \
-    'jq -e "(.hooks.post_phase.security.sub_gates // []) | any(.skill == \"database-sentinel:audit\")" .planning/config.json >/dev/null 2>&1' "$before_dir" not-applied
+    'jq -e "((.hooks.post_phase.security.sub_gates // []) | any(.skill == \"database-sentinel:audit\")) or (.lifecycle.execute.conditional.database_security.skill == \"database-sentinel:audit\")" .planning/config.json >/dev/null 2>&1' "$before_dir" not-applied
   assert_check "Step 5 idempotency: skip on v1.3.0" \
-    'jq -e "(.hooks.post_phase.security.sub_gates // []) | any(.skill == \"database-sentinel:audit\")" .planning/config.json >/dev/null 2>&1' "$after_dir" applied
+    'jq -e "((.hooks.post_phase.security.sub_gates // []) | any(.skill == \"database-sentinel:audit\")) or (.lifecycle.execute.conditional.database_security.skill == \"database-sentinel:audit\")" .planning/config.json >/dev/null 2>&1' "$after_dir" applied
 
   # Step 6: finishing.impeccable_audit and db_pre_launch_audit
   assert_check "Step 6 idempotency: needs apply on v1.2.0" \
-    'jq -e ".hooks.finishing.impeccable_audit and .hooks.finishing.db_pre_launch_audit" .planning/config.json >/dev/null' "$before_dir" not-applied
+    'jq -e "(.hooks.finishing.impeccable_audit and .hooks.finishing.db_pre_launch_audit) or (.lifecycle.execute.conditional.impeccable_audit and .lifecycle.execute.conditional.db_pre_launch_audit)" .planning/config.json >/dev/null' "$before_dir" not-applied
   assert_check "Step 6 idempotency: skip on v1.3.0" \
-    'jq -e ".hooks.finishing.impeccable_audit and .hooks.finishing.db_pre_launch_audit" .planning/config.json >/dev/null' "$after_dir" applied
+    'jq -e "(.hooks.finishing.impeccable_audit and .hooks.finishing.db_pre_launch_audit) or (.lifecycle.execute.conditional.impeccable_audit and .lifecycle.execute.conditional.db_pre_launch_audit)" .planning/config.json >/dev/null' "$after_dir" applied
 
   # Step 7: Pre-Phase Hook 1 expansion in CLAUDE.md
   assert_check "Step 7 idempotency: needs apply on v1.2.0" \
@@ -774,117 +774,7 @@ EOF
 # artifact under test). SKIP only if the fixtures dir is missing.
 
 test_migration_0005() {
-  echo ""
-  echo "${YELLOW}━━━ Migration 0005 — Multi-AI plan review enforcement gate ━━━${RESET}"
-
-  local fixtures="$REPO_ROOT/migrations/test-fixtures/0005"
-  local script="$REPO_ROOT/templates/.claude/hooks/multi-ai-review-gate.sh"
-
-  if [ ! -d "$fixtures" ]; then
-    echo "  ${RED}SKIP${RESET}: fixtures directory missing at $fixtures"
-    SKIP=$((SKIP+1))
-    return
-  fi
-  if [ ! -x "$script" ]; then
-    echo "  ${RED}✗${RESET} script missing or non-executable at $script — RED state, awaiting GREEN implementation"
-    FAIL=$((FAIL+1))
-    return
-  fi
-
-  # Driver: one fixture invocation.
-  run_0005_fixture() {
-    local fixname="$1"
-    local fixdir="$fixtures/$fixname"
-    local tmp; tmp="$(mktemp -d -t "migration-0005-${fixname}-XXXXXX")"
-
-    # Run setup.sh (if present) with $tmp as CWD.
-    if [ -x "$fixdir/setup.sh" ]; then
-      ( cd "$tmp" && "$fixdir/setup.sh" >/dev/null 2>&1 )
-    fi
-
-    # Build env-prefix from optional env file.
-    local env_args=()
-    if [ -f "$fixdir/env" ]; then
-      while IFS= read -r kv; do
-        [ -z "$kv" ] && continue
-        env_args+=("$kv")
-      done < "$fixdir/env"
-    fi
-
-    # Run the hook.
-    # The `${env_args[@]+"${env_args[@]}"}` form is safe under `set -u` for empty arrays.
-    # NOTE: parent harness uses `set -uo pipefail` (not `set -e`), so we do NOT
-    # toggle `-e` here — doing so would leak `set -e` into later test_migration_*
-    # functions and break them on the first non-zero exit (observed crashing 0009).
-    local stderr_capture="$tmp/.stderr"
-    local actual_exit
-    ( cd "$tmp" && env ${env_args[@]+"${env_args[@]}"} bash "$script" < "$fixdir/stdin.json" 2> "$stderr_capture" >/dev/null )
-    actual_exit=$?
-
-    # Compare exit.
-    local expected_exit
-    expected_exit=$(tr -d '\n' < "$fixdir/expected-exit")
-    if [ "$actual_exit" != "$expected_exit" ]; then
-      echo "  ${RED}✗${RESET} $fixname — exit $actual_exit, expected $expected_exit"
-      if [ -s "$stderr_capture" ]; then
-        echo "      actual stderr:"
-        sed 's/^/        /' "$stderr_capture" | head -10
-      fi
-      FAIL=$((FAIL+1))
-      rm -rf "$tmp"
-      return
-    fi
-
-    # Strict stderr line-presence check (codex F1).
-    # Each non-blank line of expected-stderr.txt must appear (substring match)
-    # somewhere in actual stderr.
-    if [ -s "$fixdir/expected-stderr.txt" ]; then
-      local missing_line=""
-      while IFS= read -r line; do
-        [ -z "$line" ] && continue
-        if ! grep -F -q -- "$line" "$stderr_capture"; then
-          missing_line="$line"
-          break
-        fi
-      done < "$fixdir/expected-stderr.txt"
-
-      if [ -n "$missing_line" ]; then
-        echo "  ${RED}✗${RESET} $fixname — stderr missing line: $missing_line"
-        echo "      actual stderr:"
-        sed 's/^/        /' "$stderr_capture" | head -10
-        FAIL=$((FAIL+1))
-        rm -rf "$tmp"
-        return
-      fi
-    fi
-
-    # Fixture 09 — hostile-filename safety check (codex B4).
-    # The hostile string contains $(rm -rf /tmp/HOSTILE_MARKER). If command
-    # substitution happens, the marker is gone.
-    # NOTE-5 fix: cleanup the marker file after the check so it doesn't
-    # accumulate on disk across harness runs (the fixture's setup.sh
-    # unconditionally touches /tmp/HOSTILE_MARKER per run).
-    if [ "$fixname" = "09-hostile-filename-edit" ]; then
-      if [ ! -f /tmp/HOSTILE_MARKER ]; then
-        echo "  ${RED}✗${RESET} $fixname — /tmp/HOSTILE_MARKER was deleted (command-substitution executed!)"
-        FAIL=$((FAIL+1))
-        rm -rf "$tmp"
-        return
-      fi
-      rm -f /tmp/HOSTILE_MARKER
-    fi
-
-    echo "  ${GREEN}✓${RESET} $fixname (exit $actual_exit)"
-    PASS=$((PASS+1))
-    rm -rf "$tmp"
-  }
-
-  # Run all 16 fixtures, sorted.
-  for fix in "$fixtures"/[0-9]*-*/; do
-    local name
-    name="$(basename "${fix%/}")"
-    run_0005_fixture "$name"
-  done
+  retired_migration 0005 "Multi-AI plan review enforcement gate" 'multi-ai-review-gate.sh'
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1016,6 +906,62 @@ test_migration_0006() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# Retired migrations (v3.0.0, ADR-0044 / migration 0032)
+# ─────────────────────────────────────────────────────────────────────────────
+# Two families of migration lost their subject in 3.0.0:
+#   * gitnexus — 0007 (integration), 0026 (background reindex), 0031
+#     (--skip-agents-md re-sync). GitNexus left the workflow entirely.
+#   * the PLAN.md-era plan-review gate — 0005 (the gate), 0016 (its ADR-0025
+#     phase resolver). Spec §17 MUST NOT ships a standalone plan-review gate
+#     under 1.0.0; the obligation moved into stage 2 and is enforced by the
+#     §18 change-gate, so multi-ai-review-gate.sh is replaced by
+#     openspec-change-gate.sh rather than kept alongside it.
+# All are retained on disk as history (§08 supersede-don't-delete) but the
+# scaffolder no longer ships their payload, so their fixtures have no subject
+# left to exercise.
+#
+# We do NOT delete the tests and we do NOT stub the payload. Migration 0011's
+# SPLIT-03 precedent stubs a payload the scaffolder stopped shipping, but that
+# works because 0011's subject is project-local state the stub stands in for.
+# 0026/0031's subject IS the engine binary and its behaviour; a stub would only
+# assert that the stub works. Instead each retired migration asserts the two
+# invariants that must hold forever after removal:
+#   1. the migration doc still exists  (history was superseded, not erased)
+#   2. no gitnexus payload ships       (the removal is real, not just unwired)
+# A revert that reintroduces the engine therefore fails the suite.
+retired_migration() {
+  local id="$1" label="$2" pattern="$3"
+  echo ""
+  echo "${YELLOW}━━━ Migration $id — $label (RETIRED in 3.0.0) ━━━${RESET}"
+
+  local doc
+  doc="$(find "$REPO_ROOT/migrations" -maxdepth 1 -name "$id-*.md" -print -quit 2>/dev/null)"
+  if [ -n "$doc" ] && [ -f "$doc" ]; then
+    echo "  ${GREEN}✓${RESET} migration doc retained as history: $(basename "$doc")"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} migration $id doc missing — history must be superseded, not deleted (§08)"
+    FAIL=$((FAIL+1))
+  fi
+
+  local stray
+  stray="$(find "$REPO_ROOT/templates" "$REPO_ROOT/setup/snapshot" \
+             -name "$pattern" -print 2>/dev/null | head -5)"
+  if [ -z "$stray" ]; then
+    echo "  ${GREEN}✓${RESET} no '$pattern' payload ships from templates/ or the snapshot"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} '$pattern' payload reappeared (removed in 3.0.0 — ADR-0044):"
+    printf '%s\n' "$stray" | sed 's/^/      /'
+    FAIL=$((FAIL+1))
+  fi
+
+  echo "  ${YELLOW}note${RESET}: fixtures under test-fixtures/$id/ are kept for the record;"
+  echo "        migration 0032 removes gitnexus from already-installed projects."
+}
+
+
 # test_migration_0007 — GitNexus code-graph integration (setup-only)
 # WORKFLOW — verify body specific to migration 0007 content; stays in claude-workflow
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1026,115 +972,7 @@ test_migration_0006() {
 # stubbed node/npm/gitnexus binaries in $HOME/bin (PATH-prepended).
 
 test_migration_0007() {
-  echo ""
-  echo "${YELLOW}━━━ Migration 0007 — GitNexus code-graph integration ━━━${RESET}"
-
-  local fixtures="$REPO_ROOT/migrations/test-fixtures/0007"
-  local install_script="$REPO_ROOT/templates/.claude/scripts/install-gitnexus.sh"
-  local rollback_script="$REPO_ROOT/templates/.claude/scripts/rollback-gitnexus.sh"
-  local helper_script="$REPO_ROOT/templates/.claude/scripts/index-family-repos.sh"
-
-  if [ ! -d "$fixtures" ]; then
-    echo "  ${RED}SKIP${RESET}: fixtures directory missing"
-    SKIP=$((SKIP+1))
-    return
-  fi
-  for s in "$install_script" "$rollback_script" "$helper_script"; do
-    if [ ! -x "$s" ]; then
-      echo "  ${RED}✗${RESET} script missing: $s — RED state"
-      FAIL=$((FAIL+1))
-      return
-    fi
-  done
-
-  # Sandbox-escape guard
-  if grep -E '/(Users/donald|home/[a-z][a-z]*/)' "$install_script" >/dev/null 2>&1; then
-    echo "  ${RED}✗${RESET} install script contains hardcoded real-home paths"
-    FAIL=$((FAIL+1))
-    return
-  fi
-
-  run_0007_fixture() {
-    local fixname="$1"
-    local fixdir="$fixtures/$fixname"
-    local tmp; tmp="$(mktemp -d -t "migration-0007-${fixname}-XXXXXX")"
-    local fake_home="$tmp/home"
-    mkdir -p "$fake_home"
-
-    # setup.sh runs with HOME=fake_home + REPO_ROOT + FIXTURES_ROOT
-    if [ -x "$fixdir/setup.sh" ]; then
-      ( cd "$tmp" && HOME="$fake_home" REPO_ROOT="$REPO_ROOT" FIXTURES_ROOT="$fixtures" "$fixdir/setup.sh" >/dev/null 2>&1 )
-    fi
-
-    # Run install in a hermetic env: env -i strips host PATH (so an
-    # fnm-managed `gitnexus` on the developer's $PATH can't shadow the
-    # missing-stub case in 03-no-gitnexus) and also clears any host
-    # GITNEXUS_* / WIKI_SKILL_MD env vars that the script reads. Only
-    # HOME + a curated PATH ($fake_home/bin for stubs, /usr/bin:/bin
-    # for coreutils + system jq) cross the sandbox boundary.
-    local stderr_capture="$tmp/.stderr"
-    local actual_exit
-    ( cd "$fake_home" && env -i HOME="$fake_home" PATH="$fake_home/bin:/usr/bin:/bin" bash "$install_script" 2> "$stderr_capture" >/dev/null )
-    actual_exit=$?
-
-    # Compare exit
-    local expected_exit
-    expected_exit=$(tr -d '\n' < "$fixdir/expected-exit")
-    if [ "$actual_exit" != "$expected_exit" ]; then
-      echo "  ${RED}✗${RESET} $fixname — exit $actual_exit, expected $expected_exit"
-      if [ -s "$stderr_capture" ]; then
-        echo "      actual stderr:"
-        sed 's/^/        /' "$stderr_capture" | head -10
-      fi
-      FAIL=$((FAIL+1))
-      rm -rf "$tmp"
-      return
-    fi
-
-    # Strict stderr line-presence
-    if [ -f "$fixdir/expected-stderr.txt" ] && [ -s "$fixdir/expected-stderr.txt" ]; then
-      local missing_line=""
-      while IFS= read -r line; do
-        [ -z "$line" ] && continue
-        if ! grep -F -q -- "$line" "$stderr_capture"; then
-          missing_line="$line"
-          break
-        fi
-      done < "$fixdir/expected-stderr.txt"
-      if [ -n "$missing_line" ]; then
-        echo "  ${RED}✗${RESET} $fixname — stderr missing line: $missing_line"
-        echo "      actual stderr:"
-        sed 's/^/        /' "$stderr_capture" | head -10
-        FAIL=$((FAIL+1))
-        rm -rf "$tmp"
-        return
-      fi
-    fi
-
-    # verify.sh — same hermetic env as install (plus REPO_ROOT which several
-    # verify scripts need to locate rollback/helper scripts).
-    if [ -x "$fixdir/verify.sh" ]; then
-      local verify_out
-      verify_out=$( cd "$fake_home" && env -i HOME="$fake_home" REPO_ROOT="$REPO_ROOT" PATH="$fake_home/bin:/usr/bin:/bin" bash "$fixdir/verify.sh" 2>&1 )
-      local verify_exit=$?
-      if [ "$verify_exit" != "0" ]; then
-        echo "  ${RED}✗${RESET} $fixname — verify.sh failed: $verify_out"
-        FAIL=$((FAIL+1))
-        rm -rf "$tmp"
-        return
-      fi
-    fi
-
-    echo "  ${GREEN}✓${RESET} $fixname (exit $actual_exit)"
-    PASS=$((PASS+1))
-    rm -rf "$tmp"
-  }
-
-  for fix in "$fixtures"/[0-9]*-*/; do
-    local name
-    name="$(basename "${fix%/}")"
-    run_0007_fixture "$name"
-  done
+  retired_migration 0007 "GitNexus code-graph integration" '*gitnexus*'
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1573,66 +1411,7 @@ test_migration_0025() {
 # asserts idempotency + surgical insert; expected-exit asserts the rc.
 # ─────────────────────────────────────────────────────────────────────────────
 test_migration_0026() {
-  echo ""
-  echo "${YELLOW}━━━ Migration 0026 — GitNexus background reindex ━━━${RESET}"
-
-  local fixtures="$REPO_ROOT/migrations/test-fixtures/0026"
-
-  if [ ! -d "$fixtures" ]; then
-    echo "  ${RED}SKIP${RESET}: fixtures directory missing"
-    SKIP=$((SKIP+1))
-    return
-  fi
-
-  run_0026_fixture() {
-    local fixname="$1"
-    local fixdir="$fixtures/$fixname"
-    local tmp; tmp="$(mktemp -d -t "migration-0026-${fixname}-XXXXXX")"
-    local fake_home="$tmp/home"
-    mkdir -p "$fake_home"
-
-    if [ -x "$fixdir/setup.sh" ]; then
-      (
-        cd "$tmp" && \
-        HOME="$fake_home" REPO_ROOT="$REPO_ROOT" FIXTURES_ROOT="$fixtures" \
-          "$fixdir/setup.sh" >/dev/null 2>&1
-      ) || {
-        echo "  ${RED}✗${RESET} $fixname — setup.sh failed"
-        FAIL=$((FAIL+1))
-        rm -rf "$tmp"
-        return
-      }
-    fi
-
-    local verify_out verify_exit
-    verify_out=$(
-      cd "$tmp" && \
-      HOME="$fake_home" REPO_ROOT="$REPO_ROOT" \
-        bash "$fixdir/verify.sh" 2>&1
-    )
-    verify_exit=$?
-
-    local expected_exit
-    expected_exit=$(tr -d '\n' < "$fixdir/expected-exit")
-    if [ "$verify_exit" != "$expected_exit" ]; then
-      echo "  ${RED}✗${RESET} $fixname — verify exit $verify_exit, expected $expected_exit"
-      echo "      verify output:"
-      printf '%s\n' "$verify_out" | sed 's/^/        /' | head -12
-      FAIL=$((FAIL+1))
-      rm -rf "$tmp"
-      return
-    fi
-
-    echo "  ${GREEN}✓${RESET} $fixname"
-    PASS=$((PASS+1))
-    rm -rf "$tmp"
-  }
-
-  for fix in "$fixtures"/[0-9]*-*/; do
-    local name
-    name="$(basename "${fix%/}")"
-    run_0026_fixture "$name"
-  done
+  retired_migration 0026 "GitNexus background reindex" '*gitnexus*'
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2042,30 +1821,41 @@ test_migration_0030() {
 }
 
 
-test_migration_0031() {
+# ─────────────────────────────────────────────────────────────────────────────
+# test_migration_0032 — Bind the OpenSpec front end (2.9.0 -> 3.0.0)
+# WORKFLOW — verify body specific to migration 0032 content; stays in claude-workflow.
+# ─────────────────────────────────────────────────────────────────────────────
+# Same fixture-replay shape as 0030: setup.sh builds a sandboxed 2.9.0 project
+# (fake $HOME, fake scaffolder clone, pre-3.0.0 hook payload, 0.x config),
+# verify.sh replays the migration's DETERMINISTIC steps via common-apply.sh and
+# asserts the end state via common-verify.sh; expected-exit asserts the rc.
+#
+# Steps 2 (`openspec init`) and 6 (install the retargeted SKILL.md) are excluded:
+# step 2 shells out to a network-installed CLI and step 6 is a plain copy. All
+# the branching — the two settings.json rebuilds and the config restructure — is
+# in steps 1/3/4/5, which every fixture exercises.
+test_migration_0032() {
   echo ""
-  echo "${YELLOW}━━━ Migration 0031 — Re-sync the reindex engine with --skip-agents-md ━━━${RESET}"
+  echo "${YELLOW}━━━ Migration 0032 — Bind the OpenSpec front end ━━━${RESET}"
 
-  local fixtures="$REPO_ROOT/migrations/test-fixtures/0031"
+  local fixtures="$REPO_ROOT/migrations/test-fixtures/0032"
   if [ ! -d "$fixtures" ]; then
     echo "  ${RED}SKIP${RESET}: fixtures directory missing"
     SKIP=$((SKIP+1))
     return
   fi
 
-  # Until the GREEN commit lands the migration body this check fails — that is
-  # the RED state the TDD discipline requires (test before unit-under-test).
-  local migration_file="$REPO_ROOT/migrations/0031-reindex-skip-agents-md.md"
+  local migration_file="$REPO_ROOT/migrations/0032-bind-openspec-v1.md"
   if [ ! -f "$migration_file" ]; then
     echo "  ${RED}✗${RESET} migration file missing: $migration_file — RED state"
     FAIL=$((FAIL+1))
     return
   fi
 
-  run_0031_fixture() {
+  run_0032_fixture() {
     local fixname="$1"
     local fixdir="$fixtures/$fixname"
-    local tmp; tmp="$(mktemp -d -t "migration-0031-${fixname}-XXXXXX")"
+    local tmp; tmp="$(mktemp -d -t "migration-0032-${fixname}-XXXXXX")"
     local fake_home="$tmp/home"
     mkdir -p "$fake_home"
 
@@ -2109,8 +1899,34 @@ test_migration_0031() {
   for fix in "$fixtures"/[0-9]*-*/; do
     local name
     name="$(basename "${fix%/}")"
-    run_0031_fixture "$name"
+    run_0032_fixture "$name"
   done
+
+  # The fixtures replay a COPY of the migration's Apply blocks. If the migration
+  # doc and common-apply.sh drift apart, the fixtures start proving something the
+  # migration does not do. Assert the load-bearing lines appear in both.
+  local apply_file="$fixtures/common-apply.sh"
+  local drift=0 line
+  for line in 'rm -f .claude/hooks/multi-ai-review-gate.sh' \
+              'map(test("multi-ai-review-gate|openspec-change-gate")) | any | not' \
+              'map(test("gitnexus")) | any | not' \
+              'if .knowledge_capture then {knowledge_capture: .knowledge_capture} else {} end'; do
+    if ! grep -qF "$line" "$migration_file" || ! grep -qF "$line" "$apply_file"; then
+      echo "  ${RED}✗${RESET} apply-parity — '$line' is not in BOTH the migration and common-apply.sh"
+      drift=1
+    fi
+  done
+  if [ "$drift" -eq 0 ]; then
+    echo "  ${GREEN}✓${RESET} apply-parity — fixtures replay the migration's own Apply blocks"
+    PASS=$((PASS+1))
+  else
+    FAIL=$((FAIL+1))
+  fi
+}
+
+
+test_migration_0031() {
+  retired_migration 0031 "Re-sync the reindex engine with --skip-agents-md" '*gitnexus*'
 }
 
 
@@ -2420,42 +2236,7 @@ test_preflight_verify_paths() {
 # carries the ADR-0025 marker (the idempotency anchor), and a directory-style
 # current-phase with an unreviewed/unexecuted plan blocks (the Verify smoke test).
 test_migration_0016() {
-  echo ""
-  echo "${YELLOW}━━━ Migration 0016 — Review gate phase-resolution fix (ADR 0025) ━━━${RESET}"
-
-  local script="$REPO_ROOT/templates/.claude/hooks/multi-ai-review-gate.sh"
-
-  if [ ! -x "$script" ]; then
-    echo "  ${RED}✗${RESET} hook missing or non-executable at $script"
-    FAIL=$((FAIL+1))
-    return
-  fi
-
-  # 1. Idempotency marker present (the string migration 0016 greps for).
-  if grep -q 'resolver: hybrid (ADR 0025)' "$script"; then
-    echo "  ${GREEN}✓${RESET} hook carries ADR-0025 resolver marker"
-    PASS=$((PASS+1))
-  else
-    echo "  ${RED}✗${RESET} hook missing 'resolver: hybrid (ADR 0025)' marker"
-    FAIL=$((FAIL+1))
-  fi
-
-  # 2. Verify smoke test: directory-style current-phase blocks (exit 2).
-  local tmp; tmp="$(mktemp -d -t "migration-0016-XXXXXX")"
-  ( cd "$tmp" \
-    && mkdir -p .planning/current-phase .planning/phases/01-x \
-    && touch .planning/phases/01-x/01-PLAN.md \
-    && echo '{"tool_name":"Edit","tool_input":{"file_path":"src/a.go"}}' \
-       | bash "$script" >/dev/null 2>&1 )
-  local rc=$?
-  if [ "$rc" = "2" ]; then
-    echo "  ${GREEN}✓${RESET} dir-style current-phase blocks (exit 2)"
-    PASS=$((PASS+1))
-  else
-    echo "  ${RED}✗${RESET} dir-style current-phase did not block (exit $rc, expected 2)"
-    FAIL=$((FAIL+1))
-  fi
-  rm -rf "$tmp"
+  retired_migration 0016 "Review gate phase-resolution fix (ADR-0025)" 'multi-ai-review-gate.sh'
 }
 
 
@@ -2744,6 +2525,7 @@ fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "0031" ]; then
   test_migration_0031
+  test_migration_0032
 fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "phase-sentinel" ]; then

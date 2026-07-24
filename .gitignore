@@ -10,18 +10,13 @@
 .planning/current-phase
 .planning/skill-observations/
 
-# GitNexus-generated code-intelligence files (fully regenerable: `npx gitnexus analyze`)
+# Generated agent-instruction files
 #
-# CLAUDE.md is deliberately NOT listed here. It stopped being fully regenerable
-# when it took on the spec §11 canonical block (agenticapps-workflow-core §11
-# MUSTs that block in the host's primary project-instruction file, and this is
-# it). The block sits ABOVE the `<!-- gitnexus:start -->` region, which analyze
-# preserves — it rewrites only between its own markers — so the file is
-# part-authored, part-generated and must be tracked.
-#
-# Cost of tracking it: an `npx gitnexus analyze` that changes the graph rewrites
-# the stat line inside the gitnexus region, which shows up as a diff. That is
-# the price of having a project-instruction file at all; §11 is not optional.
+# CLAUDE.md is deliberately NOT listed here. It stopped being regenerable when it
+# took on the spec §11 canonical block (agenticapps-workflow-core §11 MUSTs that
+# block in the host's primary project-instruction file, and this is it), so it is
+# authored and tracked. AGENTS.md carries no §11 obligation in a Claude host and
+# is left untracked.
 AGENTS.md
 
 # understand-anything knowledge graph (regenerable: `/understand`)
