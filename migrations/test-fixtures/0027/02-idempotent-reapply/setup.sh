@@ -8,7 +8,7 @@ SKILL_VERSION=2.5.0 SPEC_CLAIM=0.9.0 RED_FLAGS=fixed . "$FIXTURES_ROOT/common-se
 # Splice the real section in from the scaffolder, before the ritual tail —
 # exactly what a first apply would have produced.
 TARGET=.claude/skills/agentic-apps-workflow/SKILL.md
-awk '/^## Spec deltas \(spec 0\.9\.0\)/{f=1}
+awk '/^## Spec deltas \(spec /{f=1}
      f && /^## Knowledge Capture — Ritual Tail/{exit}
      f' "$REPO_ROOT/skill/SKILL.md" > .section
 

@@ -96,3 +96,35 @@ These four rules apply to every code-touching turn. They do not
 replace the commitment ritual, the rationalisation table, the red
 flags, or the evidence rules — they sit alongside them as the
 session-level discipline the model brings to every diff.
+
+## Development Workflow
+
+Planning is an **OpenSpec change**, not a GSD phase. Every unit of product work
+moves through four stages (core spec §17):
+
+**propose** → **validate** → **execute** → **archive**, then **ship** as a
+separate act.
+
+- `openspec/specs/` is durable current truth · `openspec/changes/` are in-flight
+  deltas · `changes/archive/` is history.
+- **Before any code**, the active change MUST have `openspec validate --all`
+  green **and** `REVIEWS.md` carrying ≥2 independent other-vendor reviewers.
+  Both clauses are enforced by the §18 change-gate at `PreToolUse`, at
+  `git commit`, and in CI. Blocked edits mean the gate is working.
+- `archive ≠ ship` — `openspec archive` folds the delta into `specs/` and
+  produces **no** git commit.
+- Execution discipline is unchanged Superpowers: TDD, on-disk evidence, and an
+  independent Stage-2 code review that `validate` does not discharge.
+
+The OpenSpec CLI is bound **upstream** — run `openspec --help` and use the verbs
+it reports; the installed CLI is authoritative over any prose here.
+
+**Full explainer: [`docs/WORKFLOW.md`](docs/WORKFLOW.md).** Gate-by-gate
+enforcement contract: [`docs/ENFORCEMENT-PLAN.md`](docs/ENFORCEMENT-PLAN.md).
+
+## Session handoff
+
+Before ending any session — when asked to exit, when the final task is done, or
+when context is getting full — write `session-handoff.md` in the project root.
+It survives `/clear` and `--resume`, so it is the primary continuity mechanism
+across sessions. Keep it under 150 lines.

@@ -35,7 +35,7 @@ awk '
     print "11. Sunk-cost reasoning about deleting unverified code"
     print "12. Describing discipline as \"dogmatic\""
     print "13. \"This case is different because...\""
-    print "14. `/gsd-review` skipped — no `{phase}-REVIEWS.md` artifact"
+    print "14. Code written under an active change whose `REVIEWS.md` has < 2 reviewers"
     emitted=1; skipping=1; next
   }
   skipping && /^[0-9]+\. / { next }
@@ -46,11 +46,11 @@ awk '
 
 grep -q '^8\. Two-stage review collapsed into one$' "$TARGET" \
   || { echo "STEP 1 failed: canonical flag 8 not restored"; exit 1; }
-grep -q '^14\. `/gsd-review` skipped' "$TARGET" \
+grep -q '^14\. Code written under an active change' "$TARGET" \
   || { echo "STEP 1 failed: host flag not at position 14"; exit 1; }
 
 # ── Step 2 (apply) ──────────────────────────────────────────────────────────
-awk '/^## Spec deltas \(spec 0\.9\.0\)/{f=1}
+awk '/^## Spec deltas \(spec /{f=1}
      f && /^## Knowledge Capture — Ritual Tail/{exit}
      f' "$REPO_ROOT/skill/SKILL.md" > "$TARGET.0027.section"
 awk -v secfile="$TARGET.0027.section" '
@@ -63,7 +63,7 @@ awk -v secfile="$TARGET.0027.section" '
 ' "$TARGET" > "$TARGET.0027.tmp" && mv "$TARGET.0027.tmp" "$TARGET"
 rm -f "$TARGET.0027.section"
 
-[ "$(grep -c '^## Spec deltas (spec 0.9.0)' "$TARGET")" = "1" ] \
+[ "$(grep -c '^## Spec deltas (spec ' "$TARGET")" = "1" ] \
   || { echo "STEP 2 failed: section not inserted exactly once"; exit 1; }
 
 # ── Step 3 (apply) ──────────────────────────────────────────────────────────

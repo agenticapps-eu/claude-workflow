@@ -206,24 +206,24 @@ test_migration_0001() {
 
   # Step 4: design_critique entry in config.json
   assert_check "Step 4 idempotency: needs apply on v1.2.0" \
-    'jq -e ".hooks.pre_phase.design_critique" .planning/config.json >/dev/null' "$before_dir" not-applied
+    'jq -e ".hooks.pre_phase.design_critique // .lifecycle.execute.conditional.design_critique" .planning/config.json >/dev/null' "$before_dir" not-applied
   assert_check "Step 4 idempotency: skip on v1.3.0" \
-    'jq -e ".hooks.pre_phase.design_critique" .planning/config.json >/dev/null' "$after_dir" applied
+    'jq -e ".hooks.pre_phase.design_critique // .lifecycle.execute.conditional.design_critique" .planning/config.json >/dev/null' "$after_dir" applied
 
   # Step 5: post_phase.security.sub_gates in config.json
   # Use `// []` to handle the missing-path case (jq otherwise exits 4 on null
   # path traversal, which still satisfies "non-zero = not applied" but is
   # noisier than the contract intends).
   assert_check "Step 5 idempotency: needs apply on v1.2.0" \
-    'jq -e "(.hooks.post_phase.security.sub_gates // []) | any(.skill == \"database-sentinel:audit\")" .planning/config.json >/dev/null 2>&1' "$before_dir" not-applied
+    'jq -e "((.hooks.post_phase.security.sub_gates // []) | any(.skill == \"database-sentinel:audit\")) or (.lifecycle.execute.conditional.database_security.skill == \"database-sentinel:audit\")" .planning/config.json >/dev/null 2>&1' "$before_dir" not-applied
   assert_check "Step 5 idempotency: skip on v1.3.0" \
-    'jq -e "(.hooks.post_phase.security.sub_gates // []) | any(.skill == \"database-sentinel:audit\")" .planning/config.json >/dev/null 2>&1' "$after_dir" applied
+    'jq -e "((.hooks.post_phase.security.sub_gates // []) | any(.skill == \"database-sentinel:audit\")) or (.lifecycle.execute.conditional.database_security.skill == \"database-sentinel:audit\")" .planning/config.json >/dev/null 2>&1' "$after_dir" applied
 
   # Step 6: finishing.impeccable_audit and db_pre_launch_audit
   assert_check "Step 6 idempotency: needs apply on v1.2.0" \
-    'jq -e ".hooks.finishing.impeccable_audit and .hooks.finishing.db_pre_launch_audit" .planning/config.json >/dev/null' "$before_dir" not-applied
+    'jq -e "(.hooks.finishing.impeccable_audit and .hooks.finishing.db_pre_launch_audit) or (.lifecycle.execute.conditional.impeccable_audit and .lifecycle.execute.conditional.db_pre_launch_audit)" .planning/config.json >/dev/null' "$before_dir" not-applied
   assert_check "Step 6 idempotency: skip on v1.3.0" \
-    'jq -e ".hooks.finishing.impeccable_audit and .hooks.finishing.db_pre_launch_audit" .planning/config.json >/dev/null' "$after_dir" applied
+    'jq -e "(.hooks.finishing.impeccable_audit and .hooks.finishing.db_pre_launch_audit) or (.lifecycle.execute.conditional.impeccable_audit and .lifecycle.execute.conditional.db_pre_launch_audit)" .planning/config.json >/dev/null' "$after_dir" applied
 
   # Step 7: Pre-Phase Hook 1 expansion in CLAUDE.md
   assert_check "Step 7 idempotency: needs apply on v1.2.0" \
@@ -1821,6 +1821,110 @@ test_migration_0030() {
 }
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# test_migration_0032 — Bind the OpenSpec front end (2.9.0 -> 3.0.0)
+# WORKFLOW — verify body specific to migration 0032 content; stays in claude-workflow.
+# ─────────────────────────────────────────────────────────────────────────────
+# Same fixture-replay shape as 0030: setup.sh builds a sandboxed 2.9.0 project
+# (fake $HOME, fake scaffolder clone, pre-3.0.0 hook payload, 0.x config),
+# verify.sh replays the migration's DETERMINISTIC steps via common-apply.sh and
+# asserts the end state via common-verify.sh; expected-exit asserts the rc.
+#
+# Steps 2 (`openspec init`) and 6 (install the retargeted SKILL.md) are excluded:
+# step 2 shells out to a network-installed CLI and step 6 is a plain copy. All
+# the branching — the two settings.json rebuilds and the config restructure — is
+# in steps 1/3/4/5, which every fixture exercises.
+test_migration_0032() {
+  echo ""
+  echo "${YELLOW}━━━ Migration 0032 — Bind the OpenSpec front end ━━━${RESET}"
+
+  local fixtures="$REPO_ROOT/migrations/test-fixtures/0032"
+  if [ ! -d "$fixtures" ]; then
+    echo "  ${RED}SKIP${RESET}: fixtures directory missing"
+    SKIP=$((SKIP+1))
+    return
+  fi
+
+  local migration_file="$REPO_ROOT/migrations/0032-bind-openspec-v1.md"
+  if [ ! -f "$migration_file" ]; then
+    echo "  ${RED}✗${RESET} migration file missing: $migration_file — RED state"
+    FAIL=$((FAIL+1))
+    return
+  fi
+
+  run_0032_fixture() {
+    local fixname="$1"
+    local fixdir="$fixtures/$fixname"
+    local tmp; tmp="$(mktemp -d -t "migration-0032-${fixname}-XXXXXX")"
+    local fake_home="$tmp/home"
+    mkdir -p "$fake_home"
+
+    if [ -x "$fixdir/setup.sh" ]; then
+      (
+        cd "$tmp" && \
+        HOME="$fake_home" REPO_ROOT="$REPO_ROOT" FIXTURES_ROOT="$fixtures" \
+          "$fixdir/setup.sh" >/dev/null 2>&1
+      ) || {
+        echo "  ${RED}✗${RESET} $fixname — setup.sh failed"
+        FAIL=$((FAIL+1))
+        rm -rf "$tmp"
+        return
+      }
+    fi
+
+    local verify_out verify_exit
+    verify_out=$(
+      cd "$tmp" && \
+      HOME="$fake_home" REPO_ROOT="$REPO_ROOT" FIXTURES_ROOT="$fixtures" \
+        "$fixdir/verify.sh" 2>&1
+    )
+    verify_exit=$?
+
+    local expected_exit
+    expected_exit="$(cat "$fixdir/expected-exit" 2>/dev/null || echo 0)"
+
+    if [ "$verify_exit" -ne "$expected_exit" ]; then
+      echo "  ${RED}✗${RESET} $fixname — exit $verify_exit, expected $expected_exit"
+      printf '%s\n' "$verify_out" | sed 's/^/      /'
+      FAIL=$((FAIL+1))
+      rm -rf "$tmp"
+      return
+    fi
+
+    echo "  ${GREEN}✓${RESET} $fixname"
+    PASS=$((PASS+1))
+    rm -rf "$tmp"
+  }
+
+  for fix in "$fixtures"/[0-9]*-*/; do
+    local name
+    name="$(basename "${fix%/}")"
+    run_0032_fixture "$name"
+  done
+
+  # The fixtures replay a COPY of the migration's Apply blocks. If the migration
+  # doc and common-apply.sh drift apart, the fixtures start proving something the
+  # migration does not do. Assert the load-bearing lines appear in both.
+  local apply_file="$fixtures/common-apply.sh"
+  local drift=0 line
+  for line in 'rm -f .claude/hooks/multi-ai-review-gate.sh' \
+              'map(test("multi-ai-review-gate|openspec-change-gate")) | any | not' \
+              'map(test("gitnexus")) | any | not' \
+              'if .knowledge_capture then {knowledge_capture: .knowledge_capture} else {} end'; do
+    if ! grep -qF "$line" "$migration_file" || ! grep -qF "$line" "$apply_file"; then
+      echo "  ${RED}✗${RESET} apply-parity — '$line' is not in BOTH the migration and common-apply.sh"
+      drift=1
+    fi
+  done
+  if [ "$drift" -eq 0 ]; then
+    echo "  ${GREEN}✓${RESET} apply-parity — fixtures replay the migration's own Apply blocks"
+    PASS=$((PASS+1))
+  else
+    FAIL=$((FAIL+1))
+  fi
+}
+
+
 test_migration_0031() {
   retired_migration 0031 "Re-sync the reindex engine with --skip-agents-md" '*gitnexus*'
 }
@@ -2421,6 +2525,7 @@ fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "0031" ]; then
   test_migration_0031
+  test_migration_0032
 fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "phase-sentinel" ]; then

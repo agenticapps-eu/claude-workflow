@@ -52,7 +52,7 @@ if [ "$RED_FLAGS" = "fixed" ]; then
 11. Sunk-cost reasoning about deleting unverified code
 12. Describing discipline as "dogmatic"
 13. "This case is different because..."
-14. `/gsd-review` skipped — no `{phase}-REVIEWS.md` artifact
+14. Code written under an active change whose `REVIEWS.md` has < 2 reviewers
 EOF_FLAGS_FIXED
 else
   # Pre-0027 (known-bad) ordering: host flag inserted at position 8, which
