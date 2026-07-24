@@ -19,6 +19,26 @@ set -euo pipefail
 # Resolve scaffolder dir to wherever this script lives, regardless of cwd.
 SCAFFOLDER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILLS_DIR="$HOME/.claude/skills"
+AA_BIN="$HOME/.agenticapps/bin"
+
+# ── flags ────────────────────────────────────────────────────────────────────
+#   --dry-run         print every action, write nothing
+#   --skip-upstream   install the AgenticApps layer only (no `openspec init`)
+DRY_RUN=0
+SKIP_UPSTREAM=0
+for arg in "$@"; do
+  case "$arg" in
+    --dry-run)       DRY_RUN=1 ;;
+    --skip-upstream) SKIP_UPSTREAM=1 ;;
+    -h|--help)
+      echo "usage: install.sh [--dry-run] [--skip-upstream]"
+      exit 0 ;;
+    *)
+      echo "unknown flag: $arg (see --help)" >&2
+      exit 2 ;;
+  esac
+done
+run() { if [ "$DRY_RUN" -eq 1 ]; then echo "    would run: $*"; else "$@"; fi; }
 
 # Advance the agenticapps-shared submodule (idempotent: safe on fresh AND existing clones).
 # A3: do NOT guard on VERSION-missing — after a `git pull` an existing clone must move to the
@@ -27,7 +47,8 @@ SKILLS_DIR="$HOME/.claude/skills"
 # git dir, so the refresh would fatal and `set -e` would abort the whole install before any
 # skill linking. .git is a dir in a clone, a file in a worktree/submodule — accept both. Keep
 # the refresh non-fatal so a transient submodule error still lets skill linking proceed.
-if [ -f "$SCAFFOLDER/.gitmodules" ] && { [ -d "$SCAFFOLDER/.git" ] || [ -f "$SCAFFOLDER/.git" ]; }; then
+if [ "$DRY_RUN" -eq 0 ] && [ -f "$SCAFFOLDER/.gitmodules" ] \
+   && { [ -d "$SCAFFOLDER/.git" ] || [ -f "$SCAFFOLDER/.git" ]; }; then
   echo "Syncing git submodule(s) vendor/agenticapps-shared..."
   if ! { git -C "$SCAFFOLDER" submodule sync --recursive \
       && git -C "$SCAFFOLDER" submodule update --init --recursive; }; then
@@ -44,7 +65,7 @@ LINKS=(
   "update update-agenticapps-workflow"
 )
 
-mkdir -p "$SKILLS_DIR"
+[ "$DRY_RUN" -eq 1 ] || mkdir -p "$SKILLS_DIR"
 
 # Legacy cleanup (claude-workflow 2.0.0 / SPLIT-03): observability moved to the separate
 # agenticapps-observability repo and the bundled add-observability/ subdir was deleted, so the
@@ -53,11 +74,11 @@ mkdir -p "$SKILLS_DIR"
 # alias created by the obs repo's own install.sh (target exists) is left untouched.
 legacy_obs_link="$SKILLS_DIR/add-observability"
 if [ -L "$legacy_obs_link" ] && [ ! -e "$legacy_obs_link" ]; then
-  rm -f "$legacy_obs_link"
+  run rm -f "$legacy_obs_link"
   echo "  ⊘ removed dangling legacy symlink: add-observability (observability now installs separately)"
 fi
 
-echo "Installing AgenticApps workflow skills"
+echo "Installing AgenticApps workflow skills (dry-run: $DRY_RUN)"
 echo "  Scaffolder: $SCAFFOLDER"
 echo "  Skills dir: $SKILLS_DIR"
 echo ""
@@ -94,7 +115,7 @@ for entry in "${LINKS[@]}"; do
       continue
     else
       echo "  ↻ existing symlink points elsewhere ($existing_target); replacing"
-      rm "$link"
+      run rm "$link"
     fi
   elif [ -e "$link" ]; then
     echo "  ✗ $link exists and is NOT a symlink — refusing to clobber."
@@ -103,7 +124,7 @@ for entry in "${LINKS[@]}"; do
     continue
   fi
 
-  ln -s "$src" "$link"
+  run ln -s "$src" "$link"
   echo "  ✓ linked: $name → $src"
   LINKED=$((LINKED + 1))
 done
@@ -117,9 +138,84 @@ if [ "$FAILED" -gt 0 ]; then
   exit 1
 fi
 
+# ─────────────────────────────────────────────────────────────────────────────
+# The §18 change-gate — the enforcement teeth (spec 1.0.0, ADR-0044)
+# ─────────────────────────────────────────────────────────────────────────────
+# ONE host-agnostic script does the enforcing; every surface just calls it.
+# The per-agent PreToolUse hook is fast feedback, but it only sees one agent and
+# cannot gate the session that installed it — so the git pre-commit + CI pair is
+# the actual guarantee, and it catches a human editor too.
+echo "Installing the OpenSpec change-gate (spec §18)"
+echo "  GATE   $AA_BIN/openspec-change-gate.sh   (host-agnostic enforcement surface)"
+echo "  GATE   $AA_BIN/run-plan-review.sh        (multi-AI review producer)"
+echo "  HOOK   .git/hooks/pre-commit             (agent-agnostic floor)"
+run mkdir -p "$AA_BIN"
+run install -m 0755 "$SCAFFOLDER/bin/openspec-change-gate.sh" "$AA_BIN/openspec-change-gate.sh"
+run install -m 0755 "$SCAFFOLDER/bin/run-plan-review.sh"      "$AA_BIN/run-plan-review.sh"
+if [ -d "$SCAFFOLDER/.git" ] || [ -f "$SCAFFOLDER/.git" ]; then
+  # `--git-path` may answer relative to the repo root OR absolutely, depending on
+  # cwd and on whether this is a worktree/submodule. Resolve to an absolute path
+  # exactly once — blindly prefixing $SCAFFOLDER doubles an already-absolute answer.
+  hookdir="$(git -C "$SCAFFOLDER" rev-parse --git-path hooks 2>/dev/null || true)"
+  case "$hookdir" in
+    "")  : ;;
+    /*)  ;;                                   # already absolute
+    *)   hookdir="$SCAFFOLDER/$hookdir" ;;    # relative to the repo root
+  esac
+  if [ -n "$hookdir" ]; then
+    run mkdir -p "$hookdir"
+    run install -m 0755 "$SCAFFOLDER/bin/git-hooks/pre-commit" "$hookdir/pre-commit"
+  fi
+fi
+echo ""
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Bind OpenSpec upstream (spec §16) — the planning front end
+# ─────────────────────────────────────────────────────────────────────────────
+# The CLI is a standalone, agent-agnostic binary. This repo does NOT vendor or
+# re-port it: `openspec init` generates the slot and the per-tool command files.
+echo "Binding OpenSpec — openspec init --tools claude --profile core"
+echo "  generates openspec/ (specs + changes) and .claude/commands/opsx/"
+if [ "$SKIP_UPSTREAM" -eq 1 ]; then
+  echo "  ⊘ --skip-upstream: leaving the spec slot alone"
+elif ! command -v openspec >/dev/null 2>&1; then
+  echo "  ! openspec CLI not found. Install it, then re-run:"
+  echo "      npm i -g @fission-ai/openspec"
+  echo "      openspec init --tools claude --profile core"
+elif [ -d "$SCAFFOLDER/openspec" ]; then
+  echo "  ✓ openspec/ already present (skipping init)"
+else
+  if [ "$DRY_RUN" -eq 1 ]; then
+    echo "    would run: openspec init --tools claude --profile core"
+  else
+    ( cd "$SCAFFOLDER" && openspec init --tools claude --profile core ) \
+      && echo "  ✓ spec slot + /opsx:* commands generated" \
+      || echo "  ! openspec init failed — run it by hand in this repo."
+  fi
+fi
+echo ""
+
+# ─────────────────────────────────────────────────────────────────────────────
+# The collapsed gate set (spec §17) — declared in the installed config
+# ─────────────────────────────────────────────────────────────────────────────
+echo "Gate set (spec §17 — installed into a project by /setup-agenticapps-workflow):"
+echo "  collapsed →  spec-review, plan-review  ⇒  stage 2 (validate + multi-AI review)"
+echo "  retained  →  code-review, tdd, verification, security (/cso), branch-close"
+echo "  condition →  database-sentinel, qa, ui-preview, design-critique,"
+echo "               design-shotgun, impeccable, observability-scan"
+echo "  lint      →  ts-declare-first"
+echo ""
+
+if [ "$DRY_RUN" -eq 1 ]; then
+  echo "dry-run only — nothing was written."
+  echo ""
+fi
+
 echo "Slash commands now available in any Claude Code session:"
 echo "  /agentic-apps-workflow         the workflow itself (auto-triggers on code tasks)"
 echo "  /setup-agenticapps-workflow    bootstrap a fresh project"
 echo "  /update-agenticapps-workflow   apply pending migrations to an installed project"
+echo "  /opsx:propose | :apply | :archive   the OpenSpec lifecycle (per repo, after init)"
 echo ""
+echo "Workflow explainer: docs/WORKFLOW.md   ·   Gate contract: docs/ENFORCEMENT-PLAN.md"
 echo "Verify discovery with: ls -la $SKILLS_DIR | grep -E '(agentic|setup|update)-?(apps-)?workflow'"
