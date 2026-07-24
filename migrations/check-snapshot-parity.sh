@@ -234,6 +234,26 @@ fi
 
 echo
 
+# ── 9b. no shipped payload is silently gitignored ────────────────────────────
+# A bare `.claude/` ignore pattern matches at every depth, so it swallowed
+# `templates/.claude/hooks/*` — the hook payload this repo ships. Already-tracked
+# files are unaffected by gitignore, so the trap stayed invisible until a NEW
+# hook was added: `git add -A` skipped it silently and CI failed on the missing
+# file. Assert that nothing under templates/ or setup/snapshot/ is ignored, so
+# an un-shippable payload fails here instead of in a downstream install.
+if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  ignored="$(git -C "$ROOT" ls-files --others --ignored --exclude-standard \
+               -- templates setup/snapshot 2>/dev/null || true)"
+  if [ -z "$ignored" ]; then
+    ok "no shipped payload under templates/ or setup/snapshot/ is gitignored"
+  else
+    bad "shipped payload is gitignored and will never reach a consumer:"
+    printf '%s\n' "$ignored" | sed 's/^/         /'
+  fi
+fi
+
+echo
+
 # ── 10. gitnexus is GONE (v3.0.0, ADR-0044) ──────────────────────────────────
 # This slot used to assert the reindex engine was present and bound on a Bash
 # PostToolUse matcher. GitNexus was removed from the workflow, so the invariant
