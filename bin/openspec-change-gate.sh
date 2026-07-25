@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# gate-version: 1.2.0
+# gate-version: 1.2.1
 #
 # VERSION MARKER — read by every host installer before writing this file to the
 # SHARED path ~/.agenticapps/bin/. That path is written by claude / codex /
@@ -7,6 +7,11 @@
 # a host still vendoring an older copy silently republishes it over a newer one
 # and reverts the fix for every agent on the machine. Installers MUST refuse to
 # overwrite a higher version. Bump this whenever the gate's behaviour changes.
+#   1.2.1 — exempt absolute artifact paths under a symlinked repo root. $ROOT
+#           is physical (git resolves it) and hosts pass logical paths, so the
+#           prefix test blocked the write of proposal.md itself — an
+#           un-authorable change. Claude Code always sends absolute paths, so
+#           this was live fleet-wide.
 #   1.2.0 — OPENSPEC_BIN indirection (makes §18's "demonstrable by direct
 #           invocation" clause actually true), multi-host payload shapes
 #           (pi `.input.path`, opencode `.args.*`), OPENSPEC_GATE_SELF
@@ -181,6 +186,26 @@ edited_path_from_stdin(){              # best-effort parse of a tool-call payloa
   fi
 }
 
+physical_prefix(){       # print $1 with its deepest existing ANCESTOR DIRECTORY resolved physically
+  # Only directories can be resolved with cd/pwd -P, and the final component is
+  # deliberately never resolved: it is usually a file, often does not exist yet
+  # (a Write target), and resolving it would follow a symlinked file out of the
+  # tree. So split it off first, then walk up to the deepest existing directory.
+  local head="$1" rest
+  case "$head" in /*) ;; *) printf '%s' "$head"; return ;; esac
+  rest="${head##*/}"
+  head="${head%/*}"
+  [ -z "$head" ] && head=/
+  while [ ! -d "$head" ]; do
+    case "$head" in /|"") break ;; esac
+    rest="${head##*/}/$rest"
+    head="${head%/*}"
+    [ -z "$head" ] && head=/
+  done
+  [ -d "$head" ] && head="$(cd -P "$head" 2>/dev/null && pwd -P)"
+  printf '%s' "${head%/}/$rest"
+}
+
 is_openspec_artifact(){                # edits to the change itself must always be allowed
   # Must be THIS repo's spec slot, not any path that happens to contain a
   # directory called `openspec`. The old glob (`*/openspec/*`) exempted
@@ -207,8 +232,19 @@ is_openspec_artifact(){                # edits to the change itself must always 
       for (i = 1; i <= n; i++) out = out "/" parts[i]
       print (out == "" ? "/" : out)
     }')"
+  # Compare physical-to-physical. $ROOT comes from `git rev-parse
+  # --show-toplevel`, which resolves symlinks; hosts pass the logical path they
+  # were given. Where the repo is reached through a symlink a plain string
+  # prefix test fails and the gate blocks the write of proposal.md itself,
+  # leaving a change that can never be authored. Normalising `..` textually
+  # first (above) is deliberate and must stay in that order: it is what keeps
+  # the escape rows blocked, and normalising before resolving is the safe
+  # direction.
+  local root_phys
+  root_phys="$(cd -P "$ROOT" 2>/dev/null && pwd -P)" || root_phys="$ROOT"
+  resolved="$(physical_prefix "$resolved")"
   case "$resolved" in
-    "$ROOT"/openspec/*) return 0 ;;
+    "${root_phys%/}"/openspec/*) return 0 ;;
     *) return 1 ;;
   esac
 }
