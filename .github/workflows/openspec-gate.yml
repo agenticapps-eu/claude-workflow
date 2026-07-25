@@ -24,6 +24,12 @@ jobs:
         # agenticapps-workflow-core; keep them in sync — a stale harness
         # certifies a stale gate.
         run: bash tools/change-gate-conformance.sh bin/openspec-change-gate.sh
+      - name: Prove the review producer's wrapper is conformant
+        # The gate consumes review evidence; reviewer-cli.sh produces it. A
+        # wrapper that silently lost a vendor arm degrades that evidence and
+        # reports nothing while doing it (core#41). Same bar, same reason —
+        # and the harness is vendored alongside it, so keep the two in sync.
+        run: bash tools/reviewer-cli-conformance.sh bin/reviewer-cli.sh
       - name: Run the change gate
         # exit 0 = all active changes validate and carry >=2 reviewers; exit 1 = block the PR.
         run: bash bin/openspec-change-gate.sh --ci

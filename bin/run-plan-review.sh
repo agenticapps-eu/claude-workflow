@@ -16,9 +16,13 @@
 #                     the >=2 reviewers are always OTHER vendors — the ADR-0018 property)
 #   REVIEW_TIMEOUT    hard wall-clock cap per reviewer, seconds (default 180)
 #   MIN_REVIEWERS     reviewers required for a non-warning exit (default 2)
+#   REVIEWER_CLI      override the wrapper path (default: the shared install, then bin/)
 #
-# Fixes pilot friction #3: every reviewer CLI is fed </dev/null and time-limited so a
-# hanging/prompting CLI can never stall the gate.
+# Pilot friction #3 — a reviewer CLI that reads stdin and hangs — is fixed in
+# reviewer-cli.sh, not here. This script picks the vendor set and records the
+# evidence; the wrapper pins stdin and bounds the clock for every arm. The
+# vendor set is core's: claude | gemini | opencode | codex. A name outside it is
+# reported unavailable rather than run unbounded.
 
 set -uo pipefail
 SLUG="${1:-}"; shift || true
@@ -44,29 +48,28 @@ TIMEOUT="${REVIEW_TIMEOUT:-180}"                 # seconds per reviewer
 SELF="${AGENT_SELF:-claude}"                     # this host IS claude — exclude it by default
 REVIEWERS=("$@"); [ ${#REVIEWERS[@]} -gt 0 ] || REVIEWERS=(gemini codex claude opencode)
 
-# Resolve a `timeout` binary. macOS ships neither `timeout` nor `gtimeout` by default
-# (they come from GNU coreutils), and this host is darwin-first — a bare `timeout` call
-# would fail every reviewer with 127 and silently produce zero reviews.
-TIMEOUT_BIN=""
-if   command -v timeout  >/dev/null 2>&1; then TIMEOUT_BIN="timeout"
-elif command -v gtimeout >/dev/null 2>&1; then TIMEOUT_BIN="gtimeout"
-else
-  echo "note: no timeout(1) on PATH (brew install coreutils) — reviewers run unbounded" >&2
-fi
-bounded() { if [ -n "$TIMEOUT_BIN" ]; then "$TIMEOUT_BIN" "$TIMEOUT" "$@"; else "$@"; fi; }
-
-# Two ways to hand a reviewer its prompt, and they need OPPOSITE stdin handling:
+# Vendor dispatch, the stdin pin, and the wall-clock bound all live in
+# reviewer-cli.sh — core's reference implementation, vendored at
+# `# reviewer-cli-version: 1.0.0` and scored by tools/reviewer-cli-conformance.sh.
+# This script used to carry its own copy of the four vendor arms. That is exactly
+# the shape that produced core#41: three divergent copies of one wrapper, one of
+# them missing the `opencode` arm, all writing the same shared path. A private
+# copy of a shared artifact is not a fork, it is a race. Fix behaviour in core
+# alongside a harness row and re-vendor; never patch the arms back in here.
 #
-#   argv form   (gemini -p "$P", codex exec "$P")  -> the CLI may still read stdin
-#                                                     and block, so feed it </dev/null.
-#   stdin form  (codex exec -)                     -> the pipe IS the prompt.
-#                                                     </dev/null here CLOBBERS it.
-#
-# In bash a redirection applied to the right-hand side of a pipe wins over the
-# pipe, so `printf '%s' "$P" | codex exec - </dev/null` silently sends codex an
-# EMPTY prompt. (zsh's MULTIOS makes the same line work interactively, which is
-# exactly why this survives a manual smoke test.) The stdin form needs no hang
-# guard anyway: stdin is the pipe, and it closes as soon as printf finishes.
+# Same resolution order as the PreToolUse gate shim, for the same reason: the
+# global install is what a scaffolded project gets, and the repo copy is what a
+# scaffolder checkout runs before anything is installed.
+# `${HOME:-}` because this runs under `set -u`: with HOME unset (cron, a stripped
+# CI env) a bare $HOME aborts the script before it can reach the repo fallback
+# that would have worked.
+REVIEWER_CLI="${REVIEWER_CLI:-${HOME:-}/.agenticapps/bin/reviewer-cli.sh}"
+[ -x "$REVIEWER_CLI" ] || REVIEWER_CLI="$ROOT/bin/reviewer-cli.sh"
+[ -x "$REVIEWER_CLI" ] || {
+  echo "reviewer-cli.sh not found (looked at \$REVIEWER_CLI, ~/.agenticapps/bin, $ROOT/bin)." >&2
+  echo "Run install.sh, or apply migration 0032 Step 1, to install the shared wrapper." >&2
+  exit 2
+}
 
 # Assemble the review prompt from the change artifacts.
 read -r -d '' INSTRUCT <<EOF || true
@@ -86,20 +89,37 @@ OUT="$CHANGE_DIR/REVIEWS.md"
 # Accumulate into a temp file and only publish at the end. A partial run must not
 # destroy the REVIEWS.md an earlier successful run produced — that evidence is what
 # the gate reads, and wiping it would silently re-block a reviewed change.
+# The trap is armed BEFORE the second mktemp, over both names, so a failure
+# between the two cannot leak the first file.
+TMP=""; PROMPT_FILE=""
+trap 'rm -f "$TMP" "$PROMPT_FILE"' EXIT
 TMP="$(mktemp "${TMPDIR:-/tmp}/reviews.XXXXXX")" || { echo "mktemp failed" >&2; exit 2; }
-trap 'rm -f "$TMP"' EXIT
+# The wrapper takes the prompt as a FILE and hands it to the vendor as an
+# argument — stdin is pinned to /dev/null on every arm, so it can never be the
+# delivery channel. Write it once; every reviewer reads the same bytes.
+PROMPT_FILE="$(mktemp "${TMPDIR:-/tmp}/review-prompt.XXXXXX")" || { echo "mktemp failed" >&2; exit 2; }
+# A short write (ENOSPC, EDQUOT) would hand every reviewer a truncated change to
+# review and their verdicts would still count. Fail instead of reviewing nothing.
+printf '%s' "$PROMPT" > "$PROMPT_FILE" || { echo "failed writing the review prompt" >&2; exit 2; }
 count=0
 for r in "${REVIEWERS[@]}"; do
   [ "$r" = "$SELF" ] && continue
   command -v "$r" >/dev/null 2>&1 || continue
   echo "· running reviewer: $r" >&2
-  case "$r" in
-    codex)    resp="$(printf '%s' "$PROMPT" | bounded codex exec - 2>/dev/null || true)" ;;
-    gemini)   resp="$(bounded gemini -p "$PROMPT" </dev/null 2>/dev/null || true)" ;;
-    claude)   resp="$(bounded claude -p "$PROMPT" </dev/null 2>/dev/null || true)" ;;
-    opencode) resp="$(bounded opencode run "$PROMPT" </dev/null 2>/dev/null || true)" ;;
-    *)        resp="$(printf '%s' "$PROMPT" | bounded "$r" 2>/dev/null || true)" ;;
-  esac
+  # REVIEW_TIMEOUT is this producer's knob; REVIEWER_TIMEOUT is the wrapper's.
+  # Map one onto the other so the cap documented at the top of this file is the
+  # cap actually applied.
+  resp="$(REVIEWER_TIMEOUT="$TIMEOUT" "$REVIEWER_CLI" "$r" "$PROMPT_FILE" 2>/dev/null)"
+  rc=$?
+  # A non-zero wrapper exit means "reviewer unavailable" — unknown vendor, CLI
+  # absent, or a timeout. It must never be counted, because §18's whole purpose
+  # is TWO independent opinions and one reachable vendor scored twice is one
+  # opinion wearing two names. Checked explicitly rather than inferred from
+  # empty output: a vendor can fail late and still have printed something.
+  if [ "$rc" -ne 0 ]; then
+    echo "  (reviewer unavailable: $r exited $rc — not counted)" >&2
+    continue
+  fi
   [ -n "$resp" ] || { echo "  (no output from $r — skipped)" >&2; continue; }
   {
     echo "## Reviewer: $r"
@@ -110,11 +130,23 @@ for r in "${REVIEWERS[@]}"; do
   count=$((count+1))
 done
 
-if [ "$count" -lt "${MIN_REVIEWERS:-2}" ]; then
-  echo "only $count reviewer(s) produced output (need ${MIN_REVIEWERS:-2}) — ${OUT#"$ROOT"/} left unchanged." >&2
+# A non-numeric MIN_REVIEWERS makes `[ "$count" -lt "$MIN" ]` an error, not a
+# comparison: bash prints "integer expression expected", the `if` reads false,
+# and the script falls through to publish and exit 0 — announcing that the
+# >=2-reviewer floor was met when it was never evaluated. Validate it first.
+MIN="${MIN_REVIEWERS:-2}"
+case "$MIN" in
+  ''|*[!0-9]*) echo "MIN_REVIEWERS must be a non-negative integer, got '$MIN'" >&2; exit 2 ;;
+esac
+
+if [ "$count" -lt "$MIN" ]; then
+  echo "only $count reviewer(s) produced output (need $MIN) — ${OUT#"$ROOT"/} left unchanged." >&2
   echo "Install another other-vendor agent CLI, or use GSD_SKIP_REVIEWS=1 for a logged emergency override." >&2
   exit 1
 fi
 
-cp "$TMP" "$OUT"
+# An unchecked `cp` is a false success report: it can truncate $OUT and fail, and
+# the echo below still says the file was written. The evidence the gate reads
+# would then be whatever survived the partial copy.
+cp "$TMP" "$OUT" || { echo "failed writing ${OUT#"$ROOT"/} — earlier review evidence may be incomplete" >&2; exit 2; }
 echo "wrote $count reviewer section(s) to ${OUT#"$ROOT"/}" >&2

@@ -97,9 +97,44 @@ preserved, never deleted.
 
 **No version bump.** No change here touches a migration's `to_version`: 0028 and
 0029 are corrected in place (0028 is applied in zero downstream repos; 0029's
-guard only makes it refuse shapes it should never have stripped), and the §11
-work is this repo's own conformance rather than a change to what it scaffolds.
-Nothing for downstream projects to re-run.
+guard only makes it refuse shapes it should never have stripped), the §11 work is
+this repo's own conformance rather than a change to what it scaffolds, and the
+`reviewer-cli` adoption below completes `0032`'s Step 1 payload in place — 3.0.0
+has not reached a consumer yet, so there is no version to bump *past*.
+
+### Added
+- **`bin/reviewer-cli.sh`** — core's review-producer wrapper, vendored at
+  `# reviewer-cli-version: 1.0.0` from
+  `reference-implementations/reviewer-cli/` (core#42), **not** a host-local copy.
+  The §18 gate *consumes* review evidence; this is what *produces* it. Installed
+  to the shared `~/.agenticapps/bin/` by `install.sh`, `setup/SKILL.md`, and
+  `0032` Step 1 — each of which now **arbitrates on the version marker and
+  refuses to downgrade**, exactly as they already do for `# gate-version:`.
+  That arbitration is the whole point: core#41 was one host installer delivering
+  the correctly-arbitrated `1.2.2` gate and, in the same run, blind-installing a
+  3-arm wrapper over the 4-arm one. The `opencode` arm vanished, the next review
+  that asked for it was recorded as "reviewer unavailable", and the change
+  proceeded with one fewer opinion. Not a gate bypass — a silent degradation of
+  the evidence §18 exists to compel, which is worse, because a drifted producer
+  reports clean.
+- **`tools/reviewer-cli-conformance.sh`** — core's harness, vendored alongside
+  the wrapper and run in CI before any review is trusted. This copy scores
+  **14/14**. `migrations/run-tests.sh` additionally asserts both files stay
+  byte-identical to core's, that the marker is present, that every installer
+  arbitrates, and that the producer keeps no second copy of the vendor arms —
+  each row mutation-checked.
+
+### Changed
+- **`bin/run-plan-review.sh` delegates vendor dispatch to `reviewer-cli.sh`**
+  instead of carrying its own four arms. A private copy of a file that lives at
+  a shared path is not a fork, it is a race — and it drifts the moment core adds
+  or changes an arm. Two consequences: `codex` moves from the stdin form
+  (`codex exec -`) to the canonical argv form, since the wrapper pins stdin to
+  `/dev/null` on every arm and the prompt now travels as a file path; and the
+  catch-all that ran an arbitrary reviewer name unbounded is gone, so a name
+  outside `claude | gemini | opencode | codex` is reported unavailable rather
+  than run without the hardening. A non-zero wrapper exit is now checked
+  explicitly and never counted toward the ≥2 threshold.
 
 ### Fixed
 - **Migration 0029's §11 strip deleted operator prose and lawful host bullets.**

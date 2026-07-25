@@ -148,6 +148,7 @@ fi
 echo "Installing the OpenSpec change-gate (spec §18)"
 echo "  GATE   $AA_BIN/openspec-change-gate.sh   (host-agnostic enforcement surface)"
 echo "  GATE   $AA_BIN/run-plan-review.sh        (multi-AI review producer)"
+echo "  GATE   $AA_BIN/reviewer-cli.sh           (the producer's vendor wrapper)"
 echo "  HOOK   .git/hooks/pre-commit             (agent-agnostic floor)"
 run mkdir -p "$AA_BIN"
 
@@ -156,9 +157,21 @@ run mkdir -p "$AA_BIN"
 # gate silently republishes it over a newer one and reverts the fix for every
 # agent on the machine. Arbitrate on the `# gate-version:` marker and refuse to
 # downgrade. An unmarked file counts as 0.0.0 so any marked copy upgrades it.
+# ONE awk, no pipeline, anchored X.Y.Z. The obvious form —
+# `sed -n 's/.../\1/p' "$1" | head -n1 | grep . || echo 0.0.0` — is a downgrade
+# hole in two independent ways, both verified:
+#   1. With enough marker lines, `head -n1` closes the pipe, `sed` takes SIGPIPE,
+#      and under `set -o pipefail` the `|| echo 0.0.0` fallback fires AFTER the
+#      real version already printed. The function returns "9.9.9\n0.0.0", which
+#      `sort -V` reads as 0.0.0 — so an installed 9.9.9 is silently overwritten.
+#   2. `[0-9][0-9.]*` parses `9.0.0junk` as `9.0.0`, letting a malformed marker
+#      claim any version it likes.
+# Unparseable is 0.0.0, which fails in the safe direction: a bad INSTALLED file
+# gets overwritten by a good one, and a bad INCOMING file refuses to overwrite.
 gate_version() {
   [ -f "$1" ] || { echo "0.0.0"; return; }
-  sed -n 's/^# gate-version:[[:space:]]*\([0-9][0-9.]*\).*/\1/p' "$1" | head -n1 | grep . || echo "0.0.0"
+  awk '/^# gate-version: [0-9]+\.[0-9]+\.[0-9]+[ \t]*$/ { print $3; found=1; exit }
+       END { if (!found) print "0.0.0" }' "$1"
 }
 _incoming="$(gate_version "$SCAFFOLDER/bin/openspec-change-gate.sh")"
 _installed="$(gate_version "$AA_BIN/openspec-change-gate.sh")"
@@ -172,6 +185,32 @@ else
   [ "$_installed" = "$_incoming" ] || echo "  OK     gate: $_installed -> $_incoming"
 fi
 run install -m 0755 "$SCAFFOLDER/bin/run-plan-review.sh"      "$AA_BIN/run-plan-review.sh"
+
+# The producer's vendor wrapper is the SAME shared-path hazard as the gate, and
+# it is not hypothetical: on 2026-07-25 a host installer delivered the correctly
+# arbitrated 1.2.2 gate and, in the same run, blind-installed a 3-arm wrapper
+# over the 4-arm one. The `opencode` arm vanished and the next review that asked
+# for it got `unknown vendor` mid-run — recorded as "reviewer unavailable" and
+# waved through with one fewer opinion (core#41). The gate survived only because
+# it carries a marker every host arbitrates on. Same rule, same reasoning, on
+# `# reviewer-cli-version:`. Unmarked counts as 0.0.0.
+# Same parser shape, and the same reasons, as gate_version above.
+reviewer_cli_version() {
+  [ -f "$1" ] || { echo "0.0.0"; return; }
+  awk '/^# reviewer-cli-version: [0-9]+\.[0-9]+\.[0-9]+[ \t]*$/ { print $3; found=1; exit }
+       END { if (!found) print "0.0.0" }' "$1"
+}
+_rc_incoming="$(reviewer_cli_version "$SCAFFOLDER/bin/reviewer-cli.sh")"
+_rc_installed="$(reviewer_cli_version "$AA_BIN/reviewer-cli.sh")"
+_rc_older="$(printf '%s\n%s\n' "$_rc_incoming" "$_rc_installed" | sort -V | head -n1)"
+if [ "$_rc_installed" != "$_rc_incoming" ] && [ "$_rc_older" = "$_rc_incoming" ]; then
+  echo "  SKIP   reviewer-cli: installed $_rc_installed is NEWER than this repo's $_rc_incoming"
+  echo "         Refusing to downgrade the shared wrapper. Update this scaffolder"
+  echo "         (git pull) so every host publishes the same version."
+else
+  run install -m 0755 "$SCAFFOLDER/bin/reviewer-cli.sh" "$AA_BIN/reviewer-cli.sh"
+  [ "$_rc_installed" = "$_rc_incoming" ] || echo "  OK     reviewer-cli: $_rc_installed -> $_rc_incoming"
+fi
 if [ -d "$SCAFFOLDER/.git" ] || [ -f "$SCAFFOLDER/.git" ]; then
   # `--git-path` may answer relative to the repo root OR absolutely, depending on
   # cwd and on whether this is a worktree/submodule. Resolve to an absolute path
