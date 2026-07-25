@@ -1,86 +1,98 @@
-# Session Handoff — 2026-07-25 (bind OpenSpec v1 + cross-AI review)
+# Session Handoff — 2026-07-25 (bind OpenSpec v1 — PARKED, waiting on core)
 
-## Status: PR #95 OPEN on `feat/bind-openspec-v1`, 14 commits. Suite 197 PASS / 0 FAIL.
+## Status
+**PR #95 is OPEN, green, mergeable — deliberately NOT merged.**
 https://github.com/agenticapps-eu/claude-workflow/pull/95
+Branch `feat/bind-openspec-v1` · 15 commits · 71 files · +3252/−2306 · 0 behind main
+· working tree clean, everything pushed · suite 197 PASS / 0 FAIL.
 
-## Accomplished
-Ran `prompts/01-host-bind-openspec.md` for `{{HOST}}=claude` (all 6 steps, all 4
-acceptance criteria verified), then a cross-AI review (codex + gemini) whose
-findings turned into 6 further fix commits.
+**Why parked:** `agenticapps-workflow-core` is actively building the shared
+`gate/` script. This PR carries three gate fixes as a *recorded divergence* that
+becomes redundant once core publishes. Owner's call was to wait rather than ship
+a divergence about to be superseded. Cost of waiting: a large diff ages against a
+repo others are touching — re-check `git rev-list --count HEAD..origin/main`
+before resuming.
 
-### The review earned its keep
-codex found **10 HIGH / 9 MEDIUM**; every claim I tested reproduced. gemini's
-single HIGH was a hallucination (it read `("$ @")` where the file has `("$@")`) —
-worth remembering when weighing the two.
+---
 
-Fixed, all reproduced before and after:
-1. **Gate exemption bypass** — `is_openspec_artifact` matched any path containing
-   an `openspec/` component, so `src/openspec/app.ts` edited freely with the gate
-   unsatisfied. Anchored to `$ROOT/openspec/`; `--pre-commit` had the same hole.
-2. **Reviewer counting** — `## Reviewer` inside fenced code blocks counted, as did
-   a bare `reviewers: [a, b]` and two sections from one vendor. Now fence-aware,
-   colon-required, deduplicated; YAML fallback removed.
-3. **Fail-open inverted** — unparseable stdin could BLOCK. §18 says parse errors
-   fail open, policy never does.
-4. **Empty prompt to codex** — `printf … | codex exec - </dev/null`: in bash the
-   redirect beats the pipe, so the reviewer got nothing. Any banner it printed
-   would have been recorded as a real review. (zsh MULTIOS hides this.)
-5. **Retired-payload 404** — deleting `multi-ai-review-gate.sh` made migrations
-   0005/0016 `curl -f … > hook` a truncate-then-fail, leaving an EMPTY executable
-   PreToolUse hook = allow-everything. 0026/0031 had the loud variant.
-6. **Two data-loss bugs in 0032** — the settings `jq` deleted whole hook entries
-   (killing co-registered project hooks); Step 5 discarded every project-owned
-   top-level config key (`.workflow`, custom policy).
-7. **Shared-gate propagation vector** (from the pi session) — `install.sh:153`
-   wrote `~/.agenticapps/bin/` unconditionally: last-writer-wins across hosts, so
-   a host vendoring an older gate reverts the fix machine-wide.
-8. install.sh clobbered an existing pre-commit; treated any `openspec` dir as an
-   initialised slot; `$SLUG` path traversal in run-plan-review.sh.
+## ▶ RESUME TRIGGER: core publishes `gate/`
 
-## Decisions
-- **Guards over fixes.** Each bug got a mutation-tested guard: payload-publication,
-  prompt-delivery, gate-canonical parity, version-marker, apply-parity (now
-  line-by-line, not 4 substrings), gitignored-payload.
-- **Divergence recorded, not silent.** `bin/GATE-DIVERGENCE.md` pins the exact
-  diff hash vs core with close-out steps; `test_gate_matches_core_canonical`
-  accepts only that diff, fails on further drift, and flips to enforcing
-  byte-identity the moment core publishes `gate/`.
-- **Sibling repos left untouched** — publishing `gate/` is the owner's call.
+Check it in one command:
+```bash
+git -C ../agenticapps-workflow-core fetch -q origin main
+git -C ../agenticapps-workflow-core ls-tree -r --name-only origin/main | grep '^gate/'
+```
+Today that prints **nothing** — `gate/` and `prompts/` are NOT in version control
+in core (uncommitted local dirs only, absent from `origin/main`). That absence is
+the root cause of the whole fleet drift; see "Structural finding" below.
 
-## The structural finding
-**`gate/` and `prompts/` are NOT in version control in agenticapps-workflow-core** —
-they exist only as uncommitted local directories, absent from `origin/main`. So
-"reuse the shared gate, don't re-author" was unimplementable: there was nothing to
-sync from. That is why opencode re-authored (~256 lines diverged) and why all three
-copies carry the bypass. User reports core is now working on publishing it.
+### Then do exactly this
+1. `git -C ../agenticapps-workflow-core pull` and confirm `gate/openspec-change-gate.sh` is tracked.
+2. `bash migrations/run-tests.sh gate-parity` — it flips itself from
+   `RECORDED-DIVERGENCE` to enforcing byte-identity. No code change needed to
+   activate it.
+3. **Fold these four fixes into core's published version** (all four are enumerated
+   with rationale in `bin/GATE-DIVERGENCE.md`, which exists for this handoff):
+   - exemption bypass anchored to `$ROOT/openspec/` (also the `--pre-commit` filter)
+   - reviewer counting: fence-aware, colon+name required, distinct names, no YAML fallback
+   - fail-open on parse errors only, never on policy
+   - `# gate-version:` marker so installers can refuse a downgrade
+4. Bump `# gate-version:` above `1.1.0`.
+5. Re-vendor: `cp ../agenticapps-workflow-core/gate/openspec-change-gate.sh bin/`
+6. **Delete `bin/GATE-DIVERGENCE.md`** — the guard FAILS if the record outlives
+   the fork. That is intentional; it stops a stale exemption lingering.
+7. `bash bin/build-snapshot.sh && bash migrations/run-tests.sh` → expect green.
+8. Rebase on main if it moved, then merge #95.
 
-## Files modified
-70 files, ~+3.4k/−2.3k. Key: `bin/{openspec-change-gate,run-plan-review}.sh`,
-`bin/GATE-DIVERGENCE.md`, `migrations/0032-*` + `test-fixtures/0032/**` (6
-fixtures), `migrations/run-tests.sh` (5 new guards), `check-snapshot-parity.sh`,
-`install.sh`, `templates/config-hooks.json`, `skill/SKILL.md`, `docs/WORKFLOW.md`,
-`docs/decisions/0044-*`, `.gitignore`.
+---
 
-## Next session: start here
-Merge #95 once CI is green and CodeRabbit clears. Then, **in priority order**:
-1. **opencode-workflow ships the bypass** (defect 1) in already-merged code, and
-   its installer has the same propagation vector. Fix both.
-2. When core publishes `gate/`: fold in the four fixes, bump `# gate-version:`,
-   re-vendor here, delete `bin/GATE-DIVERGENCE.md` (the guard fails if the record
-   outlives the fork), and add the version check to **every** host installer — one
-   host without it still clobbers.
-3. Remaining unfixed codex findings, all MEDIUM and recorded in the PR thread:
-   idempotency checks describe partial end states (HIGH 8); rollback recipes
-   over-delete (`rm -rf openspec/`, `git checkout --` whole dirs) (HIGH 10);
-   `find` errors read as "no active change" in ci/pre-commit; no-jq path misses
-   `notebook_path`; newline-in-filename handling; no timeout binary on stock macOS;
-   producer counts duplicate/failed reviewers.
-4. Then prompt 01 for `codex-workflow` and `pi-agentic-apps-workflow`.
+## Structural finding (the reason any of this was needed)
+§18's design is ONE shared enforcement script every host calls. That invariant was
+**unenforced and already broken**:
+- `gate/` is not published anywhere → nothing to sync from.
+- `opencode-workflow` therefore re-authored its copy (**~256 lines diverged**).
+- All three copies carried the same exemption bypass.
+
+This PR adds the missing teeth: `test_gate_matches_core_canonical` (parity vs core,
+via the `CORE_SPEC_DIR` checkout the §11 mirror test already uses) plus a
+`# gate-version:` marker + installer downgrade-refusal.
+
+---
+
+## ⚠ Live issue NOT fixed here — do this regardless of #95
+**`opencode-workflow` ships the exemption bypass in already-merged code**, and its
+installer has the same shared-path propagation vector. Concretely, on this machine:
+`~/.agenticapps/bin/openspec-change-gate.sh` is written unconditionally by every
+host's installer (last-writer-wins), so **running opencode's installer republishes
+the bypassed gate for every agent**. Needs its own PR. Every host installer needs
+the version check — one host without it still clobbers.
+
+Reproduce the bypass in ~30s:
+```bash
+# in a repo with an active, unreviewed change:
+printf '{"tool":"Edit","tool_input":{"file_path":"src/openspec/app.ts"}}' \
+  | bash <gate>            # exits 0 (should be 2)
+```
+
+---
+
+## Deferred codex findings (all recorded, none blocking)
+HIGH 8 idempotency checks describe partial end states · HIGH 10 rollback recipes
+over-delete (`rm -rf openspec/`, `git checkout --` whole dirs) · `find` errors read
+as "no active change" in ci/pre-commit · no-jq path misses `notebook_path` ·
+newline-in-filename handling · no timeout binary on stock macOS · producer counts
+duplicate/failed reviewers.
 
 ## Open questions
-1. Should this repo dogfood its own gate (`openspec init` here)? Deliberate act,
-   not mid-PR.
+1. Should this repo dogfood its own gate (`openspec init` here)? The `gate` CI job
+   currently passes trivially because there is no `openspec/` slot — it proves
+   nothing until then. Deliberate act, not mid-PR.
 2. `.planning/` (35 phase dirs) still needs the supervised Tier-2 fold into
-   `openspec/specs/` capabilities.
-3. HIGH 10's rollback over-deletion is real but rollbacks are rarely exercised —
-   worth a follow-up, not a blocker.
+   `openspec/specs/` capabilities. Explicitly out of migration 0032's scope.
+3. CodeRabbit was rate-limited on every run — its ✅ is not a real second opinion.
+   The actual review coverage was codex + gemini + my own pass.
+
+## Then: remaining hosts
+Prompt 01 still to run for `codex-workflow` and `pi-agentic-apps-workflow`
+(opencode done). Their hook surfaces are the least-proven: codex's `apply_patch`
+matcher and pi's hook mechanism.
