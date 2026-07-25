@@ -1924,6 +1924,25 @@ test_gate_matches_core_canonical() {
     SKIP=$((SKIP+1)); return
   fi
 
+  # The shared-path arbitration only works if the marker exists and the installer
+  # reads it. Without both, install.sh silently reverts to last-writer-wins on
+  # ~/.agenticapps/bin — the propagation vector where a host still vendoring an
+  # older gate republishes it over a newer one for every agent on the machine.
+  if grep -qE '^# gate-version:[[:space:]]*[0-9]+\.[0-9]+\.[0-9]+' "$ours"; then
+    echo "  ${GREEN}✓${RESET} gate carries a version marker (shared-path arbitration)"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} gate has no '# gate-version:' marker — installers cannot refuse a downgrade"
+    FAIL=$((FAIL+1))
+  fi
+  if grep -q 'gate_version' "$REPO_ROOT/install.sh" && grep -q 'Refusing to downgrade' "$REPO_ROOT/install.sh"; then
+    echo "  ${GREEN}✓${RESET} install.sh arbitrates the shared gate path instead of clobbering it"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} install.sh writes the shared gate unconditionally (last-writer-wins)"
+    FAIL=$((FAIL+1))
+  fi
+
   if cmp -s "$ours" "$canonical"; then
     echo "  ${GREEN}✓${RESET} gate script is byte-identical to the canonical upstream copy"
     PASS=$((PASS+1))

@@ -1,4 +1,15 @@
 #!/usr/bin/env bash
+# gate-version: 1.1.0
+#
+# VERSION MARKER — read by every host installer before writing this file to the
+# SHARED path ~/.agenticapps/bin/. That path is written by claude / codex /
+# opencode / pi installers alike, so without arbitration it is last-writer-wins:
+# a host still vendoring an older copy silently republishes it over a newer one
+# and reverts the fix for every agent on the machine. Installers MUST refuse to
+# overwrite a higher version. Bump this whenever the gate's behaviour changes.
+#   1.1.0 — anchor the openspec/ exemption to $ROOT (bypass fix), tighten
+#           reviewer counting, honour fail-open on parse errors
+#   1.0.0 — initial canonical script (agenticapps-workflow-core)
 # openspec-change-gate.sh — the AgenticApps enforcement gate (host-agnostic).
 #
 # Rule: you may not edit code while an OpenSpec change is active unless

@@ -25,8 +25,20 @@ SLUG="${1:-}"; shift || true
 [ -n "$SLUG" ] || { echo "usage: run-plan-review.sh <change-slug> [reviewers...]" >&2; exit 2; }
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
+# $SLUG is pasted straight into a path and the result is later written to, so a
+# traversing or absolute slug would make this script overwrite an arbitrary file
+# (`run-plan-review.sh ../../src` -> writes src/REVIEWS.md). Accept only a plain
+# change-directory name.
+case "$SLUG" in
+  */*|.|..|-*|"") echo "invalid change slug: '$SLUG' (expected a single directory name)" >&2; exit 2 ;;
+esac
+
 CHANGE_DIR="$ROOT/openspec/changes/$SLUG"
 [ -d "$CHANGE_DIR" ] || { echo "no such active change: $SLUG" >&2; exit 2; }
+# Refuse a symlinked change dir for the same reason: REVIEWS.md must land inside
+# the repo's spec slot, not wherever a link points.
+[ -L "$CHANGE_DIR" ] && { echo "change dir is a symlink, refusing: $SLUG" >&2; exit 2; }
 
 TIMEOUT="${REVIEW_TIMEOUT:-180}"                 # seconds per reviewer
 SELF="${AGENT_SELF:-claude}"                     # this host IS claude — exclude it by default

@@ -14,7 +14,7 @@ fails the suite.
 ## Recorded divergence
 
 ```
-2a6c94ae54b8c3aae2d73c57bdd86f57169df9d41f6afa4fbe4f8f5985c1a8c0
+7e71015161e95674a3f66f8a3d037fa426965d2e25ec47fe6573293012b20eb6
 ```
 
 ## Why we diverged
@@ -36,6 +36,14 @@ canonical copy and all verified by direct invocation:
 3. **Fail-open inverted on parse error.** An unparseable payload fell through to
    policy evaluation and could BLOCK (visible under `OPENSPEC_GATE_STRICT=1`).
    §18 requires failing open on a *parse* error and never on policy.
+
+4. **The shared path was last-writer-wins.** `~/.agenticapps/bin/` is written by
+   every host's installer, so a host still vendoring an older gate silently
+   republished it over a newer one and reverted the fix for every agent on the
+   machine (flagged from the pi session; `install.sh:153`). The script now
+   carries a `# gate-version:` marker and installers refuse to downgrade.
+   **Every host installer needs this**, not just this one — a host without the
+   check still clobbers.
 
 ## Why it is not upstreamed yet
 

@@ -150,7 +150,27 @@ echo "  GATE   $AA_BIN/openspec-change-gate.sh   (host-agnostic enforcement surf
 echo "  GATE   $AA_BIN/run-plan-review.sh        (multi-AI review producer)"
 echo "  HOOK   .git/hooks/pre-commit             (agent-agnostic floor)"
 run mkdir -p "$AA_BIN"
-run install -m 0755 "$SCAFFOLDER/bin/openspec-change-gate.sh" "$AA_BIN/openspec-change-gate.sh"
+
+# $AA_BIN is SHARED by every host installer (claude / codex / opencode / pi), so
+# writing it unconditionally is last-writer-wins: a host still vendoring an older
+# gate silently republishes it over a newer one and reverts the fix for every
+# agent on the machine. Arbitrate on the `# gate-version:` marker and refuse to
+# downgrade. An unmarked file counts as 0.0.0 so any marked copy upgrades it.
+gate_version() {
+  [ -f "$1" ] || { echo "0.0.0"; return; }
+  sed -n 's/^# gate-version:[[:space:]]*\([0-9][0-9.]*\).*/\1/p' "$1" | head -n1 | grep . || echo "0.0.0"
+}
+_incoming="$(gate_version "$SCAFFOLDER/bin/openspec-change-gate.sh")"
+_installed="$(gate_version "$AA_BIN/openspec-change-gate.sh")"
+_older="$(printf '%s\n%s\n' "$_incoming" "$_installed" | sort -V | head -n1)"
+if [ "$_installed" != "$_incoming" ] && [ "$_older" = "$_incoming" ]; then
+  echo "  SKIP   gate: installed $_installed is NEWER than this repo's $_incoming"
+  echo "         Refusing to downgrade the shared gate. Update this scaffolder"
+  echo "         (git pull) so every host publishes the same version."
+else
+  run install -m 0755 "$SCAFFOLDER/bin/openspec-change-gate.sh" "$AA_BIN/openspec-change-gate.sh"
+  [ "$_installed" = "$_incoming" ] || echo "  OK     gate: $_installed -> $_incoming"
+fi
 run install -m 0755 "$SCAFFOLDER/bin/run-plan-review.sh"      "$AA_BIN/run-plan-review.sh"
 if [ -d "$SCAFFOLDER/.git" ] || [ -f "$SCAFFOLDER/.git" ]; then
   # `--git-path` may answer relative to the repo root OR absolutely, depending on
@@ -164,6 +184,13 @@ if [ -d "$SCAFFOLDER/.git" ] || [ -f "$SCAFFOLDER/.git" ]; then
   esac
   if [ -n "$hookdir" ]; then
     run mkdir -p "$hookdir"
+    # Never destroy a pre-commit hook the repo already owns. Migration 0032 backs
+    # one up; install.sh overwrote it silently, which is the same data loss with
+    # a different entry point.
+    if [ -e "$hookdir/pre-commit" ] && ! grep -q 'openspec-change-gate' "$hookdir/pre-commit" 2>/dev/null; then
+      echo "  note: existing pre-commit preserved as pre-commit.pre-agenticapps — merge it by hand"
+      run cp "$hookdir/pre-commit" "$hookdir/pre-commit.pre-agenticapps"
+    fi
     run install -m 0755 "$SCAFFOLDER/bin/git-hooks/pre-commit" "$hookdir/pre-commit"
   fi
 fi
@@ -182,8 +209,8 @@ elif ! command -v openspec >/dev/null 2>&1; then
   echo "  ! openspec CLI not found. Install it, then re-run:"
   echo "      npm i -g @fission-ai/openspec"
   echo "      openspec init --tools claude --profile core"
-elif [ -d "$SCAFFOLDER/openspec" ]; then
-  echo "  ✓ openspec/ already present (skipping init)"
+elif [ -d "$SCAFFOLDER/openspec/changes" ] && [ -d "$SCAFFOLDER/openspec/specs" ]; then
+  echo "  ✓ openspec slot already initialised (skipping init)"
 else
   if [ "$DRY_RUN" -eq 1 ]; then
     echo "    would run: openspec init --tools claude --profile core"
