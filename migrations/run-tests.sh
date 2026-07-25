@@ -1888,19 +1888,19 @@ test_migration_0030() {
 # agenticapps-workflow-core, reusing the CORE_SPEC_DIR checkout that the §11
 # mirror test already relies on (CI clones core to .core-spec).
 #
-# Today it reports NOT-PUBLISHED rather than passing or failing, because
-# `gate/` does not exist on workflow-core's main — it is a local, uncommitted
-# directory. That is the root cause of the drift: there is no published
-# canonical artifact to sync from, so "reuse, don't re-author" is currently
-# unimplementable. The moment core publishes gate/, this guard starts enforcing
-# byte-identity with no further change, and any local fix that has not been
-# upstreamed turns it red — which is exactly the signal we want.
+# Core published the canonical copy in ae90483 (core#33, ADR-0022) at
+# reference-implementations/openspec-change-gate/ — NOT the `gate/` path this
+# guard originally predicted. It now enforces byte-identity: any local fix that
+# has not been upstreamed turns it red, which is exactly the signal we want.
+# Fix behaviour in core alongside a harness row, then re-vendor; do not patch
+# bin/ in place, because a host-local fix is how the copies diverged the first
+# time.
 test_gate_matches_core_canonical() {
   echo ""
   echo "${YELLOW}━━━ Change-gate ≡ workflow-core canonical ━━━${RESET}"
 
   local core_dir="${CORE_SPEC_DIR:-$REPO_ROOT/../agenticapps-workflow-core}"
-  local canonical="$core_dir/gate/openspec-change-gate.sh"
+  local canonical="$core_dir/reference-implementations/openspec-change-gate/openspec-change-gate.sh"
   local ours="$REPO_ROOT/bin/openspec-change-gate.sh"
 
   if [ ! -f "$ours" ]; then
@@ -1914,14 +1914,32 @@ test_gate_matches_core_canonical() {
   fi
 
   if [ ! -f "$canonical" ]; then
-    # Not a failure: core does not publish gate/ yet. Say so loudly enough that
-    # it does not read as "checked and fine".
-    echo "  ${YELLOW}NOT-PUBLISHED${RESET}: workflow-core has no gate/openspec-change-gate.sh"
-    echo "      The canonical enforcement script is not in version control, so the"
-    echo "      \"one shared gate\" invariant cannot be checked or maintained."
-    echo "      Upstream action: publish gate/ in agenticapps-workflow-core, then"
-    echo "      this guard enforces byte-identity automatically."
-    SKIP=$((SKIP+1)); return
+    # Core HAS published it (ae90483). Absent now means a stale core checkout or
+    # a path that moved again — either way the "one shared gate" invariant is
+    # unverifiable, and that must not read as "checked and fine".
+    echo "  ${RED}✗${RESET} workflow-core has no reference-implementations/openspec-change-gate/openspec-change-gate.sh"
+    echo "      Published upstream in ae90483 (core#33). A stale core checkout cannot"
+    echo "      certify this gate. Pull core, or update this path if it moved again."
+    FAIL=$((FAIL+1)); return
+  fi
+
+  # The harness scores the gate, and CI runs it against our vendored copy — so a
+  # stale harness certifies a stale gate. Core's vendoring steps require keeping
+  # the two in sync; this is what makes "in sync" checkable.
+  local harness_ours="$REPO_ROOT/tools/change-gate-conformance.sh"
+  local harness_canonical="$core_dir/tools/change-gate-conformance.sh"
+  if [ ! -f "$harness_ours" ]; then
+    echo "  ${RED}✗${RESET} tools/change-gate-conformance.sh not vendored — CI's conformance step cannot run"
+    FAIL=$((FAIL+1))
+  elif [ ! -f "$harness_canonical" ]; then
+    echo "  ${YELLOW}SKIP${RESET}: workflow-core has no tools/change-gate-conformance.sh to compare against"
+    SKIP=$((SKIP+1))
+  elif cmp -s "$harness_ours" "$harness_canonical"; then
+    echo "  ${GREEN}✓${RESET} conformance harness is byte-identical to core's"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} conformance harness has drifted from core's — a stale harness certifies a stale gate"
+    FAIL=$((FAIL+1))
   fi
 
   # The shared-path arbitration only works if the marker exists and the installer
@@ -1971,8 +1989,8 @@ test_gate_matches_core_canonical() {
   expected="$(grep -oE '^[0-9a-f]{64}$' "$record" | head -n1)"
   if [ "$actual" = "$expected" ]; then
     echo "  ${YELLOW}RECORDED-DIVERGENCE${RESET}: gate differs from canonical, exactly as documented"
-    echo "      bin/GATE-DIVERGENCE.md pins this diff; it closes when core publishes gate/"
-    echo "      and the fixes are upstreamed. Not silent, not permanent."
+    echo "      bin/GATE-DIVERGENCE.md pins this diff; it closes when the fixes are"
+    echo "      upstreamed into core and this copy is re-vendored. Not silent, not permanent."
     PASS=$((PASS+1))
   else
     echo "  ${RED}✗${RESET} gate divergence CHANGED and no longer matches the recorded hash"

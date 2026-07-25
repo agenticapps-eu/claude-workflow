@@ -18,15 +18,25 @@ without the latter, the first change cannot clear stage 2. `.planning/` is
 preserved, never deleted.
 
 ### Added
-- **The §18 change-gate.** One host-agnostic script
+- **The §18 change-gate**, vendored from core's reference implementation
+  (`reference-implementations/openspec-change-gate/`, `# gate-version: 1.2.0`,
+  core#33 / ADR-0022) — **not** a host-local copy. One host-agnostic script
   (`bin/openspec-change-gate.sh`) with three modes — `PreToolUse` hook,
   `--pre-commit`, `--ci`. Under an active change it blocks code edits unless
-  `openspec validate --all` is green **and** `REVIEWS.md` carries >= 2 reviewers.
-  Exempts `openspec/**` writes, fails open on malformed stdin (parse error
-  only, never policy), and documents `GSD_SKIP_REVIEWS=1` as the logged
-  override. Verified by direct invocation against every row of §18's truth
-  table. The git pre-commit + CI floor is the actual guarantee — a `PreToolUse`
-  hook only sees one agent and cannot gate its own installing session.
+  `openspec validate --all` is green **and** `REVIEWS.md` carries >= 2
+  *independent* reviewers. Exempts `openspec/**` writes (anchored to the repo
+  root, so `src/openspec/` is not exempt), fails open on malformed stdin (parse
+  error only, never policy), knows every host's payload shape, excludes this
+  host's own reviews via `OPENSPEC_GATE_SELF=claude`, and documents
+  `GSD_SKIP_REVIEWS=1` as the logged override. The git pre-commit + CI floor is
+  the actual guarantee — a `PreToolUse` hook only sees one agent and cannot gate
+  its own installing session.
+- **`tools/change-gate-conformance.sh`** — core's executable conformance
+  harness, vendored alongside the gate and run in CI before the gate's own
+  verdict is trusted. This copy scores **28/28**. A drifted gate can pass every
+  repo it guards while enforcing nothing, so the gate is scored, not assumed;
+  `migrations/run-tests.sh` additionally asserts both files stay byte-identical
+  to core's, because a stale harness certifies a stale gate.
 - **`bin/run-plan-review.sh`** — the multi-AI review producer. Feeds every
   reviewer `</dev/null` behind a timeout (a bare `codex exec` hangs otherwise),
   resolves `timeout`/`gtimeout` because macOS ships neither, defaults

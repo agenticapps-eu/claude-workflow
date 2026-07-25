@@ -37,4 +37,10 @@ if [ ! -x "$GATE" ]; then
 fi
 [ -x "$GATE" ] || exit 0
 
+# Name this host so its own reviews do not count toward the >=2 threshold. The
+# session running this hook IS claude, so a "## Reviewer: claude" entry it wrote
+# is not an independent review — without this the gate and the §02 evidence
+# verifier disagree about who counts. Overridable for testing.
+export OPENSPEC_GATE_SELF="${OPENSPEC_GATE_SELF:-claude}"
+
 exec "$GATE"

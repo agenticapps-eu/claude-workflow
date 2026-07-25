@@ -17,6 +17,13 @@ jobs:
           node-version: "20"
       - name: Install OpenSpec
         run: npm i -g @fission-ai/openspec
+      - name: Prove the gate itself is conformant
+        # A gate that has drifted can pass every repo it guards while enforcing
+        # nothing (core#32: five copies, none conformant). Score it before
+        # trusting its verdict. Both files are vendored from
+        # agenticapps-workflow-core; keep them in sync — a stale harness
+        # certifies a stale gate.
+        run: bash tools/change-gate-conformance.sh bin/openspec-change-gate.sh
       - name: Run the change gate
         # exit 0 = all active changes validate and carry >=2 reviewers; exit 1 = block the PR.
         run: bash bin/openspec-change-gate.sh --ci
