@@ -101,7 +101,16 @@ the idempotency check above already ruled out "absent" and "identical".
 
 ```bash
 SCAFFOLDER=~/.claude/skills/agenticapps-workflow
-cp "$SCAFFOLDER/setup/snapshot/hooks/gitnexus-reindex.cjs" .claude/hooks/gitnexus-reindex.cjs
+# RETIRED in 3.0.0 (ADR-0044): the scaffolder no longer ships this engine, so
+# the copy source is gone. `cp` fails loudly rather than silently, but it would
+# still abort a chain replay. Skip cleanly instead — 0032 removes the hook and
+# its settings binding anyway, so there is nothing to install and nothing lost.
+if [ -f "$SCAFFOLDER/setup/snapshot/hooks/gitnexus-reindex.cjs" ]; then
+  cp "$SCAFFOLDER/setup/snapshot/hooks/gitnexus-reindex.cjs" .claude/hooks/gitnexus-reindex.cjs
+else
+  echo "SKIP: gitnexus-reindex.cjs is retired (3.0.0, ADR-0044) and no longer"
+  echo "      shipped. Migration 0032 removes this hook; nothing to install."
+fi
 chmod +x .claude/hooks/gitnexus-reindex.cjs
 ```
 

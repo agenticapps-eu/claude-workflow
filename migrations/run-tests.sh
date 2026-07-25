@@ -1856,6 +1856,85 @@ test_migration_0030() {
 #
 # The test uses fake reviewers that echo their stdin, so it asserts delivery
 # without calling a real vendor CLI.
+# ─────────────────────────────────────────────────────────────────────────────
+# No migration installs a payload this repo no longer publishes
+# ─────────────────────────────────────────────────────────────────────────────
+# Migrations fetch payload files from `main` by raw URL, or copy them out of the
+# scaffolder snapshot. Deleting a payload in a later version silently turns those
+# URLs into 404s and those copies into missing sources, so replaying the chain on
+# an old project breaks — and in the curl case it breaks DANGEROUSLY:
+#
+#     curl -fsSL <404> > .claude/hooks/some-gate.sh   # `>` truncates FIRST
+#     chmod +x .claude/hooks/some-gate.sh             # empty, executable hook
+#
+# An empty PreToolUse hook exits 0, i.e. allows every edit. The gate is gone and
+# nothing says so. That is exactly what deleting multi-ai-review-gate.sh in 3.0.0
+# would have done to migrations 0005 and 0016.
+#
+# This test extracts every payload path a migration pulls from `main` and asserts
+# either that the path is still tracked, or that the fetch is GUARDED (writes to a
+# temp file / tests for the source before publishing). It is deliberately
+# repo-shape-aware rather than network-dependent: no HTTP request is made.
+test_migration_payloads_still_published() {
+  echo ""
+  echo "${YELLOW}━━━ Migration payloads — nothing fetches a deleted file ━━━${RESET}"
+
+  local raw='raw.githubusercontent.com/agenticapps-eu/claude-workflow/main/'
+  local any=0 bad=0 path file
+
+  while IFS= read -r line; do
+    file="${line%%:*}"
+    path="$(printf '%s' "$line" | sed -E "s|.*${raw}([^ \\\"']*).*|\\1|")"
+    [ -n "$path" ] || continue
+    any=$((any+1))
+    if git -C "$REPO_ROOT" ls-tree -r --name-only HEAD -- "$path" 2>/dev/null | grep -q .; then
+      continue                                   # still published — fine
+    fi
+    # Not published. Only acceptable if the fetch cannot leave a truncated file.
+    if grep -q 'mktemp' "$file" && grep -qE '\[ -s "\$_tmp" \]' "$file"; then
+      echo "  ${GREEN}✓${RESET} $(basename "$file"): '$path' is retired, and its fetch is guarded"
+      PASS=$((PASS+1))
+    else
+      echo "  ${RED}✗${RESET} $(basename "$file") fetches '$path', which is no longer published,"
+      echo "      and the fetch is UNGUARDED — '>' truncates before curl fails, leaving an"
+      echo "      empty executable hook that exits 0 and allows every edit."
+      FAIL=$((FAIL+1)); bad=1
+    fi
+  done <<< "$(grep -rn "$raw" "$REPO_ROOT"/migrations/*.md 2>/dev/null || true)"
+
+  # Snapshot-copy payloads: same hazard, louder failure mode (cp fails aloud
+  # rather than truncating, but a chain replay still dies on it).
+  local src
+  while IFS= read -r src; do
+    [ -n "$src" ] || continue
+    any=$((any+1))
+    [ -e "$REPO_ROOT/setup/snapshot/hooks/$src" ] && continue
+    local users guarded
+    users="$(grep -ln "setup/snapshot/hooks/$src" "$REPO_ROOT"/migrations/*.md 2>/dev/null || true)"
+    while IFS= read -r file; do
+      [ -n "$file" ] || continue
+      # Guarded = the copy is wrapped in an existence test for the same source.
+      if grep -qF "if [ -f \"\$SCAFFOLDER/setup/snapshot/hooks/$src\" ]" "$file"; then
+        echo "  ${GREEN}✓${RESET} $(basename "$file"): snapshot payload '$src' is retired, copy is guarded"
+        PASS=$((PASS+1))
+      else
+        echo "  ${RED}✗${RESET} $(basename "$file") copies snapshot payload '$src', which no"
+        echo "      longer ships, with no existence guard — a chain replay aborts here."
+        FAIL=$((FAIL+1)); bad=1
+      fi
+    done <<< "$users"
+  done <<< "$(grep -rhoE 'setup/snapshot/hooks/[A-Za-z0-9._-]+' "$REPO_ROOT"/migrations/*.md 2>/dev/null \
+               | sed 's|.*/||' | sort -u || true)"
+
+  if [ "$any" -eq 0 ]; then
+    echo "  ${YELLOW}note${RESET}: no migration payload references found to check"
+  elif [ "$bad" -eq 0 ]; then
+    echo "  ${GREEN}✓${RESET} every migration payload is either still published or safely guarded"
+    PASS=$((PASS+1))
+  fi
+}
+
+
 test_review_producer_delivers_prompt() {
   echo ""
   echo "${YELLOW}━━━ Review producer — prompt reaches the reviewer ━━━${RESET}"
@@ -2610,6 +2689,7 @@ if [ -z "$FILTER" ] || [ "$FILTER" = "0031" ]; then
   test_migration_0031
   test_migration_0032
   test_review_producer_delivers_prompt
+  test_migration_payloads_still_published
 fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "phase-sentinel" ]; then
