@@ -7,6 +7,7 @@ to_version: 3.0.0
 applies_to:
   - ~/.agenticapps/bin/openspec-change-gate.sh          # NEW — the §18 host-agnostic gate (Step 1)
   - ~/.agenticapps/bin/run-plan-review.sh               # NEW — the multi-AI review producer (Step 1)
+  - ~/.agenticapps/bin/reviewer-cli.sh                  # NEW — the producer's vendor wrapper, core 1.0.0 (Step 1)
   - .git/hooks/pre-commit                               # NEW — agent-agnostic enforcement floor (Step 1)
   - openspec/                                           # NEW — the spec slot, via `openspec init` (Step 2)
   - .claude/commands/opsx/                              # NEW — generated /opsx:* commands (Step 2)
@@ -77,9 +78,19 @@ git rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
   echo "ABORT: run inside a git repository."; exit 3; }
 
 # 4. The scaffolder clone carries the 3.0.0 payload (guards a stale clone).
+#    BOTH halves of §18 are checked: the gate that consumes review evidence and
+#    the wrapper that produces it. A clone carrying only the gate installs a
+#    producer whose every reviewer arm dies on a missing file — and Step 1 does
+#    not run under `set -e`, so that failure scrolls past as a stderr line while
+#    the migration reports success.
 SCAFFOLDER=~/.claude/skills/agenticapps-workflow
 test -x "$SCAFFOLDER/bin/openspec-change-gate.sh" || {
   echo "ABORT: scaffolder clone at $SCAFFOLDER predates 0032."
+  echo "       cd $SCAFFOLDER && git pull --ff-only origin main"
+  exit 3
+}
+test -x "$SCAFFOLDER/bin/reviewer-cli.sh" || {
+  echo "ABORT: scaffolder clone at $SCAFFOLDER predates the reviewer-cli adoption."
   echo "       cd $SCAFFOLDER && git pull --ff-only origin main"
   exit 3
 }
@@ -94,7 +105,13 @@ openspec --version >/dev/null 2>&1 || \
 
 ### Step 1 — Install the §18 gate, the review producer, and the git floor
 
-**Idempotency check:** `test -x "$HOME/.agenticapps/bin/openspec-change-gate.sh" && test -x "$(git rev-parse --git-path hooks)/pre-commit"`
+**Idempotency check:** `test -x "$HOME/.agenticapps/bin/openspec-change-gate.sh" && test -x "$HOME/.agenticapps/bin/reviewer-cli.sh" && test -x "$(git rev-parse --git-path hooks)/pre-commit"`
+
+The `reviewer-cli.sh` clause is deliberate. A project that applied an earlier
+revision of this migration has the gate and the floor but no vendor wrapper, and
+its producer would call a file that is not there. Reading that state as "already
+applied" would strand it; reading it as "not applied" re-runs a step whose every
+write is idempotent. Fix forward.
 **Pre-condition:** none — fixes forward on any project.
 **Apply:**
 ```bash
@@ -119,6 +136,25 @@ else
   install -m 0755 "$SCAFFOLDER/bin/openspec-change-gate.sh" "$HOME/.agenticapps/bin/openspec-change-gate.sh"
 fi
 install -m 0755 "$SCAFFOLDER/bin/run-plan-review.sh"      "$HOME/.agenticapps/bin/run-plan-review.sh"
+# The producer's vendor wrapper is the SAME shared-path hazard as the gate, and
+# it already fired: a host installer delivered the arbitrated 1.2.2 gate and, in
+# the same run, blind-installed a 3-arm wrapper over the 4-arm one. The
+# `opencode` arm vanished and the next review that asked for it was recorded as
+# "reviewer unavailable" and waved through with one fewer opinion (core#41).
+# Same rule, same reasoning, on `# reviewer-cli-version:`. Unmarked = 0.0.0.
+reviewer_cli_version() {
+  [ -f "$1" ] || { echo "0.0.0"; return; }
+  sed -n 's/^# reviewer-cli-version:[[:space:]]*\([0-9][0-9.]*\).*/\1/p' "$1" | head -n1 | grep . || echo "0.0.0"
+}
+_rc_incoming="$(reviewer_cli_version "$SCAFFOLDER/bin/reviewer-cli.sh")"
+_rc_installed="$(reviewer_cli_version "$HOME/.agenticapps/bin/reviewer-cli.sh")"
+_rc_older="$(printf '%s\n%s\n' "$_rc_incoming" "$_rc_installed" | sort -V | head -n1)"
+if [ "$_rc_installed" != "$_rc_incoming" ] && [ "$_rc_older" = "$_rc_incoming" ]; then
+  echo "NOTE: shared reviewer-cli is $_rc_installed, newer than this repo's $_rc_incoming — refusing to downgrade."
+  echo "      Update this scaffolder (git pull) so every host publishes the same version."
+else
+  install -m 0755 "$SCAFFOLDER/bin/reviewer-cli.sh" "$HOME/.agenticapps/bin/reviewer-cli.sh"
+fi
 hooks_dir="$(git rev-parse --git-path hooks)"
 mkdir -p "$hooks_dir"
 if [ -e "$hooks_dir/pre-commit" ] && ! grep -q 'openspec-change-gate' "$hooks_dir/pre-commit" 2>/dev/null; then
@@ -131,6 +167,12 @@ install -m 0755 "$SCAFFOLDER/bin/git-hooks/pre-commit" "$hooks_dir/pre-commit"
 **Rollback:**
 ```bash
 rm -f "$HOME/.agenticapps/bin/openspec-change-gate.sh" "$HOME/.agenticapps/bin/run-plan-review.sh"
+# reviewer-cli.sh is deliberately NOT removed. ~/.agenticapps/bin is shared by
+# claude / codex / opencode / pi, and the wrapper carries no per-host ownership:
+# deleting it here strips a vendor arm from every other agent on the machine,
+# which is core#41's harm arriving by a different route. Rolling one host back
+# must not disarm the others. (The two paths above have the same flaw and are
+# left as-is — changing a released rollback recipe is its own change.)
 hooks_dir="$(git rev-parse --git-path hooks)"
 if [ -e "$hooks_dir/pre-commit.pre-0032" ]; then
   mv "$hooks_dir/pre-commit.pre-0032" "$hooks_dir/pre-commit"

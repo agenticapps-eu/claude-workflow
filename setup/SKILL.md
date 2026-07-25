@@ -348,6 +348,23 @@ j. **The §18 change-gate (spec 1.0.0)** — the enforcement teeth. ONE
    mkdir -p "$HOME/.agenticapps/bin"
    install -m 0755 "$SCAFFOLDER/bin/openspec-change-gate.sh" "$HOME/.agenticapps/bin/openspec-change-gate.sh"
    install -m 0755 "$SCAFFOLDER/bin/run-plan-review.sh"      "$HOME/.agenticapps/bin/run-plan-review.sh"
+   # The producer's vendor wrapper lives at the SHARED path too, and writing it
+   # unconditionally already cost the fleet a vendor arm (core#41): a host
+   # installer blind-installed a 3-arm wrapper over the 4-arm one and the next
+   # review that asked for `opencode` was recorded as "reviewer unavailable".
+   # Arbitrate on the marker and refuse to downgrade. Unmarked = 0.0.0.
+   reviewer_cli_version() {
+     [ -f "$1" ] || { echo "0.0.0"; return; }
+     sed -n 's/^# reviewer-cli-version:[[:space:]]*\([0-9][0-9.]*\).*/\1/p' "$1" | head -n1 | grep . || echo "0.0.0"
+   }
+   _rc_incoming="$(reviewer_cli_version "$SCAFFOLDER/bin/reviewer-cli.sh")"
+   _rc_installed="$(reviewer_cli_version "$HOME/.agenticapps/bin/reviewer-cli.sh")"
+   _rc_older="$(printf '%s\n%s\n' "$_rc_incoming" "$_rc_installed" | sort -V | head -n1)"
+   if [ "$_rc_installed" != "$_rc_incoming" ] && [ "$_rc_older" = "$_rc_incoming" ]; then
+     echo "NOTE: shared reviewer-cli is $_rc_installed, newer than this repo's $_rc_incoming — refusing to downgrade."
+   else
+     install -m 0755 "$SCAFFOLDER/bin/reviewer-cli.sh" "$HOME/.agenticapps/bin/reviewer-cli.sh"
+   fi
    install -m 0755 "$SNAP/hooks/openspec-change-gate.sh"     .claude/hooks/openspec-change-gate.sh
    hooks_dir="$(git rev-parse --git-path hooks)"; mkdir -p "$hooks_dir"
    if [ -e "$hooks_dir/pre-commit" ] && ! grep -q 'openspec-change-gate' "$hooks_dir/pre-commit" 2>/dev/null; then

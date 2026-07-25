@@ -2023,6 +2023,126 @@ test_gate_matches_core_canonical() {
 }
 
 
+# The gate CONSUMES review evidence; reviewer-cli.sh PRODUCES it. Core published
+# the gate first and left the producer's wrapper forked — three divergent copies
+# at one shared path, no marker, no arbitration. On 2026-07-25 a host installer
+# delivered the correctly-arbitrated 1.2.2 gate and, in the SAME run,
+# blind-installed a 3-arm wrapper over the 4-arm one. The `opencode` arm vanished
+# and the next review that asked for it was recorded as "reviewer unavailable"
+# and waved through with one fewer opinion (core#41).
+#
+# Not a gate bypass — a quiet degradation of the exact evidence §18 exists to
+# compel, which is worse, because a drifted producer reports clean. This guard is
+# the gate's guard applied to the producer's half: byte-identity with core, a
+# harness kept in step, the version marker present, and EVERY writer of the
+# shared path arbitrating on it.
+test_reviewer_cli_matches_core_canonical() {
+  echo ""
+  echo "${YELLOW}━━━ reviewer-cli ≡ workflow-core canonical ━━━${RESET}"
+
+  local core_dir="${CORE_SPEC_DIR:-$REPO_ROOT/../agenticapps-workflow-core}"
+  local canonical="$core_dir/reference-implementations/reviewer-cli/reviewer-cli.sh"
+  local ours="$REPO_ROOT/bin/reviewer-cli.sh"
+
+  if [ ! -f "$ours" ]; then
+    echo "  ${RED}✗${RESET} this repo has no bin/reviewer-cli.sh — the producer has nothing to call"
+    FAIL=$((FAIL+1)); return
+  fi
+
+  if [ ! -d "$core_dir" ]; then
+    echo "  ${YELLOW}SKIP${RESET}: workflow-core not available at $core_dir"
+    SKIP=$((SKIP+1)); return
+  fi
+
+  if [ ! -f "$canonical" ]; then
+    echo "  ${RED}✗${RESET} workflow-core has no reference-implementations/reviewer-cli/reviewer-cli.sh"
+    echo "      Published upstream in 60cd83f (core#42). A stale core checkout cannot"
+    echo "      certify this wrapper. Pull core, or update this path if it moved."
+    FAIL=$((FAIL+1)); return
+  fi
+
+  # A stale harness certifies a stale wrapper — core's vendoring step 2 requires
+  # shipping the two together and keeping them in sync.
+  local harness_ours="$REPO_ROOT/tools/reviewer-cli-conformance.sh"
+  local harness_canonical="$core_dir/tools/reviewer-cli-conformance.sh"
+  if [ ! -f "$harness_ours" ]; then
+    echo "  ${RED}✗${RESET} tools/reviewer-cli-conformance.sh not vendored — CI cannot score the wrapper"
+    FAIL=$((FAIL+1))
+  elif cmp -s "$harness_ours" "$harness_canonical"; then
+    echo "  ${GREEN}✓${RESET} conformance harness is byte-identical to core's"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} conformance harness has drifted from core's — a stale harness certifies a stale wrapper"
+    FAIL=$((FAIL+1))
+  fi
+
+  # The marker is the whole mechanism. Without it every installer reads 0.0.0 and
+  # the shared path silently reverts to last-writer-wins — core#41 exactly.
+  if grep -qE '^# reviewer-cli-version:[[:space:]]*[0-9]+\.[0-9]+\.[0-9]+' "$ours"; then
+    echo "  ${GREEN}✓${RESET} wrapper carries a version marker (shared-path arbitration)"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} wrapper has no '# reviewer-cli-version:' marker — installers cannot refuse a downgrade"
+    FAIL=$((FAIL+1))
+  fi
+
+  # Both halves, as the gate's row does: reading the marker proves nothing on its
+  # own if no branch acts on it. Greping only for the reader passes a file whose
+  # refusal path has been deleted — verified by mutation, which is why this row
+  # is a conjunction.
+  if grep -q 'reviewer_cli_version' "$REPO_ROOT/install.sh" \
+     && grep -q 'Refusing to downgrade the shared wrapper' "$REPO_ROOT/install.sh"; then
+    echo "  ${GREEN}✓${RESET} install.sh arbitrates the shared wrapper path instead of clobbering it"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} install.sh writes the shared wrapper unconditionally (last-writer-wins)"
+    FAIL=$((FAIL+1))
+  fi
+
+  # install.sh is not the only writer. Auditing it alone reported green while
+  # 0032 clobbered the gate unconditionally; the same blind spot applies here.
+  # Any migration or setup path that installs the wrapper must arbitrate too.
+  local f unguarded=""
+  for f in "$REPO_ROOT"/migrations/[0-9]*.md "$REPO_ROOT"/migrations/test-fixtures/0032/common-apply.sh \
+           "$REPO_ROOT"/setup/SKILL.md; do
+    [ -f "$f" ] || continue
+    grep -q 'install .*bin/reviewer-cli.sh' "$f" 2>/dev/null || continue
+    grep -q 'reviewer_cli_version' "$f" 2>/dev/null || unguarded="$unguarded $(basename "$f")"
+  done
+  if [ -z "$unguarded" ]; then
+    echo "  ${GREEN}✓${RESET} every installer that writes the shared wrapper arbitrates on version"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} installer(s) write the shared wrapper unconditionally:$unguarded"
+    echo "      ~/.agenticapps/bin is shared by claude/codex/opencode/pi. An unguarded"
+    echo "      install strips vendor arms from every agent on the machine (core#41)."
+    FAIL=$((FAIL+1))
+  fi
+
+  # The producer must not keep a private copy of the arms — that IS the fork.
+  if grep -qE 'bounded (codex|gemini|claude|opencode) ' "$REPO_ROOT/bin/run-plan-review.sh" 2>/dev/null; then
+    echo "  ${RED}✗${RESET} run-plan-review.sh still dispatches vendors itself — a second copy of the arms"
+    echo "      Delegate to reviewer-cli.sh. A private copy of a shared artifact is a race,"
+    echo "      and it drifts the moment core adds or changes an arm."
+    FAIL=$((FAIL+1))
+  else
+    echo "  ${GREEN}✓${RESET} producer delegates dispatch to the wrapper (no second copy of the arms)"
+    PASS=$((PASS+1))
+  fi
+
+  if cmp -s "$ours" "$canonical"; then
+    echo "  ${GREEN}✓${RESET} wrapper is byte-identical to the canonical upstream copy"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} wrapper has DRIFTED from the canonical upstream copy"
+    echo "      One shared wrapper is the design; a per-host fork is how the opencode arm"
+    echo "      went missing. Change it in core alongside a harness row, then re-vendor."
+    diff -u "$canonical" "$ours" | head -30 | sed 's/^/        /'
+    FAIL=$((FAIL+1))
+  fi
+}
+
+
 test_migration_payloads_still_published() {
   echo ""
   echo "${YELLOW}━━━ Migration payloads — nothing fetches a deleted file ━━━${RESET}"
@@ -2102,15 +2222,19 @@ test_review_producer_delivers_prompt() {
     mkdir -p openspec/changes/demo fakebin
     printf '# proposal\n%s\n' "$marker" > openspec/changes/demo/proposal.md
 
-    # Shadow the two REAL vendor names so the producer takes its named branches
-    # — the codex branch is the one that carried the bug, and it is only
-    # reachable under the literal name `codex`. Scoped to this subshell's PATH.
-    #   codex  <- stdin form  (`codex exec -`): must echo what it READ
-    #   gemini <- argv form   (`gemini -p "$P"`): must echo the ARGUMENT
-    printf '#!/usr/bin/env bash\ncat\n'              > fakebin/codex
+    # Shadow the two REAL vendor names so the producer reaches the wrapper's
+    # named arms. Since the producer delegates to reviewer-cli.sh, BOTH arms are
+    # argv-form and stdin is pinned to /dev/null — a stub that echoed stdin
+    # would now correctly print nothing. Each stub echoes the prompt ARGUMENT:
+    #   codex  <- `codex exec "$P"`  -> $2
+    #   gemini <- `gemini -p "$P"`   -> $2
+    printf '#!/usr/bin/env bash\nprintf "%%s" "$2"\n' > fakebin/codex
     printf '#!/usr/bin/env bash\nprintf "%%s" "$2"\n' > fakebin/gemini
     chmod +x fakebin/codex fakebin/gemini
+    # Point at the repo's vendored wrapper: the fixture repo has no bin/, and the
+    # global install may be absent or a different version on a dev machine.
     PATH="$tmp/fakebin:$PATH" MIN_REVIEWERS=2 AGENT_SELF=none \
+      REVIEWER_CLI="$REPO_ROOT/bin/reviewer-cli.sh" \
       bash "$producer" demo codex gemini >/dev/null 2>&1
   )
 
@@ -2120,12 +2244,15 @@ test_review_producer_delivers_prompt() {
     FAIL=$((FAIL+1)); rm -rf "$tmp"; return
   fi
 
-  # 1. The stdin-form reviewer must have RECEIVED the prompt, not /dev/null.
+  # 1. The reviewer must have RECEIVED the change's content. The delivery path is
+  #    now producer -> prompt FILE -> reviewer-cli.sh -> vendor argv; a break
+  #    anywhere along it (unwritten file, wrong arg position, wrapper not
+  #    resolved) surfaces here as a review of nothing.
   if grep -qF "$marker" "$out"; then
-    echo "  ${GREEN}✓${RESET} stdin-form reviewer received the prompt (not clobbered by a redirect)"
+    echo "  ${GREEN}✓${RESET} prompt reached the reviewer through the wrapper (argv delivery)"
     PASS=$((PASS+1))
   else
-    echo "  ${RED}✗${RESET} stdin-form reviewer got an EMPTY prompt — a redirect is clobbering the pipe"
+    echo "  ${RED}✗${RESET} reviewer got an EMPTY prompt — the file->wrapper->argv path is broken"
     echo "      REVIEWS.md contains no '$marker' from the change's proposal.md"
     FAIL=$((FAIL+1))
   fi
@@ -2865,6 +2992,10 @@ fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "gate-parity" ]; then
   test_gate_matches_core_canonical
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "reviewer-parity" ]; then
+  test_reviewer_cli_matches_core_canonical
 fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "phase-sentinel" ]; then

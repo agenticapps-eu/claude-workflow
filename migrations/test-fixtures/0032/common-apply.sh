@@ -32,6 +32,25 @@ else
   install -m 0755 "$SCAFFOLDER/bin/openspec-change-gate.sh" "$HOME/.agenticapps/bin/openspec-change-gate.sh"
 fi
 install -m 0755 "$SCAFFOLDER/bin/run-plan-review.sh"      "$HOME/.agenticapps/bin/run-plan-review.sh"
+# The producer's vendor wrapper is the SAME shared-path hazard as the gate, and
+# it already fired: a host installer delivered the arbitrated 1.2.2 gate and, in
+# the same run, blind-installed a 3-arm wrapper over the 4-arm one. The
+# `opencode` arm vanished and the next review that asked for it was recorded as
+# "reviewer unavailable" and waved through with one fewer opinion (core#41).
+# Same rule, same reasoning, on `# reviewer-cli-version:`. Unmarked = 0.0.0.
+reviewer_cli_version() {
+  [ -f "$1" ] || { echo "0.0.0"; return; }
+  sed -n 's/^# reviewer-cli-version:[[:space:]]*\([0-9][0-9.]*\).*/\1/p' "$1" | head -n1 | grep . || echo "0.0.0"
+}
+_rc_incoming="$(reviewer_cli_version "$SCAFFOLDER/bin/reviewer-cli.sh")"
+_rc_installed="$(reviewer_cli_version "$HOME/.agenticapps/bin/reviewer-cli.sh")"
+_rc_older="$(printf '%s\n%s\n' "$_rc_incoming" "$_rc_installed" | sort -V | head -n1)"
+if [ "$_rc_installed" != "$_rc_incoming" ] && [ "$_rc_older" = "$_rc_incoming" ]; then
+  echo "NOTE: shared reviewer-cli is $_rc_installed, newer than this repo's $_rc_incoming — refusing to downgrade."
+  echo "      Update this scaffolder (git pull) so every host publishes the same version."
+else
+  install -m 0755 "$SCAFFOLDER/bin/reviewer-cli.sh" "$HOME/.agenticapps/bin/reviewer-cli.sh"
+fi
 hooks_dir="$(git rev-parse --git-path hooks)"
 mkdir -p "$hooks_dir"
 if [ -e "$hooks_dir/pre-commit" ] && ! grep -q 'openspec-change-gate' "$hooks_dir/pre-commit" 2>/dev/null; then

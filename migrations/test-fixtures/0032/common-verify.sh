@@ -8,6 +8,10 @@ fail() { echo "FAIL: $*"; exit 1; }
 # 1. The gate + producer are installed and executable.
 [ -x "$HOME/.agenticapps/bin/openspec-change-gate.sh" ] || fail "gate not installed"
 [ -x "$HOME/.agenticapps/bin/run-plan-review.sh" ]      || fail "review producer not installed"
+# The producer calls this; without it every reviewer arm dies on a missing file.
+[ -x "$HOME/.agenticapps/bin/reviewer-cli.sh" ]         || fail "reviewer-cli wrapper not installed"
+grep -qE '^# reviewer-cli-version: [0-9]+\.[0-9]+\.[0-9]+' "$HOME/.agenticapps/bin/reviewer-cli.sh" \
+  || fail "installed reviewer-cli carries no version marker — installers cannot refuse a downgrade"
 
 # 2. The git floor is installed and points at the gate.
 hooks_dir="$(git rev-parse --git-path hooks)"
