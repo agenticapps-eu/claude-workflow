@@ -1875,6 +1875,96 @@ test_migration_0030() {
 # either that the path is still tracked, or that the fetch is GUARDED (writes to a
 # temp file / tests for the source before publishing). It is deliberately
 # repo-shape-aware rather than network-dependent: no HTTP request is made.
+# ─────────────────────────────────────────────────────────────────────────────
+# The change-gate stays in lockstep with the canonical upstream copy
+# ─────────────────────────────────────────────────────────────────────────────
+# §18's whole design is ONE host-agnostic enforcement script that every host
+# (claude / codex / opencode / pi), every git pre-commit hook, and every CI check
+# calls. That only holds if the copies stay identical — and nothing enforced it,
+# so they did not: opencode-workflow re-authored its copy (~256 lines diverged
+# from the canonical one) while shipping the same exemption bug.
+#
+# This guard compares this repo's copy against the canonical one in
+# agenticapps-workflow-core, reusing the CORE_SPEC_DIR checkout that the §11
+# mirror test already relies on (CI clones core to .core-spec).
+#
+# Today it reports NOT-PUBLISHED rather than passing or failing, because
+# `gate/` does not exist on workflow-core's main — it is a local, uncommitted
+# directory. That is the root cause of the drift: there is no published
+# canonical artifact to sync from, so "reuse, don't re-author" is currently
+# unimplementable. The moment core publishes gate/, this guard starts enforcing
+# byte-identity with no further change, and any local fix that has not been
+# upstreamed turns it red — which is exactly the signal we want.
+test_gate_matches_core_canonical() {
+  echo ""
+  echo "${YELLOW}━━━ Change-gate ≡ workflow-core canonical ━━━${RESET}"
+
+  local core_dir="${CORE_SPEC_DIR:-$REPO_ROOT/../agenticapps-workflow-core}"
+  local canonical="$core_dir/gate/openspec-change-gate.sh"
+  local ours="$REPO_ROOT/bin/openspec-change-gate.sh"
+
+  if [ ! -f "$ours" ]; then
+    echo "  ${RED}✗${RESET} this repo has no bin/openspec-change-gate.sh"
+    FAIL=$((FAIL+1)); return
+  fi
+
+  if [ ! -d "$core_dir" ]; then
+    echo "  ${YELLOW}SKIP${RESET}: workflow-core not available at $core_dir"
+    SKIP=$((SKIP+1)); return
+  fi
+
+  if [ ! -f "$canonical" ]; then
+    # Not a failure: core does not publish gate/ yet. Say so loudly enough that
+    # it does not read as "checked and fine".
+    echo "  ${YELLOW}NOT-PUBLISHED${RESET}: workflow-core has no gate/openspec-change-gate.sh"
+    echo "      The canonical enforcement script is not in version control, so the"
+    echo "      \"one shared gate\" invariant cannot be checked or maintained."
+    echo "      Upstream action: publish gate/ in agenticapps-workflow-core, then"
+    echo "      this guard enforces byte-identity automatically."
+    SKIP=$((SKIP+1)); return
+  fi
+
+  if cmp -s "$ours" "$canonical"; then
+    echo "  ${GREEN}✓${RESET} gate script is byte-identical to the canonical upstream copy"
+    PASS=$((PASS+1))
+    if [ -f "$REPO_ROOT/bin/GATE-DIVERGENCE.md" ]; then
+      echo "  ${RED}✗${RESET} but bin/GATE-DIVERGENCE.md still exists — the fork is closed, delete it"
+      FAIL=$((FAIL+1))
+    fi
+    return
+  fi
+
+  # Diverged. Permitted ONLY while recorded in bin/GATE-DIVERGENCE.md, pinned to
+  # the exact diff. That keeps a deliberate, documented fix visible and bounded
+  # while any further unrecorded drift still fails.
+  local record="$REPO_ROOT/bin/GATE-DIVERGENCE.md"
+  if [ ! -f "$record" ]; then
+    echo "  ${RED}✗${RESET} gate script has DRIFTED from the canonical upstream copy, unrecorded"
+    echo "      One shared enforcement surface is the §18 design; a per-host fork means"
+    echo "      each host enforces a subtly different rule. Upstream the change and"
+    echo "      re-sync, or record the divergence in bin/GATE-DIVERGENCE.md."
+    diff -u "$canonical" "$ours" | head -30 | sed 's/^/        /'
+    FAIL=$((FAIL+1)); return
+  fi
+
+  local actual expected
+  actual="$(diff -u "$canonical" "$ours" | grep -vE '^(---|\+\+\+)' | shasum -a 256 | cut -d' ' -f1)"
+  expected="$(grep -oE '^[0-9a-f]{64}$' "$record" | head -n1)"
+  if [ "$actual" = "$expected" ]; then
+    echo "  ${YELLOW}RECORDED-DIVERGENCE${RESET}: gate differs from canonical, exactly as documented"
+    echo "      bin/GATE-DIVERGENCE.md pins this diff; it closes when core publishes gate/"
+    echo "      and the fixes are upstreamed. Not silent, not permanent."
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} gate divergence CHANGED and no longer matches the recorded hash"
+    echo "      recorded: ${expected:-<none found>}"
+    echo "      actual:   $actual"
+    echo "      Either re-sync with upstream, or update bin/GATE-DIVERGENCE.md deliberately."
+    FAIL=$((FAIL+1))
+  fi
+}
+
+
 test_migration_payloads_still_published() {
   echo ""
   echo "${YELLOW}━━━ Migration payloads — nothing fetches a deleted file ━━━${RESET}"
@@ -2690,6 +2780,7 @@ if [ -z "$FILTER" ] || [ "$FILTER" = "0031" ]; then
   test_migration_0032
   test_review_producer_delivers_prompt
   test_migration_payloads_still_published
+  test_gate_matches_core_canonical
 fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "phase-sentinel" ]; then
