@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# .git/hooks/pre-commit — agent-agnostic enforcement floor for the §18 change-gate.
+#
+# Blocks a commit that stages code while an OpenSpec change isn't validated + reviewed.
+# This is the floor, not the fast path: a PreToolUse hook is loaded at session start and
+# cannot gate the session that installed it, and it only sees ONE agent. This hook catches
+# code committed by any agent OR a human, including the installing session.
+#
+# Install (done for you by install.sh):
+#   install -m 0755 bin/git-hooks/pre-commit "$(git rev-parse --git-path hooks)/pre-commit"
+#
+# Bypass (documented, same posture as the per-agent escape hatch):
+#   GSD_SKIP_REVIEWS=1 git commit ...   # deliberate, logged override (validate still required)
+#   git commit --no-verify ...          # git's own bypass
+#
+# Gate resolution order: $OPENSPEC_GATE, the global install, then this repo's bin/.
+GATE="${OPENSPEC_GATE:-$HOME/.agenticapps/bin/openspec-change-gate.sh}"
+[ -x "$GATE" ] || GATE="$(git rev-parse --show-toplevel 2>/dev/null)/bin/openspec-change-gate.sh"
+# No gate installed anywhere → nothing to enforce here; the CI check still runs.
+[ -x "$GATE" ] || exit 0
+exec "$GATE" --pre-commit

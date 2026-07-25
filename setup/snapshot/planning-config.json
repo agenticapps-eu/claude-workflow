@@ -1,125 +1,170 @@
 {
-  "hooks": {
-    "_enforcement_contract": "docs/ENFORCEMENT-PLAN.md",
-    "_note": "These hooks are declarative intent. Enforcement is in CLAUDE.md + .claude/skills/agentic-apps-workflow/SKILL.md via the commitment principle. Orchestrator code does NOT read this block today.",
-    "context_warnings": true,
-    "pre_phase": {
-      "brainstorm_ui": {
-        "enabled": true,
-        "skill": "superpowers:brainstorming",
-        "trigger": "ui_hint_yes || frontend_files_in_scope",
-        "evidence": "CONTEXT.md contains '## Design alternatives'"
-      },
-      "brainstorm_architecture": {
-        "enabled": true,
-        "skill": "superpowers:brainstorming",
-        "trigger": "new_service || new_model || new_integration",
-        "evidence": "RESEARCH.md contains 'Alternatives considered'"
-      },
-      "design_shotgun": {
-        "enabled": true,
-        "skill": "gstack:design-shotgun",
-        "trigger": "ui_hint_yes && no_ui_spec_yet",
-        "evidence": "UI-SPEC.md references variant paths + user's pick"
-      },
-      "design_critique": {
-        "enabled": true,
-        "skill": "impeccable:critique",
-        "trigger": "ui_hint_yes && ui_spec_exists",
-        "evidence": "UI-SPEC.md cites impeccable critique scores per variant"
+  "implements_spec": "1.0.0",
+  "host": "claude",
+  "front_end": "openspec",
+  "_enforcement_contract": "docs/ENFORCEMENT-PLAN.md",
+  "_note": "Declarative intent. Enforcement lives in CLAUDE.md + .claude/skills/agentic-apps-workflow/SKILL.md via the commitment principle, plus the ONE programmatic teeth: the §18 change-gate. Orchestrator code does not read this block.",
+  "context_warnings": true,
+  "openspec": {
+    "cli": "@fission-ai/openspec",
+    "init": "openspec init --tools claude --profile core",
+    "profile": "core",
+    "slot": "openspec/ (specs/ current truth, changes/ in-flight deltas, changes/archive/ history)",
+    "commands": [
+      "/opsx:explore",
+      "/opsx:propose",
+      "/opsx:apply",
+      "/opsx:archive"
+    ],
+    "note": "Bound upstream (spec §16): the CLI generates the opsx commands into .claude/commands/opsx/ and the slot into openspec/. Not vendored, not re-ported. Run `openspec --help` in the repo — the installed CLI is authoritative over this prose."
+  },
+  "lifecycle": {
+    "propose": {
+      "description": "Open an OpenSpec change (/opsx:propose): proposal, design note, spec delta, tasks. Superpowers brainstorming feeds the design note when the change introduces UI or new architecture (§17 stage 1).",
+      "conditional_gates": {
+        "brainstorm_ui": {
+          "skill": "superpowers:brainstorming",
+          "mode": "ui",
+          "fires_when": "change adds a UI surface and the design note lacks a 'Design alternatives' section",
+          "evidence": "design.md contains '## Design alternatives'"
+        },
+        "brainstorm_architecture": {
+          "skill": "superpowers:brainstorming",
+          "mode": "architecture",
+          "fires_when": "change adds a new service/model/integration and the design note lacks an 'Alternatives considered' section",
+          "evidence": "design.md contains 'Alternatives considered'"
+        },
+        "design_shotgun": {
+          "skill": "gstack:design-shotgun",
+          "fires_when": "change adds a UI surface with no design contract yet",
+          "evidence": "design.md references variant paths + the user's pick"
+        }
       }
     },
-    "per_plan": {
-      "tdd_enforcement": {
-        "enabled": true,
-        "skill": "superpowers:test-driven-development",
-        "trigger": "task.tdd == true",
-        "evidence": "atomic test(RED) + feat(GREEN) commit pair per task"
+    "validate": {
+      "description": "openspec validate --all MUST be green AND the change MUST carry independent multi-AI review BEFORE any code (§17 stage 2). This single stage collapses the former plan-review and spec-review gates.",
+      "change_gate": {
+        "implements_spec": "1.0.0",
+        "spec_section": "18",
+        "script": "~/.agenticapps/bin/openspec-change-gate.sh",
+        "claude_wiring": ".claude/settings.json PreToolUse, matcher Edit|Write|MultiEdit|NotebookEdit (exit 2 = block)",
+        "floor": [
+          "git pre-commit (bin/git-hooks/pre-commit)",
+          "CI check (.github/workflows/openspec-gate.yml)"
+        ],
+        "requires": "active change with `openspec validate --all` green AND REVIEWS.md carrying >= 2 '## Reviewer:' headings",
+        "exempts": "openspec/** artifact writes (author the change while gated)",
+        "escape_hatch": "GSD_SKIP_REVIEWS=1 (documented, logged override)",
+        "fail_open": "malformed/unparseable stdin only (parse error, never policy)",
+        "block_when_cli_absent": true,
+        "note": "A PreToolUse hook is loaded at session start and cannot gate its own installing session; the pre-commit + CI floor is the real guarantee and catches any agent or a human."
       },
-      "ui_preview": {
-        "enabled": true,
-        "skill": "gstack:browse",
-        "trigger": "task modifies frontend components",
-        "evidence": "screenshot path in commit message or SUMMARY.md"
-      },
-      "verification_before_done": {
-        "enabled": true,
-        "skill": "superpowers:verification-before-completion",
-        "trigger": "before any TaskUpdate --completed",
-        "evidence": "grep/test/curl/screenshot output posted before status change"
+      "multi_ai_review": {
+        "implements_spec": "1.0.0",
+        "producer": "bin/run-plan-review.sh (installed to ~/.agenticapps/bin/)",
+        "hardening": "</dev/null + timeout per reviewer — codex exec reads stdin and hangs otherwise (PILOT-REPORT friction #3)",
+        "reviewers": ">= 2 DISTINCT external-vendor CLIs; AGENT_SELF defaults to `claude` so this host is always excluded",
+        "target": "the active OpenSpec change (proposal + design + spec delta), BEFORE code",
+        "evidence": "openspec/changes/<slug>/REVIEWS.md — one '## Reviewer: <vendor>' section per reviewer",
+        "override": "GSD_SKIP_REVIEWS=1 env var",
+        "rationale": "ADR-0018, retargeted. Under spec 1.0.0 this is NOT a standalone gate (§17 MUST NOT): its obligation is discharged here in stage 2 and enforced by the §18 change_gate. spec-review's structural role is now `openspec validate --all`."
       }
     },
-    "pre_execute_gates": {
-      "multi_ai_plan_review": {
-        "enabled": true,
-        "skill": "/gsd-review (slash command from templates/gsd-patches/patches/workflows/review.md)",
-        "trigger": "after /gsd-plan-phase, before any *-PLAN.md task execution",
-        "evidence": "{padded_phase}-REVIEWS.md in phase directory, output from ≥2 reviewer CLIs",
-        "programmatic_hook": ".claude/hooks/multi-ai-review-gate.sh",
-        "override": "GSD_SKIP_REVIEWS=1 env var OR .planning/current-phase/multi-ai-review-skipped sentinel",
-        "rationale": "ADR 0018 — closes drift observed in cparx phases 04.9–05"
+    "execute": {
+      "description": "Superpowers-execute the change's tasks (§17 stage 3). The change_gate blocks code edits until stage 2 (validate + review) has passed for the active change.",
+      "retained": {
+        "tdd": {
+          "skill": "superpowers:test-driven-development",
+          "fires_when": "task carries a tdd=\"true\" marker",
+          "evidence": "atomic test(RED) + feat(GREEN) commit pair per task"
+        },
+        "verification": {
+          "skill": "superpowers:verification-before-completion",
+          "fires_when": "always — before any task transitions to complete",
+          "evidence": "grep/test/curl/screenshot output posted before the status change (§06)"
+        },
+        "code_review": {
+          "skill": "superpowers:requesting-code-review",
+          "fires_when": "always — after tasks, in an independent agent context",
+          "stage": 2,
+          "evidence": "review report linked from the change dir",
+          "note": "Retained (§17): `openspec validate` is a spec check, not a code review, and does not discharge it. §07's independence rule still binds."
+        },
+        "security": {
+          "skill": "gstack:cso",
+          "fires_when": "always on a change touching auth, storage, request handling, secrets, or an LLM trust boundary — never conditional-away in a product host",
+          "evidence": "SECURITY.md in the change dir",
+          "checks": "spec §14 (prompt-injection) on LLM-scoped changes"
+        }
+      },
+      "conditional": {
+        "database_security": {
+          "skill": "database-sentinel:audit",
+          "mode": "change-scoped",
+          "fires_when": "change touches schema, RLS, definer functions, or storage policy (supabase|postgres|mongodb|firebase|mysql)",
+          "evidence": "DB-AUDIT.md in the change dir; Critical/High resolved or acknowledged via templates/adr-db-security-acceptance.md, else BLOCKS",
+          "blocking_severity": ["Critical", "High"]
+        },
+        "db_pre_launch_audit": {
+          "skill": "database-sentinel:audit",
+          "mode": "pre-launch",
+          "scope": "full — every supported backend in the project, not change-scoped",
+          "fires_when": "before first production launch, after a major DB migration",
+          "evidence": "Pre-launch DB-AUDIT.md with zero Critical, zero High findings, else BLOCKS launch",
+          "blocking_severity": ["Critical", "High"]
+        },
+        "qa": {
+          "skill": "gstack:qa",
+          "fires_when": "change ships user-visible behavior AND a dev server is reachable on localhost",
+          "evidence": "QA report linked from the change dir"
+        },
+        "ui_preview": {
+          "skill": "gstack:browse",
+          "fires_when": "task modifies a frontend component, route, or visual surface",
+          "evidence": "screenshot path in the commit message or the change dir"
+        },
+        "design_critique": {
+          "skill": "impeccable:critique",
+          "fires_when": "ui_spec_exists — a UI change with an existing design contract; also runs as the filter step inside design_shotgun",
+          "must_not_gate_on": "shotgun completion — that inverts the trigger and the gate never fires (ADR-0040)",
+          "evidence": "design.md cites impeccable critique scores per variant"
+        },
+        "impeccable_audit": {
+          "skill": "impeccable:audit",
+          "fires_when": "change alters a shipping visual surface",
+          "evidence": "audit report referenced in the PR description; no Red findings unresolved",
+          "blocking_severity": ["Red"],
+          "measured_trial": true,
+          "note": "Kept behind the ADR-0021 measured trial (MEASUREMENT.md) — do not remove yet."
+        },
+        "observability_scan": {
+          "skill": "observability:scan",
+          "fires_when": ".observability/baseline.json present (project adopted §10.9 enforcement)",
+          "evidence": ".observability/delta.json; advisory warning when counts.high_confidence_gaps > 0",
+          "blocking": false,
+          "rationale": "ADR-0027 (migration 0018) — advisory delta scan of agent-written code; never blocks (LLM-driven scanner). No-op without a baseline. Promote to blocking once the deterministic scanner ships."
+        }
+      },
+      "lint": {
+        "ts_declare_first": {
+          "skill": "ts-declare-first",
+          "fires_when": "TS change introduces a new module's public API surface in a TS-primary project",
+          "enforcement": "CI lint gate",
+          "implements_spec": "1.0.0",
+          "note": "Demoted from a bespoke per-task gate to a lint gate (§17: ts-declare -> lint). Discipline retained; the declare(ts):/test(ts):/feat(ts): commit sequence is still recommended."
+        }
       }
     },
-    "post_phase": {
-      "spec_review": {
-        "enabled": true,
-        "skill": "gstack:review",
-        "trigger": "always",
-        "evidence": "REVIEW.md in phase directory"
-      },
-      "code_quality_review": {
-        "enabled": true,
-        "skill": "superpowers:requesting-code-review",
-        "trigger": "always, after spec_review",
-        "evidence": "Stage 2 section appended to REVIEW.md"
-      },
-      "security": {
-        "enabled": true,
-        "skill": "gstack:cso",
-        "trigger": "scope matches auth|storage|api|llm",
-        "evidence": "SECURITY.md in phase directory",
-        "sub_gates": [
-          {
-            "skill": "database-sentinel:audit",
-            "trigger": "scope matches supabase|postgres|mongodb",
-            "evidence": "DB-AUDIT.md in phase directory; all High and Critical findings resolved or acknowledged via templates/adr-db-security-acceptance.md; otherwise BLOCKS branch close"
-          }
-        ]
-      },
-      "qa": {
-        "enabled": true,
-        "skill": "gstack:qa",
-        "trigger": "dev server reachable on localhost",
-        "evidence": "QA report linked from VERIFICATION.md"
-      },
-      "observability_scan": {
-        "enabled": true,
-        "skill": "observability:scan",
-        "trigger": ".observability/baseline.json present (project adopted §10.9 enforcement)",
-        "evidence": ".observability/delta.json; advisory warning when counts.high_confidence_gaps > 0",
-        "blocking": false,
-        "rationale": "ADR-0027 (migration 0018) — advisory delta scan of agent-written code; never blocks (LLM-driven scanner). No-op without a baseline. Promote to blocking once the deterministic scanner ships."
-      }
+    "archive": {
+      "description": "Fold the spec delta into openspec/specs/<capability>/spec.md so the slot states the new truth, then `openspec archive <slug> -y` moves the change into changes/archive/<date>-<slug>/.",
+      "rule": "archive != ship (§17): `openspec archive` folds the delta and moves the change dir but produces NO git commit."
     },
-    "finishing": {
+    "ship": {
       "branch_close": {
-        "enabled": true,
         "skill": "superpowers:finishing-a-development-branch",
-        "trigger": "feature branch ready to merge",
-        "evidence": "PR description lists skills + gates + evidence links"
-      },
-      "impeccable_audit": {
-        "enabled": true,
-        "skill": "impeccable:audit",
-        "trigger": "feature touches frontend && branch ready to merge",
-        "evidence": "audit report referenced in PR description; no Red findings unresolved"
-      },
-      "db_pre_launch_audit": {
-        "enabled": true,
-        "skill": "database-sentinel:audit",
-        "scope": "full — audit every supported backend in the project, not phase-scoped",
-        "trigger": "branch is main && app pre-launch checklist active",
-        "evidence": "Pre-launch DB-AUDIT.md with zero Critical, zero High findings; otherwise BLOCKS launch"
+        "fires_when": "the change is archived and the feature branch is ready to merge",
+        "evidence": "PR description lists skills + gates + evidence links",
+        "note": "The ship step (git commit + changelog). PR body links changes/archive/<date>-<slug>/ and its evidence; SHOULD reference a Linear issue id for traceability (§19 loose coupling — never synchronized, never required)."
       }
     }
   },

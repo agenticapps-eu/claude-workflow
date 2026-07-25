@@ -1,8 +1,19 @@
 # Standard — AgenticApps × GSD binding & planning layout
 
-**Status:** Accepted · **Applies to:** `claude-workflow`, `opencode-workflow`,
-`codex-workflow` (identical copy shipped in each, per the self-contained-repos
-principle). Promote to `agenticapps-workflow-core` when convenient.
+> **SUPERSEDED (2026-07-24, v3.0.0).** The planning front end is now OpenSpec,
+> not GSD — see [ADR-0044](../decisions/0044-openspec-superpowers-adoption.md),
+> core spec §16–§19, and [`docs/WORKFLOW.md`](../WORKFLOW.md). Section 1's
+> bind-upstream principle survives intact; only its subject changed (bind
+> OpenSpec upstream, do not re-port it). The GSD command surface, the phase
+> layout, and the gate taxonomy below are historical.
+>
+> Retained rather than deleted (§08 supersede-don't-delete): it is the written
+> contract a pre-3.0.0 project is still running, and migration 0032's upgrade
+> path is only readable against it.
+
+**Status:** ~~Accepted~~ **Superseded by ADR-0044** · **Applies to:**
+`claude-workflow`, `opencode-workflow`, `codex-workflow` (identical copy shipped
+in each, per the self-contained-repos principle).
 
 This is the shared contract that makes the three host workflows follow the same
 concepts and keep a single, portable project plan across hosts.

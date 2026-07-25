@@ -1,97 +1,80 @@
-# Session Handoff — 2026-07-16 (0030 merged; downstream PRs open — cparx #87, fx-signal-agent #111)
+# Session Handoff — 2026-07-25 (OpenSpec v1 — UNPARKED, ready to merge)
 
-## Status: claude-workflow 2.8.0 SHIPPED. Downstream PRs OPEN (cparx #87 green, fx-signal #111).
-- PR #89 (migration 0029) merged as `f9354cc`.
-- PR #90 — not ours.
-- PR #91 (migration 0030) merged as `bf90f89`. All 6 codex HIGHs + its 3 LOWs fixed first.
-Local scaffolder clone (`~/.claude/skills/agenticapps-workflow`) is synced to 2.8.0 and
-carries 0028/0029/0030 + the 79-line mirror, so downstream application is unblocked.
-Full SDD ledger — every decision, every correction, every mutation matrix:
-`.superpowers/sdd/progress.md` (gitignored, local). **Read it before doing 0030 work.**
+## Status
+**PR #95 is OPEN, green, mergeable — waiting only on the owner's call to merge.**
+https://github.com/agenticapps-eu/claude-workflow/pull/95
+Branch `feat/bind-openspec-v1` · 16 commits · 0 behind main · tree clean, pushed.
+Suite 198 PASS / 0 FAIL · CI `gate` + `migrations-and-snapshot` both green.
 
-## Accomplished
-- **Migration 0030** (2.7.0 → 2.8.0) — repairs a §11 block that drifted from the canonical
-  mirror. 15 fixtures, all mutation-proven. ADR-0042. CI guard binding the mirror to
-  upstream. Heals cparx + fx-signal-agent E2E: exactly 4 insertions, 0 deletions, converges.
-- **The root cause is NOT what the last handoff said.** It took four wrong accounts to get
-  right (see below). Prettier never stripped anything.
-- **0030 repairs blank-line drift ONLY** and refuses everything else — after codex found the
-  original byte-compare-and-replace would DESTROY spec-permitted host customizations.
+The park is over. Core published the canonical gate (`ae90483`, core#33,
+ADR-0022) and this repo has adopted it. The divergence this branch carried is
+closed, not deferred.
+
+## Accomplished this session
+- **Re-vendored `bin/openspec-change-gate.sh`** from
+  `agenticapps-workflow-core/reference-implementations/openspec-change-gate/`.
+  1.1.0 → 1.2.0, byte-identical to core. **28/28** on the conformance harness,
+  proven again on the CI runner — was 25/28.
+- **Vendored `tools/change-gate-conformance.sh`**; CI scores the gate before
+  trusting its verdict. The `gate` job is no longer trivially green.
+- **`OPENSPEC_GATE_SELF=claude`** exported by both hook shims, deliberately not
+  by `pre-commit`/CI (host-agnostic surfaces — a human commit is not a claude
+  review). Matches core's wiring.
+- **Parity guard repointed and hardened** — core landed at
+  `reference-implementations/`, not the `gate/` path the guard predicted, so it
+  would have reported `NOT-PUBLISHED` forever against a canonical copy that
+  exists. Now enforces byte-identity, treats a missing canonical as FAIL, and
+  also asserts harness parity (a stale harness certifies a stale gate).
+- `bin/GATE-DIVERGENCE.md` deleted — the guard fails if the record outlives the
+  fork. Reported on #96 and core#34.
 
 ## Decisions
-- **Byte-derived idempotency, never provenance-version-derived** — upstream changed §11's
-  prose WITHOUT bumping `spec_version`, so `@0.4.0` is a *genuinely correct* stamp over wrong
-  bytes. A version check cannot tell the states apart even in principle. (ADR-0042)
-- **Replace only on blank-line-only difference; refuse otherwise** (user call, after codex).
-  Spec §11 says hosts **MAY** add anti-pattern bullets — byte-equality would delete them.
-  This one guard turns every unrecognised shape from *silently destroy* into *refuse loudly*,
-  and retired a real data-loss path inherited from 0029.
-- **Rollback is a reporting no-op** — Step 1 has no forward inverse; the `.0030.bak` restore
-  idiom in my plan was withdrawn (0029 uses no .bak; Apply deleted its own backup, so
-  fixture 08 would have passed vacuously).
-- **`ref: main` unpinned + best-effort daily cron** — an upstream commit cannot trigger this
-  repo's CI at all, so unpinning decides *what* the next run compares against, not *when* it
-  runs. The cron promises NO latency (GitHub delays scheduled events and disables them after
-  repo inactivity). Drift is caught on the next run — PR, push to main, or timer, whichever
-  happens first. A bound on DETECTION, not on time. Do not restate this as "same day" or
-  "within a day": both were shipped as false claims and both had to be retracted.
-- **Duplicate the 0029 fixture runner** rather than share one (0029 precedent, blast radius).
+- **Re-vendor, never hand-merge** — the three failing rows were exactly what
+  re-vendoring closes, and three of the four bypasses core's Stage-2 review
+  caught were introduced *by* a hand-merge upstream.
+- **Kept the recorded-divergence machinery** in `run-tests.sh` rather than
+  deleting it with the record. A future divergence is possible; the escape hatch
+  should stay bounded and visible, not be re-invented under pressure.
+- **Did not merge #95.** Shipping a breaking 3.0.0 is the owner's call, not a
+  step a session should take on its own authority.
 
 ## Files modified
-- `migrations/0030-resync-spec-11-mirror-bytes.md` (NEW), `migrations/test-fixtures/0030/**` (NEW, 15 fixtures + harness)
-- `migrations/run-tests.sh` (test_migration_0030 + test_mirror_matches_core_spec_11)
-- `.github/workflows/ci.yml` (2nd checkout of core @ main + daily cron), `.gitignore`
-- `docs/decisions/0042-*.md` (NEW), `CHANGELOG.md`, three version stamps → 2.8.0
-- `migrations/test-fixtures/0029/03-healthy-noop/setup.sh` — comment only (it asserted the false prettier/callbot claim)
+- `bin/openspec-change-gate.sh` — re-vendored, 1.2.0
+- `tools/change-gate-conformance.sh` — NEW, vendored from core
+- `bin/GATE-DIVERGENCE.md` — DELETED (fork closed)
+- `templates/.claude/hooks/openspec-change-gate.sh`,
+  `setup/snapshot/hooks/openspec-change-gate.sh` — export `OPENSPEC_GATE_SELF`
+- `migrations/run-tests.sh` — parity guard repointed + harness parity row
+- `.github/workflows/openspec-gate.yml` — conformance step
+- `CHANGELOG.md` — gate bullet rewritten; harness entry added
 
 ## Next session: start here
-**Downstream PRs are OPEN and awaiting review/merge — that is the only thing in flight.**
-- cparx: https://github.com/agenticapps-eu/cparx/pull/87 — `chore/workflow-2.8.0`. **CI fully green.**
-- fx-signal-agent: https://github.com/agenticapps-eu/fx-signal-agent/pull/111 — `chore/workflow-2.8.0`.
-  CI green EXCEPT `gitleaks` + `pnpm-audit`, which are **PRE-EXISTING FAILURES ON main**, proven
-  not mine: gitleaks reports the identical `leaks found: 2` against origin/main with the branch
-  absent (both `curl-auth-header` in commit a4a0898c, 2026-06-17, in phase-09 planning docs), and
-  `Supply chain (REQ-SEC01)` already failed on main on 2026-07-15. The only non-blank line either
-  PR adds anywhere is `version: 2.8.0`. Explained in a PR comment. Do not "fix" them in that PR.
+**Ask the owner whether to merge #95, then merge it** — nothing technical is
+outstanding on the branch. After merging, the fleet work is what remains: three
+other hosts still carry the bypassed gate (codex #26, opencode #15 at 16/28, pi
+#11 at 18/28), and until every installer writes 1.2.0 the shared
+`~/.agenticapps/bin/` path stays last-writer-wins. This host can now only raise
+that copy, never lower it, so the hazard is one-directional rather than closed.
 
-Each PR's diff is exactly: **CLAUDE.md +4 blank lines (0 deletions, 0 non-blank insertions)** and
-`version: 2.5.0 -> 2.8.0`. Three commits each (0028 / 0029 / 0030). Verified per repo: healed block
-byte-identical to the canonical mirror, converges on re-apply, GitNexus region intact,
-`implements_spec` untouched at 0.9.0. 0028 skipped (no .prettierignore) and 0029 was a positional
-no-op in both — exactly as predicted before merge.
+## Open questions
+1. **Consumer repos get no CI workflow.** Migration 0032 installs the shim and
+   the `pre-commit` hook, but not the CI floor — so `--no-verify` bypasses the
+   only floor a scaffolded project has. Flagged on core#34 as a gap in the
+   vendoring steps (hosts scaffold; the gate has to reach the scaffolded repo).
+   Needs its own issue + decision: not every consumer is on GitHub Actions.
+2. Should this repo dogfood its own gate (`openspec init` here)? Now partly
+   moot — the `gate` CI job does real work via the harness — but the `--ci` mode
+   still proves nothing here without an `openspec/` slot.
+3. `.planning/` (35 phase dirs) still needs the supervised Tier-2 fold into
+   `openspec/specs/`. Explicitly out of 0032's scope.
+4. CodeRabbit was rate-limited on every run — its ✅ is not a second opinion.
+   Real coverage was codex + gemini + my own pass.
+5. Deferred codex findings, all recorded, none blocking: idempotency checks
+   describe partial end states · rollback recipes over-delete · `find` errors
+   read as "no active change" · no-jq path misses `notebook_path` ·
+   newline-in-filename handling · no `timeout` binary on stock macOS.
 
-Both were applied in throwaway worktrees cut from origin/main and the worktrees are removed; both
-parent repos are untouched (cparx on feature/phase-10-review-cockpit with 9 dirty files;
-fx-signal-agent on main with 10). Their uncommitted CLAUDE.md WIP was never disturbed.
-
-If the PRs need re-running: `scratchpad/migrun.py <migration.md> <target> step N apply` is the
-faithful block runner (extracts the fenced block by line bounds and runs it under **bash** — this
-machine's shell is zsh, which mis-parses these snippets; an earlier awk -v version silently ran
-PAST the Apply fence into the Rollback marker).
-
-## Open questions / follow-ups
-1. **Deferred codex MED/LOW findings** — shipped as-is in 2.8.0 (user call). All real, all
-   recorded in the ledger: #7 "blank" is `$0 == ""` so a whitespace-only separator is deleted; #8 a CRLF
-   mirror passes the unanchored tail sentinel; #9 `$(...)` strips the terminal newline so
-   EOF-newline churn is invisible; #10 fixture 08 binds rollback's no-op, not the harness's
-   subshell form; #11 "tmp cleaned up on every path" is false under `set -e` if awk exits ≠ 0.
-2. **Unenforced ADR-0042 rule**: "a mirror edit must ship a re-sync migration" is *documented,
-   not enforced* — a mirror-only PR matching upstream still goes green. Recorded as an open
-   gap. Enforcing it needs a CI check: mirror touched ⇒ require a new `migrations/NNNN-*.md`.
-3. **0029 has the same prose-in-region data-loss defect** 0030 just fixed in itself. Real,
-   unfixed, out of scope. Needs its own migration or an end marker for §11.
-4. Propagate to codex-workflow + opencode-workflow (prompts still sitting at those repo roots
-   from the 0029 cycle; codex-workflow is already on `feat/spec-11-region-aware-placement`).
-
-## The lesson worth carrying (it cost SIX false claims)
-The root cause was wrong four times, and the CI-timing claim twice more. Each fix pass
-introduced a *new* false claim while removing an old one — exactly the failure the previous
-handoff warned about, reproduced verbatim, including once inside the ADR written to prevent
-it and once while fixing the claim before it.
-Final truth: upstream `10f2c96` ADDED the blank lines to spec §11 (prettier, "markdown/
-prettier-clean") **without bumping spec_version**; `34ee72e` mirrored it with **no migration**;
-cparx/fx-signal-agent are stale only because **nothing runs prettier over their CLAUDE.md**;
-callbot self-healed via its own prettier pass 20 min *before* the mirror fix (`d2e92db` is a
-squash whose single date hid it). **Every wrong account was internally plausible and survived
-review until someone ran a command.** And: two Opus reviewers passed this branch READY TO
-MERGE; codex then found six HIGHs including data loss. `/gsd-review` earned its keep.
+## Then: remaining hosts
+Prompt 01 still to run for `codex-workflow` and `pi-agentic-apps-workflow`
+(opencode done). Their hook surfaces are the least-proven: codex's `apply_patch`
+matcher and pi's hook mechanism.

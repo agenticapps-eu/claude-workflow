@@ -2,13 +2,13 @@
   This block sits at the top of the file, which is what spec §11's placement
   SHOULD asks for.
 
-  There is no longer a `<!-- gitnexus:start -->` region below it: the GitNexus
-  section was removed from this repo's instruction files (v2.9.0), and the
-  reindex engine now passes `--skip-agents-md` so `analyze` cannot recreate it.
-  Migration 0029's anchor rule still exists and still matters — consumers that
-  DO carry a region need §11 anchored above it, or the next `analyze` silently
-  eats the block. Do not read this file's lack of a region as evidence the rule
-  is obsolete.
+  There is no `<!-- gitnexus:start -->` region below it: the GitNexus section
+  was removed from this repo's instruction files (v2.9.0) and GitNexus itself
+  was removed from the workflow entirely in v3.0.0 (ADR-0044). Migration 0029's
+  anchor rule still exists and still matters — a consumer repo installed before
+  3.0.0 may still carry a region, and §11 must stay anchored above it or that
+  project's next `analyze` silently eats the block. Do not read this file's
+  lack of a region as evidence the rule is obsolete.
 
   Verbatim from the spec — do not edit. Substitution is permitted only inside
   `{{...}}`; altering any surrounding prose, the rule numbers, or the
@@ -96,3 +96,35 @@ These four rules apply to every code-touching turn. They do not
 replace the commitment ritual, the rationalisation table, the red
 flags, or the evidence rules — they sit alongside them as the
 session-level discipline the model brings to every diff.
+
+## Development Workflow
+
+Planning is an **OpenSpec change**, not a GSD phase. Every unit of product work
+moves through four stages (core spec §17):
+
+**propose** → **validate** → **execute** → **archive**, then **ship** as a
+separate act.
+
+- `openspec/specs/` is durable current truth · `openspec/changes/` are in-flight
+  deltas · `changes/archive/` is history.
+- **Before any code**, the active change MUST have `openspec validate --all`
+  green **and** `REVIEWS.md` carrying ≥2 independent other-vendor reviewers.
+  Both clauses are enforced by the §18 change-gate at `PreToolUse`, at
+  `git commit`, and in CI. Blocked edits mean the gate is working.
+- `archive ≠ ship` — `openspec archive` folds the delta into `specs/` and
+  produces **no** git commit.
+- Execution discipline is unchanged Superpowers: TDD, on-disk evidence, and an
+  independent Stage-2 code review that `validate` does not discharge.
+
+The OpenSpec CLI is bound **upstream** — run `openspec --help` and use the verbs
+it reports; the installed CLI is authoritative over any prose here.
+
+**Full explainer: [`docs/WORKFLOW.md`](docs/WORKFLOW.md).** Gate-by-gate
+enforcement contract: [`docs/ENFORCEMENT-PLAN.md`](docs/ENFORCEMENT-PLAN.md).
+
+## Session handoff
+
+Before ending any session — when asked to exit, when the final task is done, or
+when context is getting full — write `session-handoff.md` in the project root.
+It survives `/clear` and `--resume`, so it is the primary continuity mechanism
+across sessions. Keep it under 150 lines.

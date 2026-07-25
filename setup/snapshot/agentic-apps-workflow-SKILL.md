@@ -1,16 +1,17 @@
 ---
 name: agentic-apps-workflow
-version: 2.9.0
-implements_spec: 0.9.0
+version: 3.0.0
+implements_spec: 1.0.0
 description: |
-  Enforces the spec-first development workflow using Superpowers + GSD + gstack
-  for any AgenticApps project. This skill MUST activate whenever Claude is asked
-  to implement, build, code, fix, refactor, or design anything in the current
+  Enforces the spec-first development workflow using OpenSpec + Superpowers +
+  gstack for any AgenticApps project. This skill MUST activate whenever Claude is
+  asked to implement, build, code, fix, refactor, or design anything in the current
   project — regardless of whether the user explicitly mentions the workflow.
   Triggers on: "let's work on [issue]", "implement the [feature]", "build the
   [component]", "fix the [bug]", any task involving writing or changing code,
   creating architecture, or making technical decisions. The skill ensures every
-  piece of work follows the Superpowers + GSD + gstack discipline and produces
+  piece of work moves through the OpenSpec lifecycle (propose → validate →
+  execute → archive) under the Superpowers execution discipline, and produces
   traceable decision artefacts. Use this even when the user just says "start
   working" or references a Linear issue number.
 ---
@@ -18,12 +19,20 @@ description: |
 # AgenticApps Development Workflow — Enforcement Skill
 
 **This is an enforcement skill, not documentation.** Its job is to make you
-commit — publicly and in writing — to invoking the right Superpowers, GSD, and
-gstack skills in the right order. Once committed, the commitment principle
+commit — publicly and in writing — to invoking the right OpenSpec, Superpowers,
+and gstack skills in the right order. Once committed, the commitment principle
 (Cialdini; Wharton GAIL 2025) keeps you consistent with what you said you'd do.
 
 **Authoritative contract:** `docs/ENFORCEMENT-PLAN.md`. Read it if you
-are unsure which skill gates which step.
+are unsure which skill gates which step. The lifecycle itself is explained in
+`docs/WORKFLOW.md`.
+
+**Front end: OpenSpec (spec §16–§19).** Planning is an OpenSpec *change*, not a
+GSD phase. `openspec/specs/` is durable current truth, `openspec/changes/` are
+in-flight deltas, `changes/archive/` is history. The CLI is bound upstream — run
+`openspec --help` in the repo and use the verbs it reports; this prose is not
+authoritative over the installed CLI. Execution discipline (TDD, evidence,
+independent review) is unchanged Superpowers.
 
 ## Step 0 — The Commitment Ritual (NON-NEGOTIABLE)
 
@@ -56,68 +65,99 @@ your way out of it — see the rationalization table below.
 
 | Task size | Examples | Required skill invocations |
 |---|---|---|
-| **Tiny** (< 15 min) | Typo, config tweak, one-line fix | `superpowers:verification-before-completion` + commit |
+| **Tiny** (< 15 min) | Typo, config tweak, one-line fix | `superpowers:verification-before-completion` + commit. No change needed — the gate allows edits when none is open. |
 | **Small** (15–60 min) | Single field, small bug | `superpowers:brainstorming` (3 bullets) → fix → `/review` → verification → commit |
-| **Medium** (1–4 hours) | New endpoint, new component | Full workflow, lightweight ADR |
-| **Large** (4+ hours) | New subsystem, major feature | Full workflow + detailed ADR + GSD phase plan |
+| **Medium** (1–4 hours) | New endpoint, new component | Full lifecycle, lightweight ADR |
+| **Large** (4+ hours) | New subsystem, major feature | Full lifecycle + detailed ADR + a spec delta per affected capability |
 
-## Step 2 — Route to the right GSD entry point
+Anything Medium or larger opens an OpenSpec change. Tiny/Small work may proceed
+without one — the §18 gate engages only once a change is open, mirroring §02's
+out-of-phase permissiveness. That permission is for *incidental* edits, not a
+loophole for shipping a feature without a spec.
 
-| Entry point | When |
-|---|---|
-| `/gsd-quick` | Tiny or small tasks; ad-hoc work |
-| `/gsd-debug` | Investigation, bug fixing — auto-invokes `superpowers:systematic-debugging` |
-| `/gsd-discuss-phase {N}` | New phase, CONTEXT.md missing, UX/architecture decisions pending |
-| `/gsd-plan-phase {N}` | CONTEXT.md exists, ready to plan |
-| `/gsd-execute-phase {N}` | Plans approved, ready to execute |
+## Step 2 — Route to the right lifecycle stage
 
-If you are about to Edit / Write / or run git commands without going through a
-GSD entry point, **stop**. Either invoke one, or state in one sentence why
-this task is genuinely out-of-scope for GSD.
+The four stages (§17). `/opsx:*` are the OpenSpec-generated slash commands; the
+plain `openspec …` verbs do the same work and are what a non-Claude agent uses.
 
-## Step 3 — Invoke the Superpowers skills mapped to each GSD gate
+| Stage | Entry point | When |
+|---|---|---|
+| 0 · explore | `/opsx:explore` | Open-ended idea, shape not yet clear |
+| 1 · propose | `/opsx:propose` | Author proposal + design note + spec delta + tasks |
+| 2 · validate | `openspec validate --all`, then `run-plan-review.sh <slug>` | **Before any code.** Both must pass. |
+| 3 · execute | `/opsx:apply` + Superpowers | Implement the tasks under the retained gates |
+| 4 · archive | `/opsx:archive` | Fold the delta into `specs/`, move the change to `archive/` |
+| 5 · ship | `superpowers:finishing-a-development-branch` | The git commit + PR. **A separate act — `archive ≠ ship`.** |
 
-This is the gate-to-skill map. Every row is a commitment.
+Debugging is not a lifecycle stage: a bug investigation goes straight to
+`superpowers:systematic-debugging`, and only opens a change if the fix changes
+what the spec promises.
 
-### Planning gates
+If you are about to Edit / Write / or run git commands on product code with no
+active change and the task is Medium or larger, **stop**. Either open one, or
+state in one sentence why this task genuinely needs no spec delta.
 
-- `/gsd-discuss-phase {N}` → `superpowers:brainstorming` BEFORE the first
-  discuss question. The design alternatives surfaced become the input to
-  CONTEXT.md.
-- `/gsd-plan-phase {N}` with `UI hint: yes` → gstack `/design-shotgun`
-  (generate 3–4 visual variants, boot dev server, preview via `/browse`) +
-  `/gsd-ui-phase {N}` to lock UI-SPEC.md.
-- `/gsd-plan-phase {N}` for new service / model / integration →
-  `superpowers:brainstorming` (record ≥2 alternatives in RESEARCH.md).
-- `/gsd-plan-phase {N}` always → `superpowers:writing-plans`.
+## Step 3 — Invoke the skills mapped to each lifecycle gate
 
-### Execution gates
+This is the gate-to-skill map (§17). Every row is a commitment.
+
+### Stage 1 — propose (conditional)
+
+- Change adds a UI surface → gstack `/design-shotgun` (3–4 variants, boot dev
+  server, preview via `/browse`); the pick and its rationale land in `design.md`.
+- Change adds a UI surface with a design contract already in place →
+  `impeccable:critique` instead.
+- Change adds a new service / model / integration →
+  `superpowers:brainstorming`; record ≥2 alternatives in `design.md`.
+
+### Stage 2 — validate (ALWAYS, before any code)
+
+- `openspec validate --all` MUST be green. This is what `spec-review` used to do
+  after the fact; it is now a machine check done first.
+- `run-plan-review.sh <change-slug>` MUST write `changes/<slug>/REVIEWS.md` with
+  **≥2 independent other-vendor reviewers**. This is the retargeted ADR-0018
+  multi-AI review: the reviewers critique the *change* — proposal, design note,
+  spec delta — not a PLAN.md, and they do it before code exists. The cParX pilot
+  reviewer caught a real semantic defect in a spec delta at exactly this point.
+- Both clauses are enforced by the §18 change-gate. It will block your edits.
+  That is the gate working, not a malfunction — go get the review.
+
+### Stage 3 — execute (retained)
 
 - Task with `tdd="true"` → `superpowers:test-driven-development`. Required
   evidence: atomic `test(RED): <desc>` commit followed by
   `feat(GREEN): <desc>` commit. Optional `refactor:` commit.
-- Task modifying frontend component → boot Vite dev server + `/browse`
-  screenshot, referenced in commit message or SUMMARY.md.
-- Before every `TaskUpdate --completed` →
+- Before every task completion →
   `superpowers:verification-before-completion`. Post grep / test / curl /
   screenshot evidence.
-- Mid-phase bug → `superpowers:systematic-debugging`. 4-phase protocol:
+- Always, after tasks → `superpowers:requesting-code-review` in an independent
+  context. `openspec validate` is a spec check, not a code review, and does
+  **not** discharge this (§17). §07's independence rule still binds.
+- Change touches auth / storage / request handling / secrets / an LLM trust
+  boundary → gstack `/cso` → SECURITY.md. Never conditional-away.
+- Mid-change bug → `superpowers:systematic-debugging`. 4-phase protocol:
   Observe → Hypothesize → Test → Conclude.
 
-### Post-phase gates
+### Stage 3 — execute (conditional)
 
-- gstack `/review` (stage 1: spec compliance) → REVIEW.md.
-- `superpowers:requesting-code-review` (stage 2: code quality, independent
-  reviewer) → Stage 2 section in REVIEW.md. DO NOT collapse the two stages
-  into one review.
-- Phase touches auth / storage / api / llm → gstack `/cso` → SECURITY.md.
-- Dev server reachable → gstack `/qa` → report linked from VERIFICATION.md.
-- VERIFICATION.md must have 1:1 evidence per must_have.
+- Touches schema / RLS / definer functions / storage policy →
+  `database-sentinel:audit` → DB-AUDIT.md. Critical + High block.
+- Ships user-visible behavior and a dev server is reachable → gstack `/qa`.
+- Modifies a frontend component → boot the dev server + `/browse` screenshot,
+  referenced in the commit message or the change dir.
+- Alters a shipping visual surface → `impeccable:audit` (measured trial —
+  ADR-0021 / MEASUREMENT.md; kept, not removed).
+- TypeScript change introducing a new module's public API → `ts-declare-first`,
+  now enforced as a **CI lint gate** rather than a per-task gate (§17).
 
-### Finishing gate
+### Stage 4/5 — archive, then ship
 
+- Fold the delta into `openspec/specs/<capability>/spec.md`, then
+  `openspec archive <slug> -y`. This produces **no git commit**.
 - Feature branch ready to merge → `superpowers:finishing-a-development-branch`
-  to compose the PR description.
+  to compose the PR description. Link `changes/archive/<date>-<slug>/` and its
+  evidence; reference the Linear issue id if there is one (§19 — loose
+  convention, never a required sync).
 
 ## Step 4 — Record the decision
 
@@ -149,7 +189,8 @@ design, UX direction) get an ADR at `docs/decisions/NNNN-short-title.md`:
 | "Skill is obvious, no need to announce it" | The announcement IS the commitment. Announcement → consistency pressure → compliance. |
 | "TDD is impractical for frontend" | Snapshot tests, `/browse` screenshot diffs, visual regression count as TDD. Write the test first. |
 | "I've already thought about alternatives" | If you didn't write them down, you didn't consider them. List ≥2 in RESEARCH.md. |
-| "`/gsd-review` is excessive — just one model's plan is fine" | Different LLMs catch different blind spots. A plan that survives review from 2–3 independent reviewers is more robust. Run it. (cparx phases 04.9 → 05 silently dropped this for 8 phases — that's the failure mode ADR 0018 closes.) |
+| "The multi-AI change review is excessive — one model's spec delta is fine" | Different LLMs catch different blind spots, and this review runs *before code exists*, where a fix is cheapest. Run it. (cparx phases 04.9 → 05 silently dropped its ancestor for 8 phases — the failure mode ADR-0018 closes. The cParX pilot's reviewer then caught a real semantic defect in a spec delta on the very first change.) |
+| "`openspec validate` is green, so the change is reviewed" | Validate is a schema/structure check. It cannot tell you the delta describes the wrong behavior. That is what the ≥2 reviewers are for — §17 requires both, and the §18 gate enforces both. |
 | "Two-stage review is excessive" | Stage 1 catches spec drift, Stage 2 catches code-quality drift. Different failures, different agents. |
 | "Dev server isn't worth booting for this change" | If you touched JSX/TSX, boot it. 30 seconds. |
 | "The user explicitly said ship fast" | Acknowledge urgency, explain risk in one sentence, offer minimum discipline that protects the critical path. |
@@ -169,7 +210,7 @@ design, UX direction) get an ADR at `docs/decisions/NNNN-short-title.md`:
 11. Sunk-cost reasoning about deleting unverified code
 12. Describing discipline as "dogmatic"
 13. "This case is different because..."
-14. `/gsd-review` skipped — no `{phase}-REVIEWS.md` artifact
+14. Code written under an active change whose `REVIEWS.md` has < 2 reviewers
 
 ## Pressure-Test Scenarios — Self-Check
 
@@ -180,53 +221,76 @@ Before you skip any step, ask yourself:
 
 If any answer gives you pause, follow the protocol.
 
-## Verification Check (after phase completes)
+## Verification Check (after a change is archived)
 
-Run this to prove the workflow actually fired:
+Run this to prove the workflow actually fired. `$SLUG` is the change slug; a
+just-archived change lives at `openspec/changes/archive/<date>-$SLUG/`.
 
 ```bash
-# Commitment block present
-grep -rn "## Workflow commitment" .planning/phases/{padded_phase}-*/ 2>/dev/null
+CH=$(ls -d openspec/changes/archive/*"$SLUG" 2>/dev/null | tail -1)
+
+# The spec slot states the new truth (the delta was folded, not just moved)
+openspec validate --all
+
+# Multi-AI review evidence, produced BEFORE code (>=2 independent reviewers)
+grep -ciE '^##[[:space:]]*reviewer' "$CH/REVIEWS.md"
 
 # TDD tasks produced RED + GREEN commits
-git log --oneline {phase_base}..HEAD | grep -cE "^[a-f0-9]+ (test|feat)\("
+git log --oneline "$BASE"..HEAD | grep -cE "^[a-f0-9]+ (test|feat)\("
 
-# Multi-AI plan review evidence (pre-execution)
-test -f .planning/phases/{padded_phase}-*/{padded_phase}-REVIEWS.md \
-  && wc -l .planning/phases/{padded_phase}-*/{padded_phase}-REVIEWS.md
+# Independent Stage-2 code review happened (validate does not discharge it)
+grep -rl "Stage 2" "$CH"
 
-# Two-stage review evidence (post-execution)
-grep -l "Stage 2" .planning/phases/{padded_phase}-*/REVIEW.md
+# Every task in the change is checked off
+grep -c '^- \[ \]' "$CH/tasks.md"     # expect 0
 
-# Evidence per must_have in VERIFICATION.md
-grep -c "^- \*\*Evidence" .planning/phases/{padded_phase}-*/VERIFICATION.md
+# The gate agrees the repo is clean
+bash ~/.agenticapps/bin/openspec-change-gate.sh --ci
 ```
 
-If any check fails, the phase did NOT honor the enforcement plan. File this as
-a process bug, update `docs/ENFORCEMENT-PLAN.md` to close the
-loophole, and re-run the failed gate.
+If the reviewer count is < 2, or `tasks.md` still has unchecked items, or
+`--ci` is red, the change did NOT honor the enforcement plan. File this as a
+process bug, update `docs/ENFORCEMENT-PLAN.md` to close the loophole, and
+re-run the failed gate.
 
 ## Daily Quick Reference
 
-1. Check GSD state — where did I leave off?
+1. `openspec list` — what changes are open, where did I leave off?
 2. Check Linear — highest-priority unblocked issue?
 3. Pull latest from base branch
 4. Pick the task, emit the commitment ritual
-5. Route to the right GSD entry point
-6. Invoke the mapped Superpowers skills in order
-7. Update decision log + GSD state at end of session
+5. Open or resume a change (`/opsx:propose`), or say why none is needed
+6. Validate + get ≥2 reviews **before** writing code
+7. Invoke the mapped Superpowers skills in order
+8. Archive the change, then ship it — two separate acts
+9. Update decision log + session-handoff at end of session
 
-## Spec deltas (spec 0.9.0)
+## Spec deltas (spec 1.0.0)
 
 Per core spec §09, a host names every requirement it does not satisfy verbatim,
-with rationale. Audited 2026-07-14 (ADR-0040).
+with rationale. Audited 2026-07-14 (ADR-0040); re-audited 2026-07-24 for the
+1.0.0 OpenSpec front end (ADR-0044).
 
-- **§13 implicit GSD trigger — not wired.** `ts-declare-first` ships and its
-  explicit trigger works; the §13 implicit trigger (GSD design phase detects a
-  new TypeScript module in a TS-primary project) is not implemented. §13's
-  Conformance section is SHOULD/MAY throughout, and this scaffolder is not
-  itself a TypeScript project (no `package.json`), so `full` is preserved.
-  Tracked for its own phase.
+- **§16–§19 OpenSpec front end — satisfied.** The spec slot (§16) is bound
+  upstream via `openspec init --tools claude --profile core`; the lifecycle and
+  gate mapping (§17) are declared in `.planning/config.json`'s `lifecycle`
+  block; the change-gate (§18) ships as `bin/openspec-change-gate.sh` with the
+  full exit-code truth table verified by direct invocation, wired at PreToolUse
+  plus a git pre-commit and CI floor; §19's Linear coupling is the documented
+  loose convention (a change may reference an issue id; nothing synchronizes).
+- **§18 self-gating — inherent, disclosed.** A `PreToolUse` hook is loaded at
+  session start and cannot gate the session that installs it. §18 names this an
+  inherent property rather than a defect and requires (a) a fresh session
+  enforces it and (b) the gate is demonstrable by direct invocation with
+  simulated payloads. Both hold. The pre-commit + CI floor is what actually
+  guarantees the rule, including against a human editor.
+- **§13 implicit trigger — not wired; now a lint gate.** `ts-declare-first`
+  ships and its explicit trigger works. §17 demotes the discipline to a CI lint
+  gate, which this host declares in the config's `lifecycle.execute.lint` block;
+  the *implicit* trigger (detecting a new TypeScript module in a TS-primary
+  project without being asked) is still not implemented. §13's Conformance
+  section is SHOULD/MAY throughout, and this scaffolder is not itself a
+  TypeScript project (no `package.json`), so `full` is preserved.
 - **§14 prompt-injection — trivially conformant.** This scaffolder builds no
   LLM prompts from non-self-authored values, so §14's trigger condition cannot
   occur; §09 requires only that the host say so. The §14 generator for
@@ -282,6 +346,12 @@ rituals — run it AFTER:
 1. **Session handoff** — after `session-handoff.md` is written.
 2. **Plan completion** — after the plan is marked complete in `.planning/`.
 3. **Phase completion** — after the phase artifacts are committed.
+
+The three trigger names above are canonical §15 prose and are kept verbatim.
+Under the 1.0.0 OpenSpec front end they map onto the lifecycle as: *plan
+completion* → the change's `tasks.md` is fully checked off; *phase completion* →
+the change is archived (delta folded into `specs/`). A repo still running a
+`.planning/` tree reads them literally.
 
 The vault write is machine-local and MUST NEVER be committed to the repo, and
 it MUST NEVER fail, block, or roll back the ritual that triggered it — on any

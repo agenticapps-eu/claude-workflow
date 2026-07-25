@@ -60,12 +60,25 @@ test "$AVAILABLE" -ge 2 || { echo "ERROR: need at least 2 reviewer CLIs installe
 
 **Apply:**
 ```bash
+# RETIRED in 3.0.0 (ADR-0044). multi-ai-review-gate.sh no longer ships, so the
+# URL below 404s. `curl -f ... > file` still TRUNCATES the target before curl
+# fails, which would leave an empty, executable PreToolUse hook — a hook that
+# exits 0 and therefore allows every edit. Download to a temp file and only
+# publish a non-empty result, so a dead payload can never disable the gate.
 mkdir -p .claude/hooks
-curl -fsSL https://raw.githubusercontent.com/agenticapps-eu/claude-workflow/main/templates/.claude/hooks/multi-ai-review-gate.sh \
-  > .claude/hooks/multi-ai-review-gate.sh
-# OR if running from a local checkout:
-# cp <workflow-repo>/templates/.claude/hooks/multi-ai-review-gate.sh .claude/hooks/
-chmod +x .claude/hooks/multi-ai-review-gate.sh
+_tmp="$(mktemp)"
+if curl -fsSL https://raw.githubusercontent.com/agenticapps-eu/claude-workflow/main/templates/.claude/hooks/multi-ai-review-gate.sh > "$_tmp" \
+   && [ -s "$_tmp" ]; then
+  mv "$_tmp" .claude/hooks/multi-ai-review-gate.sh
+  # OR from a local checkout:
+  # cp <workflow-repo>/templates/.claude/hooks/multi-ai-review-gate.sh .claude/hooks/
+  chmod +x .claude/hooks/multi-ai-review-gate.sh
+else
+  rm -f "$_tmp"
+  echo "SKIP: multi-ai-review-gate.sh is retired (3.0.0, ADR-0044) and no longer"
+  echo "      published. Migration 0032 installs its replacement,"
+  echo "      openspec-change-gate.sh. Continuing without it is correct."
+fi
 ```
 
 ### Step 2 — wire into .claude/settings.json

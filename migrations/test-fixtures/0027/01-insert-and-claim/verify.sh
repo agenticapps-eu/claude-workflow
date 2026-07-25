@@ -19,7 +19,7 @@ TARGET=.claude/skills/agentic-apps-workflow/SKILL.md
 # Pre-conditions (Steps need to apply):
 grep -q '^version: 2.4.0$' "$TARGET" || { echo "PRE: expected version 2.4.0"; exit 1; }
 grep -q '^implements_spec: 0.4.0$' "$TARGET" || { echo "PRE: expected claim 0.4.0"; exit 1; }
-grep -q '^## Spec deltas (spec 0.9.0)' "$TARGET" \
+grep -q '^## Spec deltas (spec ' "$TARGET" \
   && { echo "PRE: unexpected Spec deltas section before apply"; exit 1; }
 grep -q '^## Knowledge Capture — Ritual Tail' "$TARGET" \
   || { echo "PRE: fixture must carry the ritual-tail anchor"; exit 1; }
@@ -48,7 +48,7 @@ awk '
     print "11. Sunk-cost reasoning about deleting unverified code"
     print "12. Describing discipline as \"dogmatic\""
     print "13. \"This case is different because...\""
-    print "14. `/gsd-review` skipped — no `{phase}-REVIEWS.md` artifact"
+    print "14. Code written under an active change whose `REVIEWS.md` has < 2 reviewers"
     emitted=1; skipping=1; next
   }
   skipping && /^[0-9]+\. / { next }
@@ -72,9 +72,9 @@ grep -q '^8\. Two-stage review collapsed into one$' "$TARGET" \
 grep -q '^13\. "This case is different because\.\.\."$' "$TARGET" \
   || { echo "STEP 1 failed: canonical flag 13 not at position 13"; exit 1; }
 # The host flag sits at 14, and appears exactly once (not left behind at 8).
-grep -q '^14\. `/gsd-review` skipped — no `{phase}-REVIEWS.md` artifact$' "$TARGET" \
+grep -q '^14\. Code written under an active change whose `REVIEWS.md` has < 2 reviewers$' "$TARGET" \
   || { echo "STEP 1 failed: host flag not at position 14"; exit 1; }
-[ "$(grep -c '`/gsd-review` skipped — no `{phase}-REVIEWS.md` artifact' "$TARGET")" = "1" ] \
+[ "$(grep -c 'Code written under an active change whose `REVIEWS.md` has < 2 reviewers' "$TARGET")" = "1" ] \
   || { echo "STEP 1 failed: host flag duplicated or left at position 8"; exit 1; }
 grep -q '^8\. `/gsd-review` skipped' "$TARGET" \
   && { echo "STEP 1 failed: host flag still at position 8"; exit 1; }
@@ -90,7 +90,7 @@ grep -q '^## Knowledge Capture — Ritual Tail' "$TARGET" \
   || { echo "STEP 1 not surgical: ritual-tail anchor dropped"; exit 1; }
 
 # ── Step 2 (apply) — insert the section extracted from the scaffolder ────────
-awk '/^## Spec deltas \(spec 0\.9\.0\)/{f=1}
+awk '/^## Spec deltas \(spec /{f=1}
      f && /^## Knowledge Capture — Ritual Tail/{exit}
      f' "$REPO_ROOT/skill/SKILL.md" > "$TARGET.0027.section"
 
@@ -106,17 +106,17 @@ awk -v secfile="$TARGET.0027.section" '
   { print }
 ' "$TARGET" > "$TARGET.0027.tmp" && mv "$TARGET.0027.tmp" "$TARGET"
 
-[ "$(grep -c '^## Spec deltas (spec 0.9.0)' "$TARGET")" = "1" ] \
+[ "$(grep -c '^## Spec deltas (spec ' "$TARGET")" = "1" ] \
   || { echo "STEP 2 failed: section not inserted exactly once"; exit 1; }
 
 # Ordering: the section lands BEFORE the ritual tail, not after it.
-d_line=$(grep -n '^## Spec deltas (spec 0.9.0)' "$TARGET" | cut -d: -f1)
+d_line=$(grep -n '^## Spec deltas (spec ' "$TARGET" | cut -d: -f1)
 k_line=$(grep -n '^## Knowledge Capture — Ritual Tail' "$TARGET" | cut -d: -f1)
 [ "$d_line" -lt "$k_line" ] \
   || { echo "STEP 2 failed: section inserted after the ritual tail ($d_line >= $k_line)"; exit 1; }
 
 # The inserted text is byte-identical to the scaffolder source section.
-awk '/^## Spec deltas \(spec 0\.9\.0\)/{f=1}
+awk '/^## Spec deltas \(spec /{f=1}
      f && /^## Knowledge Capture — Ritual Tail/{exit}
      f' "$TARGET" > .actual-section
 cmp -s "$TARGET.0027.section" .actual-section \

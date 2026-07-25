@@ -8,6 +8,9 @@ description: |
   Handles version detection, migration discovery, pre-flight skill installs,
   per-step diff preview + confirm, idempotent reapplication, and rollback
   on failure. Supports --dry-run, --migration N, and --from V flags.
+  Crossing 2.9.0 -> 3.0.0 applies migration 0032, which swaps the planning
+  front end to OpenSpec, installs the spec §18 change-gate, and removes
+  GitNexus; `.planning/` is preserved, never deleted.
 ---
 
 # Update AgenticApps Workflow
@@ -117,6 +120,34 @@ If user picks C, exit cleanly.
 
 If `--dry-run` was passed at invocation, skip this question and proceed
 with dry-run mode automatically.
+
+### Crossing 3.0.0 — say what changes before applying it
+
+`0032` is a front-end replacement, not a field edit. When it appears in the
+plan, tell the user plainly what they are about to get, because the first thing
+they will notice is an edit being blocked:
+
+- Planning moves from GSD phases to **OpenSpec changes**. `openspec/specs/`
+  becomes current truth; `openspec/changes/` holds in-flight deltas.
+- The **§18 change-gate** goes live at `PreToolUse`, `git commit`, and CI. Once a
+  change is open, code edits are blocked until `openspec validate --all` is green
+  **and** `REVIEWS.md` carries ≥2 other-vendor reviewers. That is the gate
+  working. The escape hatch is `GSD_SKIP_REVIEWS=1`, and it is logged.
+- It needs the `openspec` CLI (`npm i -g @fission-ai/openspec`) and **≥2
+  reviewer CLIs from other vendors**. Step 4's `requires` check surfaces the
+  first; the second is a `optional_for` note, so call it out here — without
+  reviewers the first change cannot clear stage 2.
+- **`.planning/` is preserved.** 0032 never touches it. Folding phase history
+  into `openspec/specs/` is a separate, supervised job (phases merge into
+  *capabilities*, not one-phase-one-spec) and needs a human to ratify it.
+- GitNexus is removed. A `<!-- gitnexus:start -->` region already in `CLAUDE.md`
+  is left alone — it is inert once the engine is gone, and stripping it is
+  §11-adjacent surgery best done by hand.
+
+If the project has a `pre-commit` hook of its own, 0032 preserves it as
+`pre-commit.pre-0032` and reports it. Surface that in the summary — a silently
+displaced commit hook is exactly the kind of thing nobody notices for weeks.
+
 
 ## Step 4: Pre-flight per migration
 
@@ -238,6 +269,18 @@ Next steps:
   - If any step was skipped: re-run /update-agenticapps-workflow when ready
   - If touching CLAUDE.md: re-run AgentLinter to confirm Position Risk is OK
 ```
+
+After a run that applied `0032`, prove the gate is actually live rather than
+just installed — a gate nobody verified is a gate nobody has:
+
+```bash
+printf '{"tool":"Edit","tool_input":{"file_path":"x.ts"}}' \
+  | "$HOME/.agenticapps/bin/openspec-change-gate.sh"; echo "exit=$?   # want 0 (no active change)"
+"$HOME/.agenticapps/bin/openspec-change-gate.sh" --ci; echo "exit=$?  # want 0 on a clean repo"
+```
+
+Then point the user at `docs/WORKFLOW.md` and tell them the next feature starts
+with `/opsx:propose`, not with an edit.
 
 ## Failure modes
 
