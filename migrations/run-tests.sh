@@ -1834,6 +1834,89 @@ test_migration_0030() {
 # step 2 shells out to a network-installed CLI and step 6 is a plain copy. All
 # the branching — the two settings.json rebuilds and the config restructure — is
 # in steps 1/3/4/5, which every fixture exercises.
+# ─────────────────────────────────────────────────────────────────────────────
+# The review producer actually DELIVERS the prompt to each reviewer
+# ─────────────────────────────────────────────────────────────────────────────
+# Regression for a bug that shipped in the canonical upstream script and was
+# copied here: the codex branch was
+#
+#   printf '%s' "$PROMPT" | timeout N codex exec - </dev/null
+#
+# In bash, a redirection on the right-hand side of a pipe WINS over the pipe, so
+# codex received an EMPTY prompt. `codex exec -` reads its prompt from stdin, so
+# the </dev/null that protects the argv-form CLIs from hanging destroys the
+# stdin form's only input. It survived manual testing because zsh's MULTIOS
+# makes the same line work interactively.
+#
+# Why it matters more than a broken reviewer: the producer records ANY non-empty
+# output as a "## Reviewer:" section, and the §18 gate counts those sections. A
+# reviewer that was handed nothing but still emits a banner satisfies the gate
+# with a review that never happened — the one failure mode this whole front end
+# exists to prevent.
+#
+# The test uses fake reviewers that echo their stdin, so it asserts delivery
+# without calling a real vendor CLI.
+test_review_producer_delivers_prompt() {
+  echo ""
+  echo "${YELLOW}━━━ Review producer — prompt reaches the reviewer ━━━${RESET}"
+
+  local producer="$REPO_ROOT/bin/run-plan-review.sh"
+  if [ ! -x "$producer" ]; then
+    echo "  ${RED}✗${RESET} producer missing or non-executable at $producer — RED state"
+    FAIL=$((FAIL+1))
+    return
+  fi
+
+  local tmp; tmp="$(mktemp -d -t "review-producer-XXXXXX")"
+  local marker="MARKER-PROMPT-REACHED-REVIEWER"
+  (
+    cd "$tmp" || exit 1
+    git init -q . && git config user.email t@t.t && git config user.name t
+    mkdir -p openspec/changes/demo fakebin
+    printf '# proposal\n%s\n' "$marker" > openspec/changes/demo/proposal.md
+
+    # Shadow the two REAL vendor names so the producer takes its named branches
+    # — the codex branch is the one that carried the bug, and it is only
+    # reachable under the literal name `codex`. Scoped to this subshell's PATH.
+    #   codex  <- stdin form  (`codex exec -`): must echo what it READ
+    #   gemini <- argv form   (`gemini -p "$P"`): must echo the ARGUMENT
+    printf '#!/usr/bin/env bash\ncat\n'              > fakebin/codex
+    printf '#!/usr/bin/env bash\nprintf "%%s" "$2"\n' > fakebin/gemini
+    chmod +x fakebin/codex fakebin/gemini
+    PATH="$tmp/fakebin:$PATH" MIN_REVIEWERS=2 AGENT_SELF=none \
+      bash "$producer" demo codex gemini >/dev/null 2>&1
+  )
+
+  local out="$tmp/openspec/changes/demo/REVIEWS.md"
+  if [ ! -f "$out" ]; then
+    echo "  ${RED}✗${RESET} producer wrote no REVIEWS.md"
+    FAIL=$((FAIL+1)); rm -rf "$tmp"; return
+  fi
+
+  # 1. The stdin-form reviewer must have RECEIVED the prompt, not /dev/null.
+  if grep -qF "$marker" "$out"; then
+    echo "  ${GREEN}✓${RESET} stdin-form reviewer received the prompt (not clobbered by a redirect)"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} stdin-form reviewer got an EMPTY prompt — a redirect is clobbering the pipe"
+    echo "      REVIEWS.md contains no '$marker' from the change's proposal.md"
+    FAIL=$((FAIL+1))
+  fi
+
+  # 2. Both reviewers must be recorded, in the shape the gate counts.
+  local n; n="$(grep -ciE '^##[[:space:]]*reviewer' "$out" 2>/dev/null || echo 0)"
+  if [ "${n:-0}" -eq 2 ]; then
+    echo "  ${GREEN}✓${RESET} both reviewers recorded as '## Reviewer:' sections (gate counts $n)"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} expected 2 reviewer sections, got $n"
+    FAIL=$((FAIL+1))
+  fi
+
+  rm -rf "$tmp"
+}
+
+
 test_migration_0032() {
   echo ""
   echo "${YELLOW}━━━ Migration 0032 — Bind the OpenSpec front end ━━━${RESET}"
@@ -2526,6 +2609,7 @@ fi
 if [ -z "$FILTER" ] || [ "$FILTER" = "0031" ]; then
   test_migration_0031
   test_migration_0032
+  test_review_producer_delivers_prompt
 fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "phase-sentinel" ]; then

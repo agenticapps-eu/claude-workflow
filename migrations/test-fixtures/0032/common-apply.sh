@@ -58,6 +58,13 @@ jq '
 ' .claude/settings.json > "$tmp" && mv "$tmp" .claude/settings.json
 
 # ── Step 5 — restructure .planning/config.json onto the §17 lifecycle ───────
+# The `[ -f ]` guard is NOT in the migration's Apply block, and that is not
+# drift: the migration declares a **Pre-condition** (`jq -e '.hooks...'`) that
+# the update framework evaluates before running Apply, so a project with no
+# .planning/config.json never reaches this shell. The fixture replays Apply
+# blocks directly and does not run the framework, so it stands in for that
+# pre-condition here. Keep the jq itself byte-identical to the migration's —
+# that is what apply-parity asserts.
 if [ -f .planning/config.json ]; then
   TPL="$SCAFFOLDER/templates/config-hooks.json"
   tmp="$(mktemp)"

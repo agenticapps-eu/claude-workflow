@@ -6,9 +6,16 @@
 .planning/phases/*/.review-prompt.md
 
 # Local state
-.claude/
-.planning/current-phase
-.planning/skill-observations/
+#
+# ANCHORED with a leading slash on purpose. A bare `.claude/` matches at EVERY
+# depth, which silently swallowed `templates/.claude/hooks/*` — the shipped hook
+# payload. The existing hooks there were grandfathered in (gitignore does not
+# affect already-tracked files), so the trap only sprang when a NEW hook was
+# added: `git add -A` skipped it without a word and CI failed on the missing
+# file. Only this repo's own working `.claude/` is local state.
+/.claude/
+/.planning/current-phase
+/.planning/skill-observations/
 
 # Generated agent-instruction files
 #

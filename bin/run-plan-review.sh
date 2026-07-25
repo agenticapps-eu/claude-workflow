@@ -43,6 +43,19 @@ else
 fi
 bounded() { if [ -n "$TIMEOUT_BIN" ]; then "$TIMEOUT_BIN" "$TIMEOUT" "$@"; else "$@"; fi; }
 
+# Two ways to hand a reviewer its prompt, and they need OPPOSITE stdin handling:
+#
+#   argv form   (gemini -p "$P", codex exec "$P")  -> the CLI may still read stdin
+#                                                     and block, so feed it </dev/null.
+#   stdin form  (codex exec -)                     -> the pipe IS the prompt.
+#                                                     </dev/null here CLOBBERS it.
+#
+# In bash a redirection applied to the right-hand side of a pipe wins over the
+# pipe, so `printf '%s' "$P" | codex exec - </dev/null` silently sends codex an
+# EMPTY prompt. (zsh's MULTIOS makes the same line work interactively, which is
+# exactly why this survives a manual smoke test.) The stdin form needs no hang
+# guard anyway: stdin is the pipe, and it closes as soon as printf finishes.
+
 # Assemble the review prompt from the change artifacts.
 read -r -d '' INSTRUCT <<EOF || true
 You are an adversarial reviewer. Review this OpenSpec change for correctness, missing
@@ -69,11 +82,11 @@ for r in "${REVIEWERS[@]}"; do
   command -v "$r" >/dev/null 2>&1 || continue
   echo "· running reviewer: $r" >&2
   case "$r" in
-    codex)    resp="$(printf '%s' "$PROMPT" | bounded codex exec - </dev/null 2>/dev/null || true)" ;;
+    codex)    resp="$(printf '%s' "$PROMPT" | bounded codex exec - 2>/dev/null || true)" ;;
     gemini)   resp="$(bounded gemini -p "$PROMPT" </dev/null 2>/dev/null || true)" ;;
     claude)   resp="$(bounded claude -p "$PROMPT" </dev/null 2>/dev/null || true)" ;;
     opencode) resp="$(bounded opencode run "$PROMPT" </dev/null 2>/dev/null || true)" ;;
-    *)        resp="$(printf '%s' "$PROMPT" | bounded "$r" </dev/null 2>/dev/null || true)" ;;
+    *)        resp="$(printf '%s' "$PROMPT" | bounded "$r" 2>/dev/null || true)" ;;
   esac
   [ -n "$resp" ] || { echo "  (no output from $r — skipped)" >&2; continue; }
   {
