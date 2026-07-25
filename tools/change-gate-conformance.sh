@@ -55,6 +55,13 @@ make_fixture() { # $1 = validate exit code (0 green, 1 red)
   : > "$d/repo/openspec/changes/add-thing/proposal.md"
   printf 'package main\n' > "$d/repo/src/main.go"
   ( cd "$d/repo" && git init -q . && git config user.email t@t && git config user.name t )
+  # A second, symlinked route to the same repo. `git rev-parse --show-toplevel`
+  # resolves symlinks and reports the PHYSICAL path; a shell that cd'd through
+  # the link reports the LOGICAL one. Reaching the repo this way makes the two
+  # differ deterministically on every platform, which is what the absolute-path
+  # exemption rows need. (Relying on macOS's /tmp -> /private/tmp symlink would
+  # reproduce there and silently pass on Linux.)
+  ln -s repo "$d/alias"
   printf '%s' "$d"
 }
 
@@ -71,7 +78,7 @@ run_row() { # $1=desc $2=expected $3=fixture $4=payload $5...=gate args
   local desc="$1" want="$2" fx="$3" payload="$4"; shift 4
   local got
   got="$(
-    cd "$fx/repo" || exit 99
+    cd "${ROW_CWD:-$fx/repo}" || exit 99
     printf '%s' "$payload" | PATH="$fx/stub:$PATH" bash "$GATE" "$@" >/dev/null 2>&1
     printf '%s' "$?"
   )"
@@ -155,6 +162,24 @@ score_gate() {
   run_row "src/openspec/ is NOT exempt -> block"   2 "$fx" "$(p_claude src/openspec/app.ts)"
   run_row "/tmp/openspec/ is NOT exempt -> block"  2 "$fx" "$(p_claude /tmp/openspec/x.ts)"
   run_row "..-escape is NOT exempt -> block"       2 "$fx" "$(p_claude openspec/../src/app.ts)"
+  # ...and it must survive an ABSOLUTE payload path. Hosts pass them — Claude
+  # Code always does — so an exemption that only matches repo-relative paths
+  # blocks the write of proposal.md itself, leaving a change that can never be
+  # authored, reviewed, or unblocked. That is the deadlock the fail-open
+  # posture exists to prevent, arrived at through the exemption instead.
+  run_row "absolute artifact path -> allow" 0 "$fx" \
+    "$(p_claude "$fx/repo/openspec/changes/add-thing/proposal.md")"
+  # The same path reached through a symlink. $ROOT is physical (git resolves
+  # it), the payload is logical, and a plain string-prefix test between them
+  # fails — so this blocks even though it is the same file as the row above.
+  ROW_CWD="$fx/alias"
+  run_row "absolute artifact path via symlinked root -> allow" 0 "$fx" \
+    "$(p_claude "$fx/alias/openspec/changes/add-thing/proposal.md")"
+  # The bypass rows must hold through the symlink too, or a fix could buy the
+  # two rows above by widening the exemption back out.
+  run_row "src/openspec/ via symlinked root is NOT exempt -> block" 2 "$fx" \
+    "$(p_claude "$fx/alias/src/openspec/app.ts")"
+  ROW_CWD=""
   rm -rf "$fx"
 
   # Active change, validate green, no REVIEWS.md → block.

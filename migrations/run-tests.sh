@@ -1961,6 +1961,27 @@ test_gate_matches_core_canonical() {
     FAIL=$((FAIL+1))
   fi
 
+  # install.sh is not the only writer. A migration that installs the gate is a
+  # second, independent path to the same shared file — and auditing only
+  # install.sh reported green while 0032 clobbered it unconditionally. Any
+  # migration that writes the shared gate must arbitrate the same way.
+  local m unguarded=""
+  for m in "$REPO_ROOT"/migrations/[0-9]*.md; do
+    grep -q 'agenticapps/bin/openspec-change-gate.sh' "$m" 2>/dev/null || continue
+    grep -q 'install .*bin/openspec-change-gate.sh' "$m" 2>/dev/null || continue
+    grep -q 'gate_version' "$m" 2>/dev/null || unguarded="$unguarded $(basename "$m")"
+  done
+  if [ -z "$unguarded" ]; then
+    echo "  ${GREEN}✓${RESET} every migration that installs the shared gate arbitrates on version"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} migration(s) write the shared gate unconditionally:$unguarded"
+    echo "      ~/.agenticapps/bin is shared by claude/codex/opencode/pi. An unguarded"
+    echo "      install downgrades it for every agent on the machine. Mirror install.sh's"
+    echo "      gate_version arbitration into the migration's Apply block."
+    FAIL=$((FAIL+1))
+  fi
+
   if cmp -s "$ours" "$canonical"; then
     echo "  ${GREEN}✓${RESET} gate script is byte-identical to the canonical upstream copy"
     PASS=$((PASS+1))
