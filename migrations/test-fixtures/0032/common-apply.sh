@@ -13,7 +13,24 @@ SCAFFOLDER=~/.claude/skills/agenticapps-workflow
 
 # ── Step 1 — gate + producer + git floor ────────────────────────────────────
 mkdir -p "$HOME/.agenticapps/bin"
-install -m 0755 "$SCAFFOLDER/bin/openspec-change-gate.sh" "$HOME/.agenticapps/bin/openspec-change-gate.sh"
+# ~/.agenticapps/bin is SHARED by claude / codex / opencode / pi. Writing it
+# unconditionally is last-writer-wins: a host vendoring an older gate silently
+# republishes it over a newer one and reverts the fix for every agent on the
+# machine. The gate's own header requires installers to refuse a downgrade, so
+# arbitrate on the version marker exactly as install.sh does.
+gate_version() {
+  [ -f "$1" ] || { echo "0.0.0"; return; }
+  sed -n 's/^# gate-version:[[:space:]]*\([0-9][0-9.]*\).*/\1/p' "$1" | head -n1 | grep . || echo "0.0.0"
+}
+_incoming="$(gate_version "$SCAFFOLDER/bin/openspec-change-gate.sh")"
+_installed="$(gate_version "$HOME/.agenticapps/bin/openspec-change-gate.sh")"
+_older="$(printf '%s\n%s\n' "$_incoming" "$_installed" | sort -V | head -n1)"
+if [ "$_installed" != "$_incoming" ] && [ "$_older" = "$_incoming" ]; then
+  echo "NOTE: shared gate is $_installed, newer than this repo's $_incoming — refusing to downgrade."
+  echo "      Update this scaffolder (git pull) so every host publishes the same version."
+else
+  install -m 0755 "$SCAFFOLDER/bin/openspec-change-gate.sh" "$HOME/.agenticapps/bin/openspec-change-gate.sh"
+fi
 install -m 0755 "$SCAFFOLDER/bin/run-plan-review.sh"      "$HOME/.agenticapps/bin/run-plan-review.sh"
 hooks_dir="$(git rev-parse --git-path hooks)"
 mkdir -p "$hooks_dir"
