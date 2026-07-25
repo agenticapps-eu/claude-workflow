@@ -35,6 +35,19 @@
 
 set -uo pipefail
 
+# A measurement tool must not inherit state from the thing it measures. The
+# README's vendoring steps tell hosts to export OPENSPEC_GATE_SELF (so the
+# host's own reviews are excluded) and then to run this harness — do both in
+# one shell and a fully conformant gate scores one row short: the two-reviewer
+# row seeds `claude` and `codex`, and an ambient OPENSPEC_GATE_SELF=codex makes
+# the gate correctly drop one, leaving one reviewer and a block. The row fails
+# for a gate that is behaving exactly as specified.
+#
+# Section E sets this per-row (`OPENSPEC_GATE_SELF=pi run_row ...`), which is a
+# command-scoped assignment and unaffected by the unset here. So the harness
+# never needs the ambient value, and clearing it is free.
+unset OPENSPEC_GATE_SELF
+
 pass=0
 fail=0
 inconclusive=0
@@ -49,7 +62,10 @@ trap cleanup EXIT
 make_fixture() { # $1 = validate exit code (0 green, 1 red)
   local d rc="$1"
   d="$(mktemp -d)"
-  mkdir -p "$d/stub" "$d/repo/openspec/changes/add-thing" "$d/repo/src"
+  # `outside` is a sibling of the repo, not inside it — the destination for the
+  # symlink-escape rows, which need somewhere outside $ROOT that actually exists
+  # so the kernel can resolve a link into it.
+  mkdir -p "$d/stub" "$d/repo/openspec/changes/add-thing" "$d/repo/src" "$d/outside"
   printf '#!/usr/bin/env bash\nexit %s\n' "$rc" > "$d/stub/openspec"
   chmod +x "$d/stub/openspec"
   : > "$d/repo/openspec/changes/add-thing/proposal.md"
@@ -180,11 +196,61 @@ score_gate() {
   run_row "src/openspec/ via symlinked root is NOT exempt -> block" 2 "$fx" \
     "$(p_claude "$fx/alias/src/openspec/app.ts")"
   ROW_CWD=""
+
+  # A symlink INSIDE openspec/ followed by `..`. The bare `..` row above is not
+  # sufficient to pin this: a gate that collapses `..` textually before
+  # resolving passes that row and fails this one, because the textual pass and
+  # the kernel disagree about where `openspec/out/..` lands.
+  #
+  #   openspec/out -> <outside the repo>
+  #   textual first -> $ROOT/openspec/victim  => EXEMPT, and the bytes leave the repo
+  #   kernel        -> <outside>/../victim
+  #
+  # The exemption must be decided by the kernel's answer, so this row demands
+  # physical resolution ahead of any `..` handling.
+  ln -s "$fx/outside" "$fx/repo/openspec/out"
+  run_row "symlink-then-.. escape is NOT exempt -> block" 2 "$fx" \
+    "$(p_claude 'openspec/out/../victim')"
+  # ...and the same shape where the escape sits below a directory that does not
+  # exist yet, so nothing can be resolved and the `..` survives into the tail.
+  # An unresolvable path must not be exempt — it string-matches the openspec
+  # prefix while resolving outside it.
+  run_row "unresolvable .. below openspec/ is NOT exempt -> block" 2 "$fx" \
+    "$(p_claude 'openspec/nope/../../src/app.ts')"
+
+  # An artifact path that IS a symlink pointing at code. Declining to resolve
+  # the final component exempts the write and the writer follows the link,
+  # truncating the target under an unsatisfied change. The exemption has to be
+  # decided about the destination, not the name used to reach it.
+  ln -s "$fx/repo/src/main.go" "$fx/repo/openspec/changes/add-thing/design.md"
+  run_row "symlinked artifact pointing at code is NOT exempt -> block" 2 "$fx" \
+    "$(p_claude 'openspec/changes/add-thing/design.md')"
+  rm -rf "$fx"
+
+  # The Write-target case must survive the above: a genuine artifact that does
+  # not exist yet is not a symlink, cannot be resolved, and must stay exempt —
+  # otherwise proposal.md can never be authored and the change deadlocks.
+  fx="$(make_fixture 0)"
+  run_row "not-yet-existing artifact -> allow" 0 "$fx" \
+    "$(p_claude 'openspec/changes/add-thing/design.md')"
   rm -rf "$fx"
 
   # Active change, validate green, no REVIEWS.md → block.
   fx="$(make_fixture 0)"
   run_row "active change, no REVIEWS.md -> block" 2 "$fx" "$(p_claude src/main.go)"
+  rm -rf "$fx"
+
+  # ...and the same decision must hold from a SUBDIRECTORY. A gate that locates
+  # `openspec/changes` relative to $PWD instead of `git rev-parse
+  # --show-toplevel` finds nothing from below the root, concludes there is no
+  # active change, and allows the edit — while logging a line that reads like a
+  # correct decision. A PreToolUse hook inherits the session's cwd, which is
+  # wherever the user happens to be, so this is the common case rather than the
+  # exotic one. Witness: the pre-adoption codex-workflow copy returned 0 here.
+  fx="$(make_fixture 0)"; mkdir -p "$fx/repo/sub/dir"
+  ROW_CWD="$fx/repo/sub/dir"
+  run_row "active change, evaluated from a subdirectory -> block" 2 "$fx" "$(p_claude src/main.go)"
+  ROW_CWD=""
   rm -rf "$fx"
 
   # Active change, validate fails → block.
@@ -214,6 +280,14 @@ score_gate() {
   local before="$fail"
   run_row "garbage stdin -> allow (fail-open)" 0 "$fx" 'not json {{{'
   run_row "empty stdin -> allow (fail-open)"   0 "$fx" ''
+  # Brace-bearing garbage (above) is not discriminating: a gate whose JSON
+  # branch is guarded on `{` skips it and reaches a `TOOL<TAB>PATH` fallback,
+  # which on whitespace-only input splits out a plausible path and proceeds to
+  # POLICY — blocking on a payload it never understood. That is a fail-CLOSED
+  # parse error, the one posture §18 forbids. Only brace-free garbage reaches
+  # the fallback, so this row is what separates the two. Witness: the pre-
+  # adoption codex-workflow copy returned 2 here where canonical returns 0.
+  run_row "brace-free garbage stdin -> allow (fail-open)" 0 "$fx" 'not json at all'
   [ "$fail" -eq "$before" ] && FAILS_OPEN=1 || FAILS_OPEN=0
   rm -rf "$fx"
 
