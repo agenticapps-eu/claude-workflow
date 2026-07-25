@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# gate-version: 1.2.1
+# gate-version: 1.2.2
 #
 # VERSION MARKER — read by every host installer before writing this file to the
 # SHARED path ~/.agenticapps/bin/. That path is written by claude / codex /
@@ -7,6 +7,15 @@
 # a host still vendoring an older copy silently republishes it over a newer one
 # and reverts the fix for every agent on the machine. Installers MUST refuse to
 # overwrite a higher version. Bump this whenever the gate's behaviour changes.
+#   1.2.2 — close two symlink escapes in the openspec/ exemption, both present
+#           since 1.2.0. (a) `..` was collapsed textually BEFORE physical
+#           resolution, so a symlink inside openspec/ followed by `..` was
+#           exempted while the bytes landed outside the repo; resolve
+#           physically first, then refuse any `..` that survives. (b) a
+#           symlinked artifact path was exempted and the writer followed it
+#           into code; resolve the final component when it exists and is a
+#           link. The not-yet-existing Write target 1.2.1 fixed is unaffected —
+#           `[ -L ]` is false for a path that does not exist.
 #   1.2.1 — exempt absolute artifact paths under a symlinked repo root. $ROOT
 #           is physical (git resolves it) and hosts pass logical paths, so the
 #           prefix test blocked the write of proposal.md itself — an
@@ -187,12 +196,38 @@ edited_path_from_stdin(){              # best-effort parse of a tool-call payloa
 }
 
 physical_prefix(){       # print $1 with its deepest existing ANCESTOR DIRECTORY resolved physically
-  # Only directories can be resolved with cd/pwd -P, and the final component is
-  # deliberately never resolved: it is usually a file, often does not exist yet
-  # (a Write target), and resolving it would follow a symlinked file out of the
-  # tree. So split it off first, then walk up to the deepest existing directory.
-  local head="$1" rest
+  # Only directories can be resolved with cd/pwd -P, so the final component is
+  # split off first and the walk goes up to the deepest existing directory.
+  #
+  # The final component IS resolved when it exists and is a symlink. An earlier
+  # version declined to, reasoning that resolving it "would follow a symlinked
+  # file out of the tree" — that is backwards. The *writer* follows it either
+  # way; declining to resolve is what let a symlinked artifact path be exempted
+  # and the write land on its target (`openspec/changes/x/design.md -> src/app.go`
+  # truncated app.go under an unsatisfied change). The exemption has to be
+  # decided about the bytes' destination, not about the name used to reach it.
+  #
+  # The other half of that reasoning was sound and is preserved: a Write target
+  # often does not exist yet, and `[ -L ]` is false for a non-existent path, so
+  # the chase below simply does not run and the not-yet-created case behaves
+  # exactly as before.
+  local head="$1" rest depth=0 target parent
   case "$head" in /*) ;; *) printf '%s' "$head"; return ;; esac
+  # Bounded: a symlink cycle would otherwise spin here. On hitting the bound we
+  # fall through with `head` partly resolved, which cannot match the openspec
+  # prefix spuriously — an unresolvable path is not exempt, which is the safe
+  # direction.
+  while [ -L "$head" ] && [ "$depth" -lt 40 ]; do
+    depth=$((depth + 1))
+    target="$(readlink "$head" 2>/dev/null)" || break
+    [ -n "$target" ] || break
+    parent="${head%/*}"
+    [ -z "$parent" ] && parent=/
+    case "$target" in
+      /*) head="$target" ;;
+      *)  head="$parent/$target" ;;
+    esac
+  done
   rest="${head##*/}"
   head="${head%/*}"
   [ -z "$head" ] && head=/
@@ -219,30 +254,40 @@ is_openspec_artifact(){                # edits to the change itself must always 
     /*) resolved="$p" ;;
     *)  resolved="$ROOT/$p" ;;
   esac
-  # Normalise `.` and `..` textually — the target of a Write may not exist yet,
-  # so realpath/-e cannot be relied on here.
-  resolved="$(printf '%s\n' "$resolved" | awk -F/ '
-    { n = 0
-      for (i = 1; i <= NF; i++) {
-        if ($i == "" || $i == ".") continue
-        if ($i == "..") { if (n > 0) n--; continue }
-        parts[++n] = $i
-      }
-      out = ""
-      for (i = 1; i <= n; i++) out = out "/" parts[i]
-      print (out == "" ? "/" : out)
-    }')"
   # Compare physical-to-physical. $ROOT comes from `git rev-parse
   # --show-toplevel`, which resolves symlinks; hosts pass the logical path they
   # were given. Where the repo is reached through a symlink a plain string
   # prefix test fails and the gate blocks the write of proposal.md itself,
-  # leaving a change that can never be authored. Normalising `..` textually
-  # first (above) is deliberate and must stay in that order: it is what keeps
-  # the escape rows blocked, and normalising before resolving is the safe
-  # direction.
+  # leaving a change that can never be authored.
+  #
+  # Resolve PHYSICALLY FIRST, then reject leftover `..`. An earlier version
+  # collapsed `..` textually up front and resolved afterwards, with a comment
+  # claiming that order "is what keeps the escape rows blocked". It keeps the
+  # BARE escapes blocked (`openspec/../src/app.ts` — still blocked, pinned
+  # below); it is not sufficient on its own. Where a symlink inside openspec/
+  # precedes the `..`, the textual pass and the kernel disagree and the kernel
+  # wins:
+  #
+  #   $ROOT/openspec/out -> /tmp/outdir
+  #   openspec/out/../victim
+  #     textual first -> $ROOT/openspec/victim  => EXEMPT  (wrong)
+  #     kernel        -> /tmp/outdir/../victim  => /tmp/victim, outside the repo
+  #
+  # `cd -P` asks the kernel, so resolving first gets this right. The reason the
+  # textual pass existed — a Write target that does not exist yet cannot be
+  # realpath'd — is handled by physical_prefix walking up to the deepest
+  # existing ancestor instead.
   local root_phys
   root_phys="$(cd -P "$ROOT" 2>/dev/null && pwd -P)" || root_phys="$ROOT"
   resolved="$(physical_prefix "$resolved")"
+  # A `..` that survived physical resolution sits in the unresolved tail, i.e.
+  # below a directory that does not exist yet, so where it lands is unknowable
+  # (`openspec/nope/../../src/app.ts` string-matches the openspec prefix while
+  # resolving outside it). Refuse the exemption rather than guess: the write is
+  # then judged on policy like any other, which is the safe direction.
+  case "/$resolved/" in
+    */../*) return 1 ;;
+  esac
   case "$resolved" in
     "${root_phys%/}"/openspec/*) return 0 ;;
     *) return 1 ;;
