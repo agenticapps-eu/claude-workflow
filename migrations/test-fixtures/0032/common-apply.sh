@@ -31,7 +31,12 @@ tmp="$(mktemp)"
 jq '
   .hooks.PreToolUse = [
     ( .hooks.PreToolUse // [] )[]
-    | select( [ .hooks[]?.command? ] | map(test("multi-ai-review-gate|openspec-change-gate")) | any | not )
+    # Drop only the RETIRED COMMANDS, not the whole entry. An entry whose hooks
+    # array holds both the old gate and a project-owned hook must keep the
+    # latter; filtering by entry silently deleted it.
+    | .hooks = [ (.hooks // [])[] | select((.command // "") | test("multi-ai-review-gate|openspec-change-gate") | not) ]
+    # An entry left with no hooks was only ever the old gate — drop it.
+    | select((.hooks | length) > 0)
   ] + [{
     "_hook": "Hook 7 — OpenSpec Change Gate (spec §18; retarget of the multi-AI plan-review gate)",
     "matcher": "Edit|Write|MultiEdit|NotebookEdit",
@@ -53,7 +58,10 @@ tmp="$(mktemp)"
 jq '
   .hooks.PostToolUse = [
     ( .hooks.PostToolUse // [] )[]
-    | select( [ .hooks[]?.command? ] | map(test("gitnexus")) | any | not )
+    # Same surgical rule as PreToolUse: remove the gitnexus command, keep any
+    # co-registered project hook that shares the entry.
+    | .hooks = [ (.hooks // [])[] | select((.command // "") | test("gitnexus") | not) ]
+    | select((.hooks | length) > 0)
   ]
 ' .claude/settings.json > "$tmp" && mv "$tmp" .claude/settings.json
 
@@ -69,6 +77,8 @@ if [ -f .planning/config.json ]; then
   TPL="$SCAFFOLDER/templates/config-hooks.json"
   tmp="$(mktemp)"
   jq --slurpfile tpl "$TPL" \
-    '$tpl[0] + (if .knowledge_capture then {knowledge_capture: .knowledge_capture} else {} end)' \
+    '. as $proj | $proj + $tpl[0]
+   | if $proj.knowledge_capture then .knowledge_capture = $proj.knowledge_capture else . end
+   | del(.hooks)' \
     .planning/config.json > "$tmp" && mv "$tmp" .planning/config.json
 fi

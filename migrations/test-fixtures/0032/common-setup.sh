@@ -11,6 +11,7 @@ set -euo pipefail
 : "${WITH_GITNEXUS:=1}"
 : "${WITH_OWN_PRECOMMIT:=0}"
 : "${WITH_EXTRA_HOOKS:=0}"
+: "${WITH_COMBINED_ENTRY:=0}"
 
 git init -q .
 git config user.email t@t.t
@@ -44,6 +45,8 @@ cat > .planning/config.json <<'EOF_CFG'
     "post_phase": { "security": { "enabled": true, "sub_gates": [ { "skill": "database-sentinel:audit" } ] } },
     "finishing": { "impeccable_audit": { "enabled": true }, "db_pre_launch_audit": { "enabled": true } }
   },
+  "workflow": { "OWNED_BY_HOST_TOOL": true },
+  "custom_repo_policy": { "OWNED_BY_PROJECT": true },
   "knowledge_capture": {
     "enabled": true,
     "note": "~/Obsidian/Memex/40-49 Resources/44 Agentic Coding Learnings/sandbox-repo.md"
@@ -69,6 +72,12 @@ if [ "$WITH_GITNEXUS" = "1" ]; then
 fi
 if [ "$WITH_EXTRA_HOOKS" = "1" ]; then
   pre_extra=',{"_hook":"Hook 1 — Database Sentinel","matcher":"Bash|Edit|Write","hooks":[{"type":"command","command":"$CLAUDE_PROJECT_DIR/.claude/hooks/database-sentinel.sh","timeout":5000}]}'
+fi
+if [ "$WITH_COMBINED_ENTRY" = "1" ]; then
+  # A single PreToolUse entry registering BOTH the retired gate and a
+  # project-owned hook. Filtering by entry (rather than by command) silently
+  # deletes the project's hook along with ours.
+  pre_extra="${pre_extra},"'{"_hook":"combined","matcher":"Edit|Write","hooks":[{"type":"command","command":"$CLAUDE_PROJECT_DIR/.claude/hooks/multi-ai-review-gate.sh","timeout":5000},{"type":"command","command":"$CLAUDE_PROJECT_DIR/.claude/hooks/project-own-audit.sh","timeout":5000}]}'
 fi
 
 cat > .claude/settings.json <<EOF_SET

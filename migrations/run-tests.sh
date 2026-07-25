@@ -2154,27 +2154,38 @@ test_migration_0032() {
     run_0032_fixture "$name"
   done
 
-  # The fixtures replay a COPY of the migration's Apply blocks. If the migration
-  # doc and common-apply.sh drift apart, the fixtures start proving something the
-  # migration does not do. Assert the load-bearing lines appear in both.
+  # The fixtures replay a COPY of the migration's Apply blocks, so the two can
+  # drift and the fixtures would then prove something the migration does not do.
+  # The old check looked for four fixed substrings, which could not notice a
+  # changed path, a changed timeout, or an ADDED destructive command. Compare
+  # every executable line instead: each non-comment, non-blank line of
+  # common-apply.sh must appear verbatim somewhere in the migration doc.
   local apply_file="$fixtures/common-apply.sh"
-  local drift=0 line
-  for line in 'rm -f .claude/hooks/multi-ai-review-gate.sh' \
-              'map(test("multi-ai-review-gate|openspec-change-gate")) | any | not' \
-              'map(test("gitnexus")) | any | not' \
-              'if .knowledge_capture then {knowledge_capture: .knowledge_capture} else {} end'; do
-    if ! grep -qF "$line" "$migration_file" || ! grep -qF "$line" "$apply_file"; then
-      echo "  ${RED}✗${RESET} apply-parity — '$line' is not in BOTH the migration and common-apply.sh"
+  local drift=0 checked=0 line norm
+  while IFS= read -r line; do
+    norm="$(printf '%s' "$line" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+    case "$norm" in
+      ''|'#'*|'set -uo pipefail'|'fi'|'else'|'done'|'}'|"'"*) continue ;;
+      # Fixture-only scaffolding that legitimately has no migration counterpart.
+      SCAFFOLDER=*|'if [ -f .planning/config.json ]; then'|TPL=*) continue ;;
+    esac
+    checked=$((checked+1))
+    if ! grep -qF "$norm" "$migration_file"; then
+      echo "  ${RED}✗${RESET} apply-parity — fixture line absent from the migration doc:"
+      echo "        $norm"
       drift=1
     fi
-  done
+  done < "$apply_file"
+
   if [ "$drift" -eq 0 ]; then
-    echo "  ${GREEN}✓${RESET} apply-parity — fixtures replay the migration's own Apply blocks"
+    echo "  ${GREEN}✓${RESET} apply-parity — all $checked fixture lines appear in the migration"
     PASS=$((PASS+1))
   else
     FAIL=$((FAIL+1))
   fi
 }
+
+
 
 
 test_migration_0031() {
@@ -2775,11 +2786,26 @@ if [ -z "$FILTER" ] || [ "$FILTER" = "0030" ]; then
   test_migration_0030
 fi
 
+# Each suite gets its own filter token. These were all wedged under the "0031"
+# guard, so `run-tests.sh 0032` reported "NO TESTS RAN" while `0031` silently ran
+# five unrelated suites — a filter that lies about what it covered.
 if [ -z "$FILTER" ] || [ "$FILTER" = "0031" ]; then
   test_migration_0031
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "0032" ]; then
   test_migration_0032
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "0032" ] || [ "$FILTER" = "review-producer" ]; then
   test_review_producer_delivers_prompt
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "payloads" ]; then
   test_migration_payloads_still_published
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "gate-parity" ]; then
   test_gate_matches_core_canonical
 fi
 

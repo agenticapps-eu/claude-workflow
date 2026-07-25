@@ -44,5 +44,16 @@ jq -e '.knowledge_capture.enabled == true' .planning/config.json >/dev/null \
 jq -er '.knowledge_capture.note' .planning/config.json | grep -q 'sandbox-repo.md' \
   || fail "knowledge_capture.note was replaced by the template default"
 
+# 6b. Project-owned top-level config keys survive the restructure. Step 5
+#     replaces the GATE BINDINGS, not the file: `.workflow` belongs to whatever
+#     tool wrote it, and a repo may carry its own keys. Losing them is silent
+#     data loss in a file the project owns.
+jq -e '.workflow.OWNED_BY_HOST_TOOL == true' .planning/config.json >/dev/null \
+  || fail "Step 5 discarded the project's .workflow block"
+jq -e '.custom_repo_policy.OWNED_BY_PROJECT == true' .planning/config.json >/dev/null \
+  || fail "Step 5 discarded a project-owned top-level config key"
+jq -e 'has("hooks") | not' .planning/config.json >/dev/null \
+  || fail "the retired 0.x hooks tree survived Step 5"
+
 # 7. .planning/ is untouched — it is the backup, never a migration target.
 [ -f .planning/phases/01-example/PLAN.md ] || fail ".planning/phases was disturbed"
