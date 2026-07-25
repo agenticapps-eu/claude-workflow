@@ -18,9 +18,16 @@ mkdir -p "$HOME/.agenticapps/bin"
 # republishes it over a newer one and reverts the fix for every agent on the
 # machine. The gate's own header requires installers to refuse a downgrade, so
 # arbitrate on the version marker exactly as install.sh does.
+# ONE awk, no pipeline, anchored X.Y.Z. `sed -n ... | head -n1 | grep . || echo
+# 0.0.0` is a downgrade hole twice over, both verified: with enough marker lines
+# head closes the pipe, sed takes SIGPIPE, and under `set -o pipefail` the
+# fallback fires AFTER the real version printed — returning "9.9.9\n0.0.0", which
+# sort -V reads as 0.0.0; and `[0-9][0-9.]*` parses `9.0.0junk` as `9.0.0`.
+# Unparseable is 0.0.0, which fails safe in both directions.
 gate_version() {
   [ -f "$1" ] || { echo "0.0.0"; return; }
-  sed -n 's/^# gate-version:[[:space:]]*\([0-9][0-9.]*\).*/\1/p' "$1" | head -n1 | grep . || echo "0.0.0"
+  awk '/^# gate-version: [0-9]+\.[0-9]+\.[0-9]+[ \t]*$/ { print $3; found=1; exit }
+       END { if (!found) print "0.0.0" }' "$1"
 }
 _incoming="$(gate_version "$SCAFFOLDER/bin/openspec-change-gate.sh")"
 _installed="$(gate_version "$HOME/.agenticapps/bin/openspec-change-gate.sh")"
@@ -38,9 +45,11 @@ install -m 0755 "$SCAFFOLDER/bin/run-plan-review.sh"      "$HOME/.agenticapps/bi
 # `opencode` arm vanished and the next review that asked for it was recorded as
 # "reviewer unavailable" and waved through with one fewer opinion (core#41).
 # Same rule, same reasoning, on `# reviewer-cli-version:`. Unmarked = 0.0.0.
+# Same parser shape, and the same reasons, as gate_version above.
 reviewer_cli_version() {
   [ -f "$1" ] || { echo "0.0.0"; return; }
-  sed -n 's/^# reviewer-cli-version:[[:space:]]*\([0-9][0-9.]*\).*/\1/p' "$1" | head -n1 | grep . || echo "0.0.0"
+  awk '/^# reviewer-cli-version: [0-9]+\.[0-9]+\.[0-9]+[ \t]*$/ { print $3; found=1; exit }
+       END { if (!found) print "0.0.0" }' "$1"
 }
 _rc_incoming="$(reviewer_cli_version "$SCAFFOLDER/bin/reviewer-cli.sh")"
 _rc_installed="$(reviewer_cli_version "$HOME/.agenticapps/bin/reviewer-cli.sh")"

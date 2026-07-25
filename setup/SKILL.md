@@ -353,9 +353,13 @@ j. **The §18 change-gate (spec 1.0.0)** — the enforcement teeth. ONE
    # installer blind-installed a 3-arm wrapper over the 4-arm one and the next
    # review that asked for `opencode` was recorded as "reviewer unavailable".
    # Arbitrate on the marker and refuse to downgrade. Unmarked = 0.0.0.
+   # ONE awk, no pipeline, anchored X.Y.Z: a `sed | head -n1 | grep .` pipeline
+   # SIGPIPEs under `set -o pipefail` and appends a second "0.0.0" line after the
+   # real version, which sort -V then reads as 0.0.0 and downgrades.
    reviewer_cli_version() {
      [ -f "$1" ] || { echo "0.0.0"; return; }
-     sed -n 's/^# reviewer-cli-version:[[:space:]]*\([0-9][0-9.]*\).*/\1/p' "$1" | head -n1 | grep . || echo "0.0.0"
+     awk '/^# reviewer-cli-version: [0-9]+\.[0-9]+\.[0-9]+[ \t]*$/ { print $3; found=1; exit }
+          END { if (!found) print "0.0.0" }' "$1"
    }
    _rc_incoming="$(reviewer_cli_version "$SCAFFOLDER/bin/reviewer-cli.sh")"
    _rc_installed="$(reviewer_cli_version "$HOME/.agenticapps/bin/reviewer-cli.sh")"

@@ -60,7 +60,10 @@ REVIEWERS=("$@"); [ ${#REVIEWERS[@]} -gt 0 ] || REVIEWERS=(gemini codex claude o
 # Same resolution order as the PreToolUse gate shim, for the same reason: the
 # global install is what a scaffolded project gets, and the repo copy is what a
 # scaffolder checkout runs before anything is installed.
-REVIEWER_CLI="${REVIEWER_CLI:-$HOME/.agenticapps/bin/reviewer-cli.sh}"
+# `${HOME:-}` because this runs under `set -u`: with HOME unset (cron, a stripped
+# CI env) a bare $HOME aborts the script before it can reach the repo fallback
+# that would have worked.
+REVIEWER_CLI="${REVIEWER_CLI:-${HOME:-}/.agenticapps/bin/reviewer-cli.sh}"
 [ -x "$REVIEWER_CLI" ] || REVIEWER_CLI="$ROOT/bin/reviewer-cli.sh"
 [ -x "$REVIEWER_CLI" ] || {
   echo "reviewer-cli.sh not found (looked at \$REVIEWER_CLI, ~/.agenticapps/bin, $ROOT/bin)." >&2
@@ -86,13 +89,18 @@ OUT="$CHANGE_DIR/REVIEWS.md"
 # Accumulate into a temp file and only publish at the end. A partial run must not
 # destroy the REVIEWS.md an earlier successful run produced — that evidence is what
 # the gate reads, and wiping it would silently re-block a reviewed change.
+# The trap is armed BEFORE the second mktemp, over both names, so a failure
+# between the two cannot leak the first file.
+TMP=""; PROMPT_FILE=""
+trap 'rm -f "$TMP" "$PROMPT_FILE"' EXIT
 TMP="$(mktemp "${TMPDIR:-/tmp}/reviews.XXXXXX")" || { echo "mktemp failed" >&2; exit 2; }
 # The wrapper takes the prompt as a FILE and hands it to the vendor as an
 # argument — stdin is pinned to /dev/null on every arm, so it can never be the
 # delivery channel. Write it once; every reviewer reads the same bytes.
 PROMPT_FILE="$(mktemp "${TMPDIR:-/tmp}/review-prompt.XXXXXX")" || { echo "mktemp failed" >&2; exit 2; }
-printf '%s' "$PROMPT" > "$PROMPT_FILE"
-trap 'rm -f "$TMP" "$PROMPT_FILE"' EXIT
+# A short write (ENOSPC, EDQUOT) would hand every reviewer a truncated change to
+# review and their verdicts would still count. Fail instead of reviewing nothing.
+printf '%s' "$PROMPT" > "$PROMPT_FILE" || { echo "failed writing the review prompt" >&2; exit 2; }
 count=0
 for r in "${REVIEWERS[@]}"; do
   [ "$r" = "$SELF" ] && continue
@@ -122,11 +130,23 @@ for r in "${REVIEWERS[@]}"; do
   count=$((count+1))
 done
 
-if [ "$count" -lt "${MIN_REVIEWERS:-2}" ]; then
-  echo "only $count reviewer(s) produced output (need ${MIN_REVIEWERS:-2}) — ${OUT#"$ROOT"/} left unchanged." >&2
+# A non-numeric MIN_REVIEWERS makes `[ "$count" -lt "$MIN" ]` an error, not a
+# comparison: bash prints "integer expression expected", the `if` reads false,
+# and the script falls through to publish and exit 0 — announcing that the
+# >=2-reviewer floor was met when it was never evaluated. Validate it first.
+MIN="${MIN_REVIEWERS:-2}"
+case "$MIN" in
+  ''|*[!0-9]*) echo "MIN_REVIEWERS must be a non-negative integer, got '$MIN'" >&2; exit 2 ;;
+esac
+
+if [ "$count" -lt "$MIN" ]; then
+  echo "only $count reviewer(s) produced output (need $MIN) — ${OUT#"$ROOT"/} left unchanged." >&2
   echo "Install another other-vendor agent CLI, or use GSD_SKIP_REVIEWS=1 for a logged emergency override." >&2
   exit 1
 fi
 
-cp "$TMP" "$OUT"
+# An unchecked `cp` is a false success report: it can truncate $OUT and fail, and
+# the echo below still says the file was written. The evidence the gate reads
+# would then be whatever survived the partial copy.
+cp "$TMP" "$OUT" || { echo "failed writing ${OUT#"$ROOT"/} — earlier review evidence may be incomplete" >&2; exit 2; }
 echo "wrote $count reviewer section(s) to ${OUT#"$ROOT"/}" >&2

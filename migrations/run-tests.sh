@@ -2099,6 +2099,44 @@ test_reviewer_cli_matches_core_canonical() {
     FAIL=$((FAIL+1))
   fi
 
+  # Grep proves the branch is PRESENT; it cannot prove the branch is CORRECT. A
+  # marker parser can read the right file and still return a wrong answer — the
+  # `sed | head -n1 | grep .` form did exactly that under `set -o pipefail`,
+  # returning "9.9.9\n0.0.0" for a many-marker file, which sort -V reads as 0.0.0
+  # and hands a downgrade straight through. Every row above stayed green while
+  # that was live. So EXECUTE both parsers against hostile inputs.
+  local vt; vt="$(mktemp -d -t "marker-parse-XXXXXX")"
+  printf '#!/usr/bin/env bash\n# reviewer-cli-version: 1.2.3\n'    > "$vt/good"
+  printf '#!/usr/bin/env bash\n# reviewer-cli-version: 9.0.0junk\n'> "$vt/malformed"
+  printf '#!/usr/bin/env bash\n# nothing here\n'                   > "$vt/unmarked"
+  { printf '#!/usr/bin/env bash\n'
+    for _i in $(seq 1 20000); do echo "# reviewer-cli-version: 9.9.9"; done; } > "$vt/many"
+
+  # Extract the parser from install.sh and run it in a pipefail shell, exactly as
+  # install.sh does, rather than re-implementing it here (which would test a copy).
+  local parser; parser="$(sed -n '/^reviewer_cli_version() {/,/^}/p' "$REPO_ROOT/install.sh")"
+  local bad=""
+  local case_name expect got
+  for case_name in good:1.2.3 malformed:0.0.0 unmarked:0.0.0 many:9.9.9; do
+    expect="${case_name#*:}"
+    got="$(bash -c "set -uo pipefail
+$parser
+reviewer_cli_version '$vt/${case_name%%:*}'" 2>/dev/null)"
+    [ "$got" = "$expect" ] || bad="$bad ${case_name%%:*}(want $expect, got '${got//$'\n'/\\n}')"
+  done
+  rm -rf "$vt"
+
+  if [ -z "$bad" ]; then
+    echo "  ${GREEN}✓${RESET} the marker parser survives malformed, unmarked, and many-marker files"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} marker parser returns a wrong version:$bad"
+    echo "      A wrong version is a silent downgrade — the arbitration branch runs,"
+    echo "      compares garbage, and installs anyway. Parse with one anchored awk,"
+    echo "      never a pipeline that can SIGPIPE under 'set -o pipefail'."
+    FAIL=$((FAIL+1))
+  fi
+
   # install.sh is not the only writer. Auditing it alone reported green while
   # 0032 clobbered the gate unconditionally; the same blind spot applies here.
   # Any migration or setup path that installs the wrapper must arbitrate too.
@@ -2120,7 +2158,12 @@ test_reviewer_cli_matches_core_canonical() {
   fi
 
   # The producer must not keep a private copy of the arms — that IS the fork.
-  if grep -qE 'bounded (codex|gemini|claude|opencode) ' "$REPO_ROOT/bin/run-plan-review.sh" 2>/dev/null; then
+  # Matches a DIRECT vendor invocation in any form, not just the `bounded X`
+  # wrapper the arms happened to use before: greping only for `bounded codex`
+  # would wave through a re-added bare `codex exec` or `gemini -p`, which is the
+  # same fork with the helper inlined.
+  if grep -qE '(^|[^-[:alnum:]_])(codex exec|gemini -p|claude -p|opencode run)' \
+       "$REPO_ROOT/bin/run-plan-review.sh" 2>/dev/null; then
     echo "  ${RED}✗${RESET} run-plan-review.sh still dispatches vendors itself — a second copy of the arms"
     echo "      Delegate to reviewer-cli.sh. A private copy of a shared artifact is a race,"
     echo "      and it drifts the moment core adds or changes an arm."
