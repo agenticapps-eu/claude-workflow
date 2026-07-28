@@ -2421,6 +2421,240 @@ test_migration_0031() {
 }
 
 
+test_migration_0033() {
+  echo ""
+  echo "${YELLOW}━━━ Migration 0033 — Re-vendor the runtime instruction payload ━━━${RESET}"
+
+  local fixtures="$REPO_ROOT/migrations/test-fixtures/0033"
+  if [ ! -d "$fixtures" ]; then
+    echo "  ${RED}SKIP${RESET}: fixtures directory missing"
+    SKIP=$((SKIP+1))
+    return
+  fi
+
+  local migration_file="$REPO_ROOT/migrations/0033-revendor-openspec-instruction-payload.md"
+  if [ ! -f "$migration_file" ]; then
+    echo "  ${RED}✗${RESET} migration file missing: $migration_file — RED state"
+    FAIL=$((FAIL+1))
+    return
+  fi
+
+  run_0033_fixture() {
+    local fixname="$1"
+    local fixdir="$fixtures/$fixname"
+    local tmp; tmp="$(mktemp -d -t "migration-0033-${fixname}-XXXXXX")"
+    local fake_home="$tmp/home"
+    mkdir -p "$fake_home"
+
+    if [ -x "$fixdir/setup.sh" ]; then
+      (
+        cd "$tmp" && \
+        HOME="$fake_home" REPO_ROOT="$REPO_ROOT" FIXTURES_ROOT="$fixtures" \
+          "$fixdir/setup.sh" >/dev/null 2>&1
+      ) || {
+        echo "  ${RED}✗${RESET} $fixname — setup.sh failed"
+        FAIL=$((FAIL+1))
+        rm -rf "$tmp"
+        return
+      }
+    fi
+
+    local verify_out verify_exit
+    verify_out=$(
+      cd "$tmp" && \
+      HOME="$fake_home" REPO_ROOT="$REPO_ROOT" FIXTURES_ROOT="$fixtures" \
+        "$fixdir/verify.sh" 2>&1
+    )
+    verify_exit=$?
+
+    local expected_exit
+    expected_exit="$(cat "$fixdir/expected-exit" 2>/dev/null || echo 0)"
+
+    if [ "$verify_exit" -ne "$expected_exit" ]; then
+      echo "  ${RED}✗${RESET} $fixname — exit $verify_exit, expected $expected_exit"
+      printf '%s\n' "$verify_out" | sed 's/^/      /'
+      FAIL=$((FAIL+1))
+      rm -rf "$tmp"
+      return
+    fi
+
+    echo "  ${GREEN}✓${RESET} $fixname"
+    PASS=$((PASS+1))
+    rm -rf "$tmp"
+  }
+
+  for fix in "$fixtures"/[0-9]*-*/; do
+    local name
+    name="$(basename "${fix%/}")"
+    run_0033_fixture "$name"
+  done
+
+  # Same apply-parity rule as 0032: the fixtures replay a COPY of the Apply
+  # blocks, so every executable line of common-apply.sh must appear verbatim in
+  # the migration doc or the fixtures are proving something the migration does
+  # not do.
+  local apply_file="$fixtures/common-apply.sh"
+  local drift=0 checked=0 line norm
+  while IFS= read -r line; do
+    norm="$(printf '%s' "$line" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+    case "$norm" in
+      ''|'#'*|'set -uo pipefail'|'fi'|'else'|'done'|'}'|"'"*) continue ;;
+      # Fixture-only scaffolding that legitimately has no migration counterpart.
+      SCAFFOLDER=*) continue ;;
+    esac
+    checked=$((checked+1))
+    if ! grep -qF "$norm" "$migration_file"; then
+      echo "  ${RED}✗${RESET} apply-parity — fixture line absent from the migration doc:"
+      echo "        $norm"
+      drift=1
+    fi
+  done < "$apply_file"
+
+  if [ "$drift" -eq 0 ]; then
+    echo "  ${GREEN}✓${RESET} apply-parity — all $checked fixture lines appear in the migration"
+    PASS=$((PASS+1))
+  else
+    FAIL=$((FAIL+1))
+  fi
+}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Shipped templates teach the CURRENT front end (regression guard for 0033)
+# ─────────────────────────────────────────────────────────────────────────────
+# GSD was retired at 3.0.0 (ADR-0044), but two vendored documents kept teaching
+# it for five migrations — including `.claude/claude-md/workflow.md`, the file
+# CLAUDE.md links to and therefore the one an agent actually reads. Nothing
+# asserted their content, so nothing noticed. This is that assertion.
+#
+# The scan covers templates/ and setup/snapshot/ — everything this repo ships
+# into a consumer. The exclusions below are paths where a `gsd` string is NOT a
+# workflow instruction; each is listed with its reason, and the list is meant to
+# shrink, never grow. Adding a path here is a decision, not a formality.
+
+test_no_gsd_refs_in_shipped_templates() {
+  echo ""
+  echo "${YELLOW}━━━ Shipped templates carry no GSD command references ━━━${RESET}"
+
+  # Paths excluded from the scan, each with the reason it is not a defect.
+  local -a EXCLUDED=(
+    # DEPRECATED source retained ON PURPOSE: migration 0009 detects a legacy
+    # inlined CLAUDE.md paste by matching these exact strings. Rewording it
+    # breaks that detection for every repo still carrying the old paste.
+    "templates/claude-md-sections.md"
+    # Mirror of an external tool's own config dir (~/.config/gsd-patches/).
+    # Not installed by setup or any migration. Retired with GSD; deleting the
+    # mirror is its own change — FOLLOW-UP.
+    "templates/gsd-patches/"
+    # A comment citing the doc path docs/standards/gsd-binding-and-planning.md.
+    # A reference, not an instruction.
+    "templates/gitignore"
+    # Shipped hooks whose stderr advice still names a GSD command. Both are real
+    # staleness, but each rewrite changes generated content or a sentinel path
+    # and carries fixture churn — out of 0033's scope. FOLLOW-UP.
+    "templates/.claude/hooks/database-sentinel.sh"
+    "templates/.claude/hooks/normalize-claude-md.sh"
+    # The snapshot mirrors of the three files above. bin/build-snapshot.sh copies
+    # them byte-for-byte, so excluding the source without its mirror would fail
+    # the scan on a copy the source is already excused for. These three lines
+    # disappear together with the three above them.
+    "setup/snapshot/hooks/database-sentinel.sh"
+    "setup/snapshot/hooks/normalize-claude-md.sh"
+    "setup/snapshot/gitignore"
+  )
+
+  local found=0 hits
+  hits="$(cd "$REPO_ROOT" && grep -rniE '/gsd-|GSD state|gsd-execute-phase' \
+            templates setup/snapshot 2>/dev/null || true)"
+
+  local line path keep
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    path="${line%%:*}"
+    keep=1
+    for ex in "${EXCLUDED[@]}"; do
+      case "$path" in "$ex"*) keep=0; break ;; esac
+    done
+    if [ "$keep" = "1" ]; then
+      if [ "$found" -eq 0 ]; then
+        echo "  ${RED}✗${RESET} shipped template still teaches GSD:"
+      fi
+      echo "        $line"
+      found=1
+    fi
+  done <<< "$hits"
+
+  if [ "$found" -eq 0 ]; then
+    echo "  ${GREEN}✓${RESET} no GSD command reference in templates/ or setup/snapshot/"
+    echo "        (excluded, by reason: ${EXCLUDED[*]})"
+    PASS=$((PASS+1))
+  else
+    echo "        Retarget it onto the OpenSpec lifecycle, or — if the string is"
+    echo "        genuinely not an instruction — add its path to EXCLUDED with a reason."
+    FAIL=$((FAIL+1))
+  fi
+}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# §04 canonical red flags: one block, two copies, byte-identical (0033)
+# ─────────────────────────────────────────────────────────────────────────────
+# §09 item 1 binds the canonical block to the host's instruction file
+# (skill/SKILL.md). The vendored `.claude/claude-md/workflow.md` used to carry a
+# reworded 13-flag variant — disclosed in `## Spec deltas` rather than fixed.
+# 0033 made them byte-identical and deleted the disclosure; this keeps them so.
+
+test_workflow_md_red_flags_match_canonical() {
+  echo ""
+  echo "${YELLOW}━━━ §04 red flags — vendored copy == canonical block ━━━${RESET}"
+
+  local canon_src="$REPO_ROOT/skill/SKILL.md"
+  local vendored="$REPO_ROOT/templates/.claude/claude-md/workflow.md"
+  local snapshot="$REPO_ROOT/setup/snapshot/claude-md-workflow.md"
+
+  _rf_block() {
+    awk '/^## 14 Red Flags — STOP → DELETE → RESTART$/ { f=1; print; next }
+         f && /^## / { exit }
+         f { print }' "$1"
+  }
+
+  local a b c
+  a="$(_rf_block "$canon_src")"
+  b="$(_rf_block "$vendored")"
+  c="$(_rf_block "$snapshot")"
+
+  if [ -z "$a" ]; then
+    echo "  ${RED}✗${RESET} no '## 14 Red Flags — STOP → DELETE → RESTART' block in skill/SKILL.md"
+    FAIL=$((FAIL+1))
+    return
+  fi
+  # Guards the extractor itself: a block that lost its numbered list would still
+  # compare equal against an equally-empty copy.
+  if ! printf '%s\n' "$a" | grep -q '^14\. '; then
+    echo "  ${RED}✗${RESET} canonical block does not run to flag 14 — extractor or source is wrong"
+    FAIL=$((FAIL+1))
+    return
+  fi
+
+  if [ "$a" = "$b" ]; then
+    echo "  ${GREEN}✓${RESET} templates/.claude/claude-md/workflow.md matches the canonical block"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} templates/.claude/claude-md/workflow.md diverges from skill/SKILL.md:"
+    diff <(printf '%s\n' "$a") <(printf '%s\n' "$b") | sed 's/^/        /'
+    FAIL=$((FAIL+1))
+  fi
+
+  if [ "$a" = "$c" ]; then
+    echo "  ${GREEN}✓${RESET} setup/snapshot/claude-md-workflow.md matches the canonical block"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} setup/snapshot/claude-md-workflow.md diverges (rebuild: bash bin/build-snapshot.sh)"
+    FAIL=$((FAIL+1))
+  fi
+}
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Phase Sentinel hook (GH #58 / D-07) — deterministic Stop gate exit-code cases
 # WORKFLOW — inline test (no fixture dir): runs the template hook under a temp
@@ -3023,6 +3257,18 @@ fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "0032" ]; then
   test_migration_0032
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "0033" ]; then
+  test_migration_0033
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "0033" ] || [ "$FILTER" = "no-gsd-refs" ]; then
+  test_no_gsd_refs_in_shipped_templates
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "0033" ] || [ "$FILTER" = "red-flags" ]; then
+  test_workflow_md_red_flags_match_canonical
 fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "0032" ] || [ "$FILTER" = "review-producer" ]; then

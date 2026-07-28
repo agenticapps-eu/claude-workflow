@@ -191,10 +191,14 @@ For each step (parsed from `### Step N:` headings):
    as a unified diff against the current file. For JSON modifications,
    format as `jq` output before/after. For file creation, show the file's
    intended content. **For vendored-file replacement** (e.g. migration
-   0009 Step 1 / Step 2 re-syncing `.claude/claude-md/workflow.md`),
-   detect divergence by byte-comparing the existing project copy against
-   the canonical source in the workflow scaffolder. If they differ, treat
-   this as a divergence event (see "Divergence detection" below).
+   0009 Step 1 / Step 2 re-syncing `.claude/claude-md/workflow.md`, or
+   migration 0033 Steps 1–3 re-vendoring that file, the hooks section of
+   `.claude/workflow-config.md`, and the trigger skill), detect divergence
+   by byte-comparing the existing project copy against the canonical source
+   in the workflow scaffolder. If they differ, treat this as a divergence
+   event (see "Divergence detection" below). For a step that replaces only
+   a *section*, compare that section, not the whole file — the rest of the
+   file is the project's and is never at stake.
 
 4. If `--dry-run`: log `step {N}: would apply (dry-run, no write)`. Continue.
 

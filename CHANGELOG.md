@@ -4,105 +4,82 @@ All notable changes to the AgenticApps Claude Workflow scaffolder are
 documented here. The format follows [Keep a Changelog](https://keepachangelog.com/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
-## [3.0.0] — 2026-07-24
+## [3.1.0] — 2026-07-28
 
-The planning front end becomes **OpenSpec**. Superpowers remains the execution
-discipline, unchanged. Implements core spec §16–§19; see
-[ADR-0044](docs/decisions/0044-openspec-superpowers-adoption.md) and
-[`docs/WORKFLOW.md`](docs/WORKFLOW.md).
+The runtime instruction payload catches up with the 3.0.0 front end. Migration
+`0032` retargeted the trigger skill onto the OpenSpec lifecycle but left the two
+vendored documents an agent actually reads still teaching GSD; `0033` re-vendors
+them. See [ADR-0045](docs/decisions/0045-revendor-openspec-instruction-payload.md).
 
-**Upgrade:** `/update-agenticapps-workflow` applies migration `0032`
-(2.9.0 → 3.0.0). Requires the `openspec` CLI
-(`npm i -g @fission-ai/openspec`) and **≥2 other-vendor reviewer CLIs** —
-without the latter, the first change cannot clear stage 2. `.planning/` is
-preserved, never deleted.
+**Upgrade:** `/update-agenticapps-workflow` applies migration `0033`
+(3.0.0 → 3.1.0). No new dependency, no enforcement surface moves. All three
+steps are vendored-file replacements, so a hand-edited local copy gets the
+3-way Replace / Keep / Vendor-local prompt rather than being clobbered.
 
-### Added
-- **The §18 change-gate**, vendored from core's reference implementation
-  (`reference-implementations/openspec-change-gate/`, `# gate-version: 1.2.0`,
-  core#33 / ADR-0022) — **not** a host-local copy. One host-agnostic script
-  (`bin/openspec-change-gate.sh`) with three modes — `PreToolUse` hook,
-  `--pre-commit`, `--ci`. Under an active change it blocks code edits unless
-  `openspec validate --all` is green **and** `REVIEWS.md` carries >= 2
-  *independent* reviewers. Exempts `openspec/**` writes (anchored to the repo
-  root, so `src/openspec/` is not exempt), fails open on malformed stdin (parse
-  error only, never policy), knows every host's payload shape, excludes this
-  host's own reviews via `OPENSPEC_GATE_SELF=claude`, and documents
-  `GSD_SKIP_REVIEWS=1` as the logged override. The git pre-commit + CI floor is
-  the actual guarantee — a `PreToolUse` hook only sees one agent and cannot gate
-  its own installing session.
-- **`tools/change-gate-conformance.sh`** — core's executable conformance
-  harness, vendored alongside the gate and run in CI before the gate's own
-  verdict is trusted. This copy scores **28/28**. A drifted gate can pass every
-  repo it guards while enforcing nothing, so the gate is scored, not assumed;
-  `migrations/run-tests.sh` additionally asserts both files stay byte-identical
-  to core's, because a stale harness certifies a stale gate.
-- **`bin/run-plan-review.sh`** — the multi-AI review producer. Feeds every
-  reviewer `</dev/null` behind a timeout (a bare `codex exec` hangs otherwise),
-  resolves `timeout`/`gtimeout` because macOS ships neither, defaults
-  `AGENT_SELF=claude` so the reviewers are always other-vendor, and publishes
-  only on success so a partial re-run cannot destroy earlier review evidence.
-- **`docs/WORKFLOW.md`** — the lifecycle explainer, including the gate's truth
-  table and the full 0.x -> 1.0.0 gate mapping.
-- **`install.sh --dry-run`** (and `--skip-upstream`); installs the gate and runs
-  `openspec init --tools claude --profile core`.
-- **Migration `0032`** with 5 fixtures and an apply-parity guard that fails the
-  build if the fixtures drift from the migration's own Apply blocks.
-
-### Changed
-- **BREAKING — the gate set is collapsed onto the §17 lifecycle.**
-  `.planning/config.json` moves from the GSD-shaped `hooks` tree to a
-  `lifecycle` block (propose/validate/execute/archive/ship). `spec-review`
-  collapses into `openspec validate`; `plan-review` collapses into stage 2 with
-  its multi-AI review **kept and retargeted** at the active change;
-  `code-review`, `tdd`, `verification`, `security` stay always-on;
-  `database-sentinel`, `qa`, `ui-preview`, the design gates and `impeccable`
-  become conditional; `ts-declare-first` is demoted to a CI lint.
-  `impeccable` and the Go skills remain behind the ADR-0021 measured trial.
-- **BREAKING — the `PreToolUse` binding is retargeted.** `multi-ai-review-gate.sh`
-  is replaced by `openspec-change-gate.sh`, a thin shim onto the one global
-  script. Same hook slot, new predicate.
-- The trigger skill, `CLAUDE.md`, `setup/SKILL.md` and `update/SKILL.md` now
-  describe the OpenSpec lifecycle. Canonical spec prose (§01 ritual, §03 table,
-  §04's 13 red flags, §11 block, §15's trigger names) is carried forward
-  verbatim; only host-added rows were retargeted.
-
-### Removed
-- **BREAKING — GitNexus.** The reindex hook, its install/rollback/index scripts,
-  the settings binding, and the `.gitnexus/` data dir. It rewrote
-  `AGENTS.md`/`CLAUDE.md` as a side effect of indexing, which is what migrations
-  0026/0029/0030/0031/0043 were spent defending against.
-  Migrations 0007/0026/0031, ADRs 0020/0039/0041/0043 and every fixture are
-  **retained as history** (§08) — they are the replay path from a pre-3.0.0
-  version. `setup/SKILL.md` keeps the §11 anchor alternation on purpose: a
-  consumer installed before 3.0.0 may still carry a region.
-- **BREAKING — the PLAN.md-era plan-review gate** (`multi-ai-review-gate.sh`).
-  §17 forbids a standalone plan-review gate under 1.0.0. Migrations 0005/0016
-  are retained as history.
+**This release also ships the items previously recorded as unreleased** — the
+`0028`/`0029` in-place corrections, this repo's own §11 conformance work, and
+the `reviewer-cli` adoption that completed `0032`'s Step 1 payload. None of them
+moved a `to_version` on their own; `0033` supplies the bump they ship under.
 
 ### Fixed
-- Migration `0032` Step 3's `jq` filtered the old hook binding but appended the
-  new one unconditionally, so a re-apply added a second gate binding and the
-  hook fired twice per edit. Caught by fixture `02-idempotent-reapply` before
-  release; the filter now names both.
-- `install.sh` doubled the git hooks path when `git rev-parse --git-path`
-  answered absolutely.
-- Migration `0001`'s Steps 4-6 and `0027`'s section matchers are now
-  address/version tolerant, so the chain still replays against a 1.0.0-shaped
-  tree. `0027` in particular sources its section from the live scaffolder, so a
-  pinned version there would have broken replay on every future spec bump.
-
-## [Unreleased]
-
-
-**No version bump.** No change here touches a migration's `to_version`: 0028 and
-0029 are corrected in place (0028 is applied in zero downstream repos; 0029's
-guard only makes it refuse shapes it should never have stripped), the §11 work is
-this repo's own conformance rather than a change to what it scaffolds, and the
-`reviewer-cli` adoption below completes `0032`'s Step 1 payload in place — 3.0.0
-has not reached a consumer yet, so there is no version to bump *past*.
+- **Two vendored documents still taught GSD, five migrations after GSD was
+  retired.** `templates/.claude/claude-md/workflow.md` carried 12 GSD references
+  and 0 OpenSpec ones — "Check GSD state", pre-phase hooks "before
+  `/gsd-execute-phase`", a pointer at `.planning/config.json` → `hooks` (a tree
+  `0032` Step 5 deleted), and a whole `## GSD Workflow Enforcement` section
+  ending "Do not make direct repo edits outside a GSD workflow". That file is
+  what every scaffolded `CLAUDE.md` links to, so **it is what an agent reads at
+  runtime**: a project could apply `0032`, pass all fifteen of its post-checks,
+  stamp `version: 3.0.0` / `implements_spec: 1.0.0`, and still be instructed to
+  route work through a command that no longer exists — while the §18 gate blocks
+  the edits that document told it to make. `templates/workflow-config.md` (and
+  its snapshot mirror) had the same defect at smaller scale. Both are retargeted
+  onto the propose → validate → execute → archive lifecycle; the
+  `## GSD Workflow Enforcement` section is deleted rather than reworded, since
+  `/opsx:propose` plus the gate replace it. Measured blast radius: 11 repos.
+- **The §04 divergence is reconciled instead of disclosed again.** The vendored
+  `workflow.md` carried its own 13-flag red-flag list under a reworded heading,
+  with flags 1, 6, 12 and 13 differing from canonical. `skill/SKILL.md`'s
+  `## Spec deltas` section had disclosed this since 0.9.0 with "needs its own
+  migration; tracked separately". The template now carries the canonical block
+  byte-for-byte, so §09 item 1 holds by construction in both copies, and the
+  disclosure bullet is **deleted** rather than carried forward — a reduction in
+  declared deltas, not a change of claim (`implements_spec` stays `1.0.0`).
 
 ### Added
+- **Migration `0033`** (3.0.0 → 3.1.0) with 4 fixtures and the same
+  apply-parity guard `0032` uses. Steps 1 and 3 byte-copy `workflow.md` and the
+  trigger skill from the scaffolder snapshot — the `0031` Step 1 / `0032` Step 6
+  idiom, with `cmp -s` as the idempotency check. **Step 2 deliberately does not
+  byte-copy**: setup substitutes `{{PROJECT_NAME}}`, `{{REPO}}`, `{{CLIENT}}`,
+  `{{BUDGET}}` and the tech-stack placeholders in `workflow-config.md` with the
+  project's real values, so a wholesale copy would restore every placeholder and
+  destroy the project's configuration. It replaces exactly
+  `## Superpowers Integration Hooks` and resumes at the next `## ` heading, so a
+  project-owned section below it survives verbatim (fixture
+  `04-project-section-survives`). Both file-touching steps no-op when the target
+  is absent — `agenticapps-dashboard` has already removed its `workflow.md`, and
+  installing a first copy is `0000`/`0009`'s job. A pre-flight clause aborts when
+  the scaffolder clone itself still teaches GSD, so re-vendoring can never copy
+  the same bytes back over themselves and report success.
+- **`test_no_gsd_refs_in_shipped_templates`** — the regression guard this defect
+  existed for. `grep -riE '/gsd-|GSD state|gsd-execute-phase'` over `templates/`
+  and `setup/snapshot/` must come back empty, with an explicit exclusion list
+  where a `gsd` string is not an instruction (the deprecated
+  `claude-md-sections.md` that `0009` greps for legacy-paste detection, the
+  `gsd-patches/` mirror of an external tool's config dir, a `.gitignore` comment
+  citing a doc path, and two shipped hooks whose stderr advice is stale —
+  recorded as follow-ups, not silence). Each excluded path carries its reason;
+  the list is meant to shrink.
+- **`test_workflow_md_red_flags_match_canonical`** — pins the §04 block in
+  `skill/SKILL.md`, the template and the snapshot to byte-identity. Reconciling
+  two copies without pinning them is how they drift apart again.
+- **ADR-0045** — the reconciliation rationale, including why `workflow.md` is
+  re-vendored rather than deleted (`normalize-claude-md.sh` keys off its
+  existence to collapse a `<!-- GSD:workflow -->` marker block; removing it is
+  its own migration with the hook change alongside).
+
+### Added (previously unreleased)
 - **`bin/reviewer-cli.sh`** — core's review-producer wrapper, vendored at
   `# reviewer-cli-version: 1.0.0` from
   `reference-implementations/reviewer-cli/` (core#42), **not** a host-local copy.
@@ -124,7 +101,7 @@ has not reached a consumer yet, so there is no version to bump *past*.
   arbitrates, and that the producer keeps no second copy of the vendor arms —
   each row mutation-checked.
 
-### Changed
+### Changed (previously unreleased)
 - **`bin/run-plan-review.sh` delegates vendor dispatch to `reviewer-cli.sh`**
   instead of carrying its own four arms. A private copy of a file that lives at
   a shared path is not a fork, it is a race — and it drifts the moment core adds
@@ -136,7 +113,7 @@ has not reached a consumer yet, so there is no version to bump *past*.
   than run without the hardening. A non-zero wrapper exit is now checked
   explicitly and never counted toward the ≥2 threshold.
 
-### Fixed
+### Fixed (previously unreleased)
 - **Migration 0029's §11 strip deleted operator prose and lawful host bullets.**
   0029 re-anchors the spec §11 block by stripping everything from its provenance
   line to the next `## ` / `<!-- gitnexus:start -->` terminator, then re-inserting
@@ -245,6 +222,94 @@ has not reached a consumer yet, so there is no version to bump *past*.
   GitNexus region, producing a diff in a tracked file. That is the price of
   having a project-instruction file at all.
 
+
+## [3.0.0] — 2026-07-24
+
+The planning front end becomes **OpenSpec**. Superpowers remains the execution
+discipline, unchanged. Implements core spec §16–§19; see
+[ADR-0044](docs/decisions/0044-openspec-superpowers-adoption.md) and
+[`docs/WORKFLOW.md`](docs/WORKFLOW.md).
+
+**Upgrade:** `/update-agenticapps-workflow` applies migration `0032`
+(2.9.0 → 3.0.0). Requires the `openspec` CLI
+(`npm i -g @fission-ai/openspec`) and **≥2 other-vendor reviewer CLIs** —
+without the latter, the first change cannot clear stage 2. `.planning/` is
+preserved, never deleted.
+
+### Added
+- **The §18 change-gate**, vendored from core's reference implementation
+  (`reference-implementations/openspec-change-gate/`, `# gate-version: 1.2.0`,
+  core#33 / ADR-0022) — **not** a host-local copy. One host-agnostic script
+  (`bin/openspec-change-gate.sh`) with three modes — `PreToolUse` hook,
+  `--pre-commit`, `--ci`. Under an active change it blocks code edits unless
+  `openspec validate --all` is green **and** `REVIEWS.md` carries >= 2
+  *independent* reviewers. Exempts `openspec/**` writes (anchored to the repo
+  root, so `src/openspec/` is not exempt), fails open on malformed stdin (parse
+  error only, never policy), knows every host's payload shape, excludes this
+  host's own reviews via `OPENSPEC_GATE_SELF=claude`, and documents
+  `GSD_SKIP_REVIEWS=1` as the logged override. The git pre-commit + CI floor is
+  the actual guarantee — a `PreToolUse` hook only sees one agent and cannot gate
+  its own installing session.
+- **`tools/change-gate-conformance.sh`** — core's executable conformance
+  harness, vendored alongside the gate and run in CI before the gate's own
+  verdict is trusted. This copy scores **28/28**. A drifted gate can pass every
+  repo it guards while enforcing nothing, so the gate is scored, not assumed;
+  `migrations/run-tests.sh` additionally asserts both files stay byte-identical
+  to core's, because a stale harness certifies a stale gate.
+- **`bin/run-plan-review.sh`** — the multi-AI review producer. Feeds every
+  reviewer `</dev/null` behind a timeout (a bare `codex exec` hangs otherwise),
+  resolves `timeout`/`gtimeout` because macOS ships neither, defaults
+  `AGENT_SELF=claude` so the reviewers are always other-vendor, and publishes
+  only on success so a partial re-run cannot destroy earlier review evidence.
+- **`docs/WORKFLOW.md`** — the lifecycle explainer, including the gate's truth
+  table and the full 0.x -> 1.0.0 gate mapping.
+- **`install.sh --dry-run`** (and `--skip-upstream`); installs the gate and runs
+  `openspec init --tools claude --profile core`.
+- **Migration `0032`** with 5 fixtures and an apply-parity guard that fails the
+  build if the fixtures drift from the migration's own Apply blocks.
+
+### Changed
+- **BREAKING — the gate set is collapsed onto the §17 lifecycle.**
+  `.planning/config.json` moves from the GSD-shaped `hooks` tree to a
+  `lifecycle` block (propose/validate/execute/archive/ship). `spec-review`
+  collapses into `openspec validate`; `plan-review` collapses into stage 2 with
+  its multi-AI review **kept and retargeted** at the active change;
+  `code-review`, `tdd`, `verification`, `security` stay always-on;
+  `database-sentinel`, `qa`, `ui-preview`, the design gates and `impeccable`
+  become conditional; `ts-declare-first` is demoted to a CI lint.
+  `impeccable` and the Go skills remain behind the ADR-0021 measured trial.
+- **BREAKING — the `PreToolUse` binding is retargeted.** `multi-ai-review-gate.sh`
+  is replaced by `openspec-change-gate.sh`, a thin shim onto the one global
+  script. Same hook slot, new predicate.
+- The trigger skill, `CLAUDE.md`, `setup/SKILL.md` and `update/SKILL.md` now
+  describe the OpenSpec lifecycle. Canonical spec prose (§01 ritual, §03 table,
+  §04's 13 red flags, §11 block, §15's trigger names) is carried forward
+  verbatim; only host-added rows were retargeted.
+
+### Removed
+- **BREAKING — GitNexus.** The reindex hook, its install/rollback/index scripts,
+  the settings binding, and the `.gitnexus/` data dir. It rewrote
+  `AGENTS.md`/`CLAUDE.md` as a side effect of indexing, which is what migrations
+  0026/0029/0030/0031/0043 were spent defending against.
+  Migrations 0007/0026/0031, ADRs 0020/0039/0041/0043 and every fixture are
+  **retained as history** (§08) — they are the replay path from a pre-3.0.0
+  version. `setup/SKILL.md` keeps the §11 anchor alternation on purpose: a
+  consumer installed before 3.0.0 may still carry a region.
+- **BREAKING — the PLAN.md-era plan-review gate** (`multi-ai-review-gate.sh`).
+  §17 forbids a standalone plan-review gate under 1.0.0. Migrations 0005/0016
+  are retained as history.
+
+### Fixed
+- Migration `0032` Step 3's `jq` filtered the old hook binding but appended the
+  new one unconditionally, so a re-apply added a second gate binding and the
+  hook fired twice per edit. Caught by fixture `02-idempotent-reapply` before
+  release; the filter now names both.
+- `install.sh` doubled the git hooks path when `git rev-parse --git-path`
+  answered absolutely.
+- Migration `0001`'s Steps 4-6 and `0027`'s section matchers are now
+  address/version tolerant, so the chain still replays against a 1.0.0-shaped
+  tree. `0027` in particular sources its section from the live scaffolder, so a
+  pinned version there would have broken replay on every future spec bump.
 
 ## [2.9.0] — 2026-07-16 — Reindex must not rewrite AGENTS.md / CLAUDE.md
 
