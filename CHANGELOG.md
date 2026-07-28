@@ -4,6 +4,72 @@ All notable changes to the AgenticApps Claude Workflow scaffolder are
 documented here. The format follows [Keep a Changelog](https://keepachangelog.com/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [3.2.0] — 2026-07-28
+
+`0033` stopped the vendored workflow reference teaching a retired front end.
+`0034` stops it being a **second copy** of the trigger skill at all. See
+[ADR-0046](docs/decisions/0046-workflow-md-as-companion.md).
+
+**Upgrade:** `/update-agenticapps-workflow` applies migration `0034`
+(3.1.0 → 3.2.0). No dependency, no enforcement surface moves — one vendored
+document shrinks from ~190 lines to ~85.
+
+### Changed
+- **`.claude/claude-md/workflow.md` is now a companion, not a duplicate.** It
+  states the three disciplines, the six lifecycle stages, what the §18 gate
+  enforces and where the gstack tooling fits — then defers. The commitment
+  ritual template, the rationalization table and the red flags live in
+  `SKILL.md` and are no longer restated, under an explicit in-file contract
+  (*"it orients, then defers … never duplicates the SKILL's lifecycle rules,
+  gate map, rationalization table, or red flags — spec §11: one source, no
+  drift"*).
+
+  The duplication was not untidiness. It is *why* the §04 divergence `0033`
+  fixed went unnoticed for five migrations: a second copy can drift silently.
+  The guard `0033` added to stop that — `test_workflow_md_red_flags_match_canonical`
+  — was a pin holding two copies in sync, which is an argument for having one.
+  And it pinned the §04 block *only*: the lifecycle table, gate map and
+  rationalization table were duplicated in both files and pinned in neither.
+
+  **The shape came from downstream.** `agents-task-viewer` had already replaced
+  its vendored copy, by hand, with exactly this companion. The `0033` rollout
+  overwrote it with the duplicate; that is what surfaced the question, and the
+  answer was that the consumer had it right.
+- **The sync pin is inverted, not deleted** —
+  `test_workflow_md_defers_to_the_skill` asserts that `SKILL.md` still carries
+  the canonical §04 block **and** the rationalization table, that the template
+  and snapshot carry **neither**, and that both carry the Authoritative-source
+  sentinel. A revert that reintroduces the duplicate fails the suite instead of
+  silently reopening the drift window. Same assert-the-absence treatment
+  `check-snapshot-parity.sh` §10 gave GitNexus. Filter token `red-flags` is
+  kept as an alias.
+- **`0000` and `0009` gained shape tolerance.** Both anchored on the
+  `Superpowers Integration Hooks (MANDATORY` heading as their "vendored content
+  is sane / current" sentinel; the companion has no hooks section. Both now
+  accept that heading **or** `^> \*\*Authoritative source:`. Both alternatives
+  are kept, not swapped — a chain replaying from an old install passes through
+  the pre-3.2.0 shape on the way here.
+
+### Fixed
+- **`0033`'s post-checks were pinned to their own payload and expired the
+  moment `0034` landed.** One asserted the vendored red-flag block was
+  byte-identical to canonical (it is now absent, which is *more* correct); the
+  other asserted `version: 3.1.0` as a literal, even though Step 3 copies
+  whatever the scaffolder currently ships — so it would have turned false on
+  every future bump, not just this one. Both now assert the guarantee rather
+  than the payload of the day: *"no red-flag block that differs from canonical"*
+  and *"the trigger skill is the scaffolder's copy, at 3.1.0 or later"*. Same
+  correction applied to `0033`'s fixtures. A post-check that pins the current
+  payload expires; one that states the invariant does not.
+
+### Added
+- **Migration `0034`** (3.1.0 → 3.2.0) with 3 fixtures and the apply-parity
+  guard. Step 1 byte-copies the companion (no-op when the project has no
+  `workflow.md` — `agenticapps-dashboard` removed its deliberately); Step 2
+  carries the version stamp. A pre-flight clause aborts against a scaffolder
+  clone that still ships the duplicate.
+- **ADR-0046.**
+
 ## [3.1.0] — 2026-07-28
 
 The runtime instruction payload catches up with the 3.0.0 front end. Migration

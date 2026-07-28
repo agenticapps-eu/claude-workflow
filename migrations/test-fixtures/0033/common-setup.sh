@@ -17,6 +17,11 @@ set -euo pipefail
 : "${WITH_WORKFLOW_MD:=1}"
 : "${WITH_CONFIG_MD:=1}"
 : "${WITH_TRAILING_SECTION:=0}"
+# 05: point SCAFFOLDER at a doctored snapshot whose workflow-config.md has LOST
+# the `## Superpowers Integration Hooks` heading, so the canonical section
+# extracts empty. Step 2 must REFUSE rather than splice nothing over the
+# consumer's section (which would delete it, heading and all).
+: "${BROKEN_CANON:=0}"
 
 git init -q .
 git config user.email t@t.t
@@ -27,7 +32,18 @@ mkdir -p .claude/claude-md .claude/skills/agentic-apps-workflow .planning
 # --- the scaffolder clone the migration reads from -------------------------
 # 0033 resolves it at ~/.claude/skills/agenticapps-workflow; HOME is faked.
 mkdir -p "$HOME/.claude/skills"
-ln -sfn "$REPO_ROOT" "$HOME/.claude/skills/agenticapps-workflow"
+if [ "$BROKEN_CANON" = "1" ]; then
+  # A real directory, not the symlink: only the three files Step 1-3 read, with
+  # workflow-config.md's canonical heading removed.
+  _fake="$HOME/.claude/skills/agenticapps-workflow"
+  mkdir -p "$_fake/setup/snapshot"
+  cp "$REPO_ROOT/setup/snapshot/claude-md-workflow.md"          "$_fake/setup/snapshot/"
+  cp "$REPO_ROOT/setup/snapshot/agentic-apps-workflow-SKILL.md" "$_fake/setup/snapshot/"
+  sed 's/^## Superpowers Integration Hooks$/## Renamed Upstream/' \
+    "$REPO_ROOT/setup/snapshot/workflow-config.md" > "$_fake/setup/snapshot/workflow-config.md"
+else
+  ln -sfn "$REPO_ROOT" "$HOME/.claude/skills/agenticapps-workflow"
+fi
 
 # --- the installed workflow skill at the 3.0.0 floor ------------------------
 cat > .claude/skills/agentic-apps-workflow/SKILL.md <<'EOF_SKILL'

@@ -22,7 +22,8 @@ cmp -s "$SCAFFOLDER/setup/snapshot/claude-md-workflow.md" .claude/claude-md/work
   || fail "step 1 idempotency check negative after apply"
 cmp -s <(_sect "$SCAFFOLDER/setup/snapshot/workflow-config.md") <(_sect .claude/workflow-config.md) \
   || fail "step 2 idempotency check negative after apply"
-grep -q '^version: 3.1.0$' .claude/skills/agentic-apps-workflow/SKILL.md \
+cmp -s "$SCAFFOLDER/setup/snapshot/agentic-apps-workflow-SKILL.md" \
+       .claude/skills/agentic-apps-workflow/SKILL.md \
   || fail "step 3 idempotency check negative after apply"
 
 . "$FIXTURES_ROOT/common-apply.sh"

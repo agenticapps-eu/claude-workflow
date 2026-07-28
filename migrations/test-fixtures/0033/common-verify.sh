@@ -51,13 +51,23 @@ if [ -f .claude/claude-md/workflow.md ]; then
   _rf .claude/skills/agentic-apps-workflow/SKILL.md > "$_x"
   _rf .claude/claude-md/workflow.md > "$_y"
   [ -s "$_x" ] || fail "post-check 5: no canonical red-flag block in the installed SKILL.md"
-  cmp -s "$_x" "$_y" || fail "post-check 5: red-flag block diverges from the canonical"
+  # Absent is as correct as identical: 0034's companion removed the duplicate
+  # instead of keeping two copies pinned. Only present-and-different is a defect.
+  if [ -s "$_y" ]; then
+    cmp -s "$_x" "$_y" || fail "post-check 5: red-flag block diverges from the canonical"
+  fi
   rm -f "$_x" "$_y"
 fi
 
 # 6. Version bumped; spec claim unchanged.
-grep -q '^version: 3.1.0$' .claude/skills/agentic-apps-workflow/SKILL.md \
-  || fail "post-check 6: SKILL.md is not at version 3.1.0"
+cmp -s "$SCAFFOLDER/setup/snapshot/agentic-apps-workflow-SKILL.md" \
+       .claude/skills/agentic-apps-workflow/SKILL.md \
+  || fail "post-check 6: SKILL.md is not the scaffolder's copy"
+_v="$(awk '/^version:/{print $2; exit}' .claude/skills/agentic-apps-workflow/SKILL.md)"
+printf '%s\n' "$_v" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' \
+  || fail "post-check 6: version '$_v' is not a bare X.Y.Z"
+[ "$(printf '3.1.0\n%s\n' "$_v" | sort -V | head -n1)" = "3.1.0" ] \
+  || fail "post-check 6: SKILL.md is at $_v, below the 3.1.0 floor this migration sets"
 grep -q '^implements_spec: 1.0.0$' .claude/skills/agentic-apps-workflow/SKILL.md \
   || fail "post-check 6: implements_spec moved off 1.0.0"
 

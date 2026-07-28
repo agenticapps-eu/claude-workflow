@@ -68,7 +68,7 @@ cp ~/.claude/skills/agenticapps-workflow/templates/.claude/claude-md/workflow.md
 
 ### Step 2: Verify vendored content is current (divergence detection)
 
-**Idempotency check:** `grep -qE "^#{2,4} Superpowers Integration Hooks \(MANDATORY" .claude/claude-md/workflow.md`
+**Idempotency check:** `grep -qE "^#{2,4} Superpowers Integration Hooks \(MANDATORY|^> \*\*Authoritative source:" .claude/claude-md/workflow.md`
 **Pre-condition:** Step 1 succeeded — file exists
 **Apply:** No-op when the idempotency check passes (the marker is the
 canonical content sentinel — its presence proves the vendored file
@@ -92,6 +92,14 @@ canonical (`## Superpowers...`, H2) and the legacy inlined shape
 (`### Superpowers...`, H3, as emitted by the deprecated
 `templates/claude-md-sections.md` source) so this Step 2 check correctly
 treats either as "vendored content current".
+
+A **third** shape exists from 3.2.0 (migration `0034`): the vendored file
+became a short *companion* that defers to the trigger SKILL and no longer
+carries a hooks section at all, so the `Superpowers Integration Hooks`
+heading is gone from it. The `^> \*\*Authoritative source:` alternative
+above is that shape's sentinel. Both alternatives are kept rather than
+swapped, because 0009 must still recognise a pre-3.2.0 copy as vendored
+when the chain replays from an old install.
 
 **Rollback:** the migration runtime commits **once per migration**
 (see `update/SKILL.md` Step 5 #6), not once per step. While 0009 is

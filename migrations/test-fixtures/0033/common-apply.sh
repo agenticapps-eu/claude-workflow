@@ -28,13 +28,34 @@ if [ -f .claude/workflow-config.md ]; then
   }
   _canon="$(mktemp)"; _out="$(mktemp)"
   _sect "$SCAFFOLDER/setup/snapshot/workflow-config.md" > "$_canon"
+  # REFUSE on an empty canonical section. Without this guard the splice below
+  # deletes the consumer's hooks section and puts NOTHING back — the heading
+  # goes with it, so a re-run cannot even find the section and the project is
+  # left unpatchable. Reachable whenever the scaffolder's copy loses or renames
+  # that heading. Reproduced, not theorised.
+  if [ ! -s "$_canon" ]; then
+    echo "ABORT: the canonical '## Superpowers Integration Hooks' section is empty in"
+    echo "       $SCAFFOLDER/setup/snapshot/workflow-config.md — refusing to splice."
+    echo "       cd $SCAFFOLDER && git pull --ff-only origin main"
+    rm -f "$_canon" "$_out"
+    exit 3
+  fi
   # Splice: on the heading line emit the canonical section (which starts with
   # that same heading), drop the old section body, resume at the next `## `.
-  awk -v h="## Superpowers Integration Hooks" -v canon="$_canon" '
+  # The write is checked: `awk ... > "$_out" && mv ...` followed by `rm` returns
+  # the RM's status, so a failed splice or a failed mv reported success.
+  if awk -v h="## Superpowers Integration Hooks" -v canon="$_canon" '
     $0 == h { inb=1; while ((getline line < canon) > 0) print line; close(canon); next }
     inb && /^## / { inb=0 }
     inb { next }
-    { print }' .claude/workflow-config.md > "$_out" && mv "$_out" .claude/workflow-config.md
+    { print }' .claude/workflow-config.md > "$_out" && [ -s "$_out" ]; then
+    mv "$_out" .claude/workflow-config.md || {
+      echo "ABORT: could not replace .claude/workflow-config.md; it is unchanged."
+      rm -f "$_canon" "$_out"; exit 3; }
+  else
+    echo "ABORT: the splice produced no output; .claude/workflow-config.md is unchanged."
+    rm -f "$_canon" "$_out"; exit 3
+  fi
   rm -f "$_canon"
 else
   echo "SKIP: no .claude/workflow-config.md here — nothing to re-vendor."
