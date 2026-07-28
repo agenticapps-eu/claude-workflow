@@ -19,10 +19,13 @@ Three things made the duplication indefensible rather than merely untidy:
    divergence sat undetected for five migrations precisely because the second
    copy could drift silently. `skill/SKILL.md` disclosed it in `## Spec deltas`
    and nobody re-read that file.
-2. **The guard `0033` added is a pin holding two copies in sync.**
+2. **The guard `0033` added is a pin holding one block in sync — and only one.**
    `test_workflow_md_red_flags_match_canonical` was the right response to a
    divergence and the wrong response to its cause. A check that exists to keep
-   two copies identical is an argument for having one copy.
+   two copies identical is an argument for having one copy. Worse, it covers the
+   §04 red-flag block *only*: the lifecycle table, the gate-to-skill map and the
+   rationalization table were duplicated in both files and pinned in neither, so
+   they could drift exactly as §04 did with nothing to notice.
 3. **A downstream repo had already solved it.** `agents-task-viewer` replaced
    its vendored copy, by hand, with a 67-line companion that orients and then
    defers, under an explicit rule: it *"never duplicates the SKILL's lifecycle

@@ -28,6 +28,8 @@ document shrinks from ~190 lines to ~85.
   fixed went unnoticed for five migrations: a second copy can drift silently.
   The guard `0033` added to stop that — `test_workflow_md_red_flags_match_canonical`
   — was a pin holding two copies in sync, which is an argument for having one.
+  And it pinned the §04 block *only*: the lifecycle table, gate map and
+  rationalization table were duplicated in both files and pinned in neither.
 
   **The shape came from downstream.** `agents-task-viewer` had already replaced
   its vendored copy, by hand, with exactly this companion. The `0033` rollout
