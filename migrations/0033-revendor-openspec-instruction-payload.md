@@ -380,31 +380,57 @@ test -d .planning
 
 ## Downstream
 
-Measured, not estimated — eleven repos carry a vendored copy today:
+Re-measured on the merged 3.1.0 tree. Eleven repos carry a vendored copy, but
+only **seven are at 3.0.0** and can apply this migration at all — the other four
+sit at 2.1.0, where `0033` skips silently on `from_version` and the chain must
+replay through `0032` first.
 
-| Repo | `claude-md/workflow.md` | `workflow-config.md` |
-|---|---|---|
-| `agenticapps-roadmap` | yes | yes |
-| `agents-task-viewer` | yes | yes |
-| `workflow-testbed` | yes | yes |
-| `bench-claude` | yes | yes |
-| `bench-claude-2` | yes | yes |
-| `workflow-testbed-claude` | yes | yes |
-| `factiv/callbot` | yes | yes |
-| `factiv/cparx` | yes | yes |
-| `factiv/fbc-platform` | yes | yes |
-| `factiv/fx-signal-agent` | yes | yes |
-| `agenticapps-dashboard` | **no** (removed) | yes |
+| Repo | ver | `workflow.md` | GSD lines in it | `workflow-config.md` | vs pre-0033 canonical |
+|---|---|---|---|---|---|
+| `agenticapps-roadmap` | 3.0.0 | yes | 6 | yes (1) | divergent — 6 lines, all staleness |
+| `factiv/callbot` | 3.0.0 | yes | 6 | yes (1) | divergent — 45 lines, all staleness |
+| `factiv/cparx` | 3.0.0 | yes | 6 | yes (1) | divergent — 11 lines, all staleness |
+| `factiv/fbc-platform` | 3.0.0 | yes | 6 | yes (1) | divergent — 6 lines, all staleness |
+| `factiv/fx-signal-agent` | 3.0.0 | yes | 6 | yes (1) | divergent — 11 lines, all staleness |
+| `agenticapps-dashboard` | 3.0.0 | **no** (removed) | — | yes (1) | Step 2 only |
+| `agents-task-viewer` | 3.0.0 | yes, **hand-authored** | **0** | yes | divergent — 223 lines, a real rewrite |
+| `workflow-testbed` | 2.1.0 | yes | — | yes | below the floor; `0033` skips |
+| `bench-claude` | 2.1.0 | yes | — | yes | below the floor; `0033` skips |
+| `bench-claude-2` | 2.1.0 | yes | — | yes | below the floor; `0033` skips |
+| `workflow-testbed-claude` | 2.1.0 | yes | — | yes | below the floor; `0033` skips |
 
-`agents-task-viewer`'s `CLAUDE.md` additionally carries the
-`## GSD Workflow Enforcement` section inlined verbatim from the pre-0033
-template. `0033` does not touch `CLAUDE.md`: stripping a section from the file
+**Every eligible copy is divergent, so the 3-way prompt fires on all of them —
+and its default is Keep.** Accepting the default changes nothing. For the five
+"all staleness" rows the divergence is *age, not customization*: an
+`ENFORCEMENT-PLAN.md` path `0027` repointed, the `observability-postphase-scan.sh`
+hook removed at 2.5.0, a missing hook `9b`. **Answer A (Replace) there, against
+the default.**
+
+`agents-task-viewer` is the one real exception. Its `workflow.md` is a
+hand-authored 67-line companion, already on the OpenSpec lifecycle, with the
+`vendored-from` header removed and an explicit rule that it *"never duplicates
+the SKILL's lifecycle or gate rules (§11: one source, no drift)"*. It carries
+zero GSD references. Replacing it with this migration's 190-line copy is a
+downgrade — **answer B (Keep)**, and see the open question in ADR-0045 about
+whether that shape should become the upstream one.
+
+`0033` does not touch `CLAUDE.md` in any repo: stripping a section from the file
 that carries the canonical §11 block is the surgery migrations `0029`, `0030`
-and `0043` exist because of. Remove it by hand with the diff in front of you.
+and `0043` exist because of. What remains there, by hand:
 
-`cparx` and `agents-task-viewer` still carry `<!-- GSD:workflow -->` marker
-blocks handled by `normalize-claude-md.sh`; those are unaffected because Step 1
-never removes the file the hook keys off.
+- `cparx/CLAUDE.md` still carries an old *inlined* workflow block ("Check GSD
+  state" / "Update GSD state", ~lines 225 and 231) — a pre-`0009` paste.
+- `cparx` (6) and `agents-task-viewer` (14) carry `<!-- GSD: -->` marker blocks
+  handled by `normalize-claude-md.sh`. Unaffected here, because Step 1 never
+  removes the file that hook keys off — which is exactly why this migration does
+  not delete it.
+- The `/gsd-profile-user` line in both is *written by* `normalize-claude-md.sh`
+  and comes back on the next run; it is fixed in that hook, not in `CLAUDE.md`.
+
+No repo still carries the `## GSD Workflow Enforcement` section inlined in
+`CLAUDE.md`. An earlier revision of this section claimed `agents-task-viewer`
+did, citing `CLAUDE.md:237-248`; that was inherited from a stale measurement and
+was already untrue when `0033` shipped.
 
 ## References
 
