@@ -1,4 +1,24 @@
 #!/usr/bin/env bash
+# run-plan-review-version: 1.0.0
+#
+# VERSION MARKER — read by every host installer before writing this file to the
+# SHARED path ~/.agenticapps/bin/. Installers MUST refuse to overwrite a higher
+# version (treat an unmarked file as 0.0.0). Bump whenever behaviour changes.
+#
+# This marker is LATE. The gate and reviewer-cli were both given one after
+# core#41 — a host installer blind-installed its 3-arm reviewer-cli over a 4-arm
+# one, the `opencode` arm vanished, and the next review that asked for it was
+# recorded as "reviewer unavailable" and waved through with one fewer opinion.
+# The producer sat in the same shared directory, installed by the same script,
+# three lines below the gate's arbitration block — and was left blind. Nothing
+# has broken yet only because no sibling host ships a producer to overwrite it
+# with; that is luck, not design.
+#
+#   1.0.0 — first marked version. Carries the stdout sanitiser (vendor banners
+#           and session-hook logs were landing in REVIEWS.md as review prose),
+#           the `## Reviewer:` forge guard, and per-code reporting of
+#           reviewer-cli 1.1.0's 3/4/5 exits.
+#
 # run-plan-review.sh — drive >=2 other-vendor agent CLIs to adversarially review an
 # active OpenSpec change and write changes/<slug>/REVIEWS.md. Retarget of ADR-0018.
 #
