@@ -263,9 +263,18 @@ for f in .claude/claude-md/workflow.md .claude/workflow-config.md; do
   fi
 done
 
-# 5. CLAUDE.md still points at the file (0034 never touches CLAUDE.md).
-if [ -f .claude/claude-md/workflow.md ]; then
-  _assert grep -q "claude-md/workflow.md" CLAUDE.md
+# 5. ADVISORY, not an assertion. 0034 never touches CLAUDE.md, so whether it
+#    links the vendored file is not this migration's to guarantee — and four
+#    consuming repos legitimately do not link it any more: their GSD cleanup
+#    rewrote `## Workflow` to point at the trigger skill directly, leaving
+#    workflow.md ORPHANED (present on disk, keyed off by
+#    normalize-claude-md.sh, but nothing tells an agent to read it). Failing the
+#    migration on a pre-existing condition it did not cause is how post-checks
+#    get ignored. Surface it, do not fail on it.
+if [ -f .claude/claude-md/workflow.md ] && ! grep -q "claude-md/workflow.md" CLAUDE.md; then
+  echo "NOTE: CLAUDE.md does not link .claude/claude-md/workflow.md — the vendored"
+  echo "      companion is orphaned here. Either add the link back or remove the"
+  echo "      file (its own change: normalize-claude-md.sh keys off its existence)."
 fi
 
 # 6. Version bumped; spec claim unchanged.
@@ -322,6 +331,14 @@ this migration is in `0033`'s `## Downstream` table. Two notes specific to
 - **`agenticapps-dashboard` has no `workflow.md`** and Step 1 no-ops there. It
   gets only the version bump, which is correct — it opted out of the file
   entirely and this migration does not re-litigate that.
+- **Four repos have ORPHANED the file** — `agenticapps-roadmap`, `callbot`,
+  `fbc-platform`, `fx-signal-agent`. Their GSD cleanup rewrote `## Workflow` in
+  `CLAUDE.md` to point at the trigger skill directly, so the vendored companion
+  sits on disk with nothing linking to it. Found by the 3.2.0 rollout. They are
+  one step further along than this migration: they have already concluded the
+  skill is enough. That is the successor change ADR-0046 leaves open — deleting
+  the file, with `normalize-claude-md.sh` and `0000`/`0009`'s post-checks moved
+  in the same migration. Until then the file is inert, not harmful.
 
 ## References
 

@@ -37,10 +37,11 @@ for f in .claude/claude-md/workflow.md .claude/workflow-config.md; do
   fi
 done
 
-# 5. CLAUDE.md still points at the file, and was not touched.
-if [ -f .claude/claude-md/workflow.md ]; then
-  grep -q "claude-md/workflow.md" CLAUDE.md \
-    || fail "post-check 5: CLAUDE.md no longer links the vendored file"
+# 5. ADVISORY, not an assertion — see the migration's post-check 5. 0034 never
+#    touches CLAUDE.md, and four consuming repos deliberately stopped linking
+#    the vendored file, which would fail a migration that did nothing wrong.
+if [ -f .claude/claude-md/workflow.md ] && ! grep -q "claude-md/workflow.md" CLAUDE.md; then
+  echo "NOTE: CLAUDE.md does not link the vendored companion — it is orphaned here."
 fi
 
 # 6. Version bumped; spec claim unchanged.
