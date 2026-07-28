@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# gate-version: 1.3.0
+# gate-version: 1.3.1
 #
 # VERSION MARKER — read by every host installer before writing this file to the
 # SHARED path ~/.agenticapps/bin/. That path is written by claude / codex /
@@ -7,6 +7,10 @@
 # a host still vendoring an older copy silently republishes it over a newer one
 # and reverts the fix for every agent on the machine. Installers MUST refuse to
 # overwrite a higher version. Bump this whenever the gate's behaviour changes.
+#   1.3.1 — tolerate markdown emphasis around the verdict label. 1.3.0 anchored
+#           on a bare `VERDICT:` and missed `**VERDICT: REQUEST-CHANGES**`,
+#           which is what opencode wrote on the first real run after 1.3.0
+#           shipped: a genuine rejection, silently absent from the NOTE.
 #   1.3.0 — report, but do not act on, outstanding REQUEST-CHANGES verdicts.
 #           §18's truth table has no verdict term, so the threshold is a QUORUM:
 #           two rejections open the gate exactly as two approvals do, and that
@@ -176,8 +180,16 @@ pending_rejections(){
     }
     # Anchored at line start so a reviewer QUOTING the verdict vocabulary mid
     # prose ("...I nearly said REQUEST-CHANGES here...") does not register as
-    # one. The producer writes it as its own line.
-    cur != "" && /^[[:space:]]*VERDICT[[:space:]]*:[[:space:]]*REQUEST-CHANGES/ {
+    # one. The producer asks for it on its own line.
+    #
+    # Markdown emphasis is tolerated around the label. 1.3.0 anchored on a bare
+    # `VERDICT:` and missed `**VERDICT: REQUEST-CHANGES**` — which is what
+    # opencode actually wrote on the first real run after 1.3.0 shipped. The
+    # rejection was genuine and the gate silently under-reported it, which is
+    # the same class of failure as reporting one that was never made. Reviewers
+    # are told the vocabulary, not the formatting; a bolded verdict is still a
+    # verdict.
+    cur != "" && /^[[:space:]]*[*_]*[[:space:]]*VERDICT[[:space:]]*:[[:space:]]*[*_]*[[:space:]]*REQUEST-CHANGES/ {
       if (!(cur in flagged)) { flagged[cur] = 1; order[++k] = cur }
     }
     END {
