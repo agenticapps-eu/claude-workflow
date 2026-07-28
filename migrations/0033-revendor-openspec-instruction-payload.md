@@ -232,13 +232,34 @@ if [ -f .claude/workflow-config.md ]; then
   }
   _canon="$(mktemp)"; _out="$(mktemp)"
   _sect "$SCAFFOLDER/setup/snapshot/workflow-config.md" > "$_canon"
+  # REFUSE on an empty canonical section. Without this guard the splice below
+  # deletes the consumer's hooks section and puts NOTHING back — the heading
+  # goes with it, so a re-run cannot even find the section and the project is
+  # left unpatchable. Reachable whenever the scaffolder's copy loses or renames
+  # that heading. Reproduced, not theorised.
+  if [ ! -s "$_canon" ]; then
+    echo "ABORT: the canonical '## Superpowers Integration Hooks' section is empty in"
+    echo "       $SCAFFOLDER/setup/snapshot/workflow-config.md — refusing to splice."
+    echo "       cd $SCAFFOLDER && git pull --ff-only origin main"
+    rm -f "$_canon" "$_out"
+    exit 3
+  fi
   # Splice: on the heading line emit the canonical section (which starts with
   # that same heading), drop the old section body, resume at the next `## `.
-  awk -v h="## Superpowers Integration Hooks" -v canon="$_canon" '
+  # The write is checked: `awk ... > "$_out" && mv ...` followed by `rm` returns
+  # the RM's status, so a failed splice or a failed mv reported success.
+  if awk -v h="## Superpowers Integration Hooks" -v canon="$_canon" '
     $0 == h { inb=1; while ((getline line < canon) > 0) print line; close(canon); next }
     inb && /^## / { inb=0 }
     inb { next }
-    { print }' .claude/workflow-config.md > "$_out" && mv "$_out" .claude/workflow-config.md
+    { print }' .claude/workflow-config.md > "$_out" && [ -s "$_out" ]; then
+    mv "$_out" .claude/workflow-config.md || {
+      echo "ABORT: could not replace .claude/workflow-config.md; it is unchanged."
+      rm -f "$_canon" "$_out"; exit 3; }
+  else
+    echo "ABORT: the splice produced no output; .claude/workflow-config.md is unchanged."
+    rm -f "$_canon" "$_out"; exit 3
+  fi
   rm -f "$_canon"
 else
   echo "SKIP: no .claude/workflow-config.md here — nothing to re-vendor."
@@ -286,37 +307,51 @@ git checkout -- .claude/skills/agentic-apps-workflow/SKILL.md
 
 ## Post-checks
 
+**Fail-open fix (found by review after this migration shipped).** The original
+block was a bare sequence of assertions plus a `for` loop, which returns only the
+LAST status — so post-check 1, whose entire job is "no GSD reference survives",
+passed on a repo whose `workflow.md` still carried them as long as
+`workflow-config.md` was clean. Reproduced, not theorised. Every assertion now
+routes through an accumulator that also names which check failed.
+
+`set -e` is NOT the fix: POSIX exempts a pipeline preceded by `!` from `set -e`,
+so the `! grep ...` assertions — most of this block — would still fail open.
+
 ```bash
 SCAFFOLDER=~/.claude/skills/agenticapps-workflow
+_fail=0
+_assert() { "$@" || { echo "post-check FAILED (expected success): $*"; _fail=1; }; }
+_refute() { if "$@"; then echo "post-check FAILED (expected no match): $*"; _fail=1; fi; }
 
 # 1. No GSD command reference survives in either vendored document. This is the
 #    check the defect existed for: it survived five migrations because nothing
-#    asserted it.
+#    asserted it — then very nearly survived this migration too, because the
+#    loop's exit status hid a hit in any file but the last.
 for f in .claude/claude-md/workflow.md .claude/workflow-config.md; do
   if [ -f "$f" ]; then
-    ! grep -qiE '/gsd-|GSD state|gsd-execute-phase' "$f"
+    _refute grep -qiE '/gsd-|GSD state|gsd-execute-phase' "$f"
   fi
 done
 
 # 2. The vendored workflow reference is byte-identical to the scaffolder's copy
 #    (a project that never had one still has none — correct, not a failure).
 if [ -f .claude/claude-md/workflow.md ]; then
-  cmp -s "$SCAFFOLDER/setup/snapshot/claude-md-workflow.md" .claude/claude-md/workflow.md
+  _assert cmp -s "$SCAFFOLDER/setup/snapshot/claude-md-workflow.md" .claude/claude-md/workflow.md
 fi
 
 # 3. Both documents now teach the OpenSpec lifecycle.
 if [ -f .claude/claude-md/workflow.md ]; then
-  grep -q 'openspec/changes/' .claude/claude-md/workflow.md
+  _assert grep -q 'openspec/changes/' .claude/claude-md/workflow.md
 fi
 if [ -f .claude/workflow-config.md ]; then
-  grep -q '`lifecycle`' .claude/workflow-config.md
+  _assert grep -q '`lifecycle`' .claude/workflow-config.md
 fi
 
 # 4. Step 2 preserved the project's substituted config (a byte-copy of the
 #    template would have put the placeholders back).
 if [ -f .claude/workflow-config.md ]; then
-  ! grep -q '{{PROJECT_NAME}}' .claude/workflow-config.md
-  grep -q '^## Project$' .claude/workflow-config.md
+  _refute grep -q '{{PROJECT_NAME}}' .claude/workflow-config.md
+  _assert grep -q '^## Project$' .claude/workflow-config.md
 fi
 
 # 5. §04 reconciled: the vendored workflow reference carries no red-flag block
@@ -337,9 +372,12 @@ if [ -f .claude/claude-md/workflow.md ]; then
   _x="$(mktemp)"; _y="$(mktemp)"
   _rf .claude/skills/agentic-apps-workflow/SKILL.md > "$_x"
   _rf .claude/claude-md/workflow.md > "$_y"
-  if [ -s "$_y" ]; then cmp -s "$_x" "$_y"; _rc=$?; else _rc=0; fi
+  # The canonical side must be NON-EMPTY first: without this an installed SKILL
+  # that lost its §04 block passes, because an absent companion block skips the
+  # comparison entirely. Extraction failure must never read as conformance.
+  _assert test -s "$_x"
+  if [ -s "$_y" ]; then _assert cmp -s "$_x" "$_y"; fi
   rm -f "$_x" "$_y"
-  test "$_rc" -eq 0
 fi
 
 # 6. Version bumped; spec claim unchanged. Asserted as "the trigger skill IS the
@@ -347,15 +385,24 @@ fi
 #    whatever the scaffolder ships, so a literal pin turns false the moment a
 #    later migration bumps the payload even though Step 3 did exactly its job.
 #    (Hit for real by 0034 — same class as the shape pin in post-check 5.)
-cmp -s "$SCAFFOLDER/setup/snapshot/agentic-apps-workflow-SKILL.md" \
-       .claude/skills/agentic-apps-workflow/SKILL.md
+_assert cmp -s "$SCAFFOLDER/setup/snapshot/agentic-apps-workflow-SKILL.md" \
+               .claude/skills/agentic-apps-workflow/SKILL.md
+# `sort -V` alone is not a SemVer floor: it accepts `3.1.0-rc1` (below 3.1.0
+# under SemVer) and sorts unparseable text like `garbage` ABOVE the floor. Both
+# verified. Require a bare X.Y.Z before trusting the comparison.
 _v="$(awk '/^version:/{print $2; exit}' .claude/skills/agentic-apps-workflow/SKILL.md)"
-test "$(printf '3.1.0\n%s\n' "$_v" | sort -V | head -n1)" = "3.1.0"
-grep -q '^implements_spec: 1.0.0$' .claude/skills/agentic-apps-workflow/SKILL.md
+if printf '%s\n' "$_v" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+  _assert test "$(printf '3.1.0\n%s\n' "$_v" | sort -V | head -n1)" = "3.1.0"
+else
+  echo "post-check FAILED: version '$_v' is not a bare X.Y.Z"; _fail=1
+fi
+_assert grep -q '^implements_spec: 1.0.0$' .claude/skills/agentic-apps-workflow/SKILL.md
 
 # 7. Nothing else moved.
-test -d .planning
-! test -e .claude/hooks/multi-ai-review-gate.sh
+_assert test -d .planning
+_refute test -e .claude/hooks/multi-ai-review-gate.sh
+
+test "$_fail" -eq 0
 ```
 
 - Drift test green: SKILL.md `version` (3.1.0) == latest migration `to_version` (3.1.0)

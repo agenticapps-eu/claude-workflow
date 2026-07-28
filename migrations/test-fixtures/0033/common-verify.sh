@@ -64,6 +64,8 @@ cmp -s "$SCAFFOLDER/setup/snapshot/agentic-apps-workflow-SKILL.md" \
        .claude/skills/agentic-apps-workflow/SKILL.md \
   || fail "post-check 6: SKILL.md is not the scaffolder's copy"
 _v="$(awk '/^version:/{print $2; exit}' .claude/skills/agentic-apps-workflow/SKILL.md)"
+printf '%s\n' "$_v" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' \
+  || fail "post-check 6: version '$_v' is not a bare X.Y.Z"
 [ "$(printf '3.1.0\n%s\n' "$_v" | sort -V | head -n1)" = "3.1.0" ] \
   || fail "post-check 6: SKILL.md is at $_v, below the 3.1.0 floor this migration sets"
 grep -q '^implements_spec: 1.0.0$' .claude/skills/agentic-apps-workflow/SKILL.md \

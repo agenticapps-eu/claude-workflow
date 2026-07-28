@@ -146,6 +146,14 @@ fi
 ```bash
 SCAFFOLDER=~/.claude/skills/agenticapps-workflow
 if [ -f .claude/claude-md/workflow.md ]; then
+  # Back up the ACTUAL pre-migration bytes before overwriting. `git checkout --`
+  # in Rollback restores the INDEX, which is not the same file: a consumer whose
+  # copy carried unstaged local edits would have them destroyed by a rollback
+  # that reported success, and an untracked copy could not be restored at all.
+  # Guarded by `[ -e ]` so a re-run never overwrites the true original with the
+  # already-migrated file.
+  [ -e .claude/claude-md/workflow.md.pre-0034 ] || \
+    cp .claude/claude-md/workflow.md .claude/claude-md/workflow.md.pre-0034
   install -m 0644 "$SCAFFOLDER/setup/snapshot/claude-md-workflow.md" \
     .claude/claude-md/workflow.md
 else
@@ -157,11 +165,18 @@ fi
 **Rollback:**
 
 ```bash
-git checkout -- .claude/claude-md/workflow.md 2>/dev/null || {
-  echo "ROLLBACK: .claude/claude-md/workflow.md is not tracked — pre-migration"
-  echo "          bytes are not recoverable. Re-run /update-agenticapps-workflow"
-  echo "          to restore the canonical copy."
-}
+if [ -e .claude/claude-md/workflow.md.pre-0034 ]; then
+  mv .claude/claude-md/workflow.md.pre-0034 .claude/claude-md/workflow.md
+  echo "ROLLBACK: restored the pre-0034 bytes of .claude/claude-md/workflow.md."
+elif [ -f .claude/claude-md/workflow.md ]; then
+  git checkout -- .claude/claude-md/workflow.md 2>/dev/null || {
+    echo "ROLLBACK: no .pre-0034 backup and the file is not tracked — the"
+    echo "          pre-migration bytes are not recoverable. Re-run"
+    echo "          /update-agenticapps-workflow to restore the canonical copy."
+  }
+else
+  echo "ROLLBACK: no .claude/claude-md/workflow.md present — nothing to do."
+fi
 ```
 
 ### Step 2 — Re-copy the trigger skill (3.1.0 → 3.2.0)
@@ -182,6 +197,9 @@ grep -q '^version: 3.2.0$' .claude/skills/agentic-apps-workflow/SKILL.md
 
 ```bash
 SCAFFOLDER=~/.claude/skills/agenticapps-workflow
+[ -e .claude/skills/agentic-apps-workflow/SKILL.md.pre-0034 ] || \
+  cp .claude/skills/agentic-apps-workflow/SKILL.md \
+     .claude/skills/agentic-apps-workflow/SKILL.md.pre-0034
 install -m 0644 "$SCAFFOLDER/setup/snapshot/agentic-apps-workflow-SKILL.md" \
   .claude/skills/agentic-apps-workflow/SKILL.md
 ```
@@ -189,48 +207,72 @@ install -m 0644 "$SCAFFOLDER/setup/snapshot/agentic-apps-workflow-SKILL.md" \
 **Rollback:**
 
 ```bash
-git checkout -- .claude/skills/agentic-apps-workflow/SKILL.md
+if [ -e .claude/skills/agentic-apps-workflow/SKILL.md.pre-0034 ]; then
+  mv .claude/skills/agentic-apps-workflow/SKILL.md.pre-0034 \
+     .claude/skills/agentic-apps-workflow/SKILL.md
+else
+  git checkout -- .claude/skills/agentic-apps-workflow/SKILL.md
+fi
 ```
 
 ## Post-checks
 
+Every assertion below routes through `_assert` / `_refute`, and the block's exit
+status is the accumulator on the last line. **The obvious shapes are fail-open
+and were, until a review caught it.** A bare sequence of assertions returns only
+the LAST one's status, so an earlier violation is invisible; a `for` loop returns
+only the last iteration's, so a violation in the first file passes. Both were
+reproduced, not theorised.
+
+`set -e` is NOT the fix and must not be added here: POSIX exempts a pipeline
+preceded by `!` from `set -e`, so every `! grep ...` assertion — which is most of
+them — would still fail open. The accumulator is explicit for that reason, and it
+names which check failed instead of just returning 1.
+
 ```bash
 SCAFFOLDER=~/.claude/skills/agenticapps-workflow
+_fail=0
+_assert() { "$@" || { echo "post-check FAILED (expected success): $*"; _fail=1; }; }
+_refute() { if "$@"; then echo "post-check FAILED (expected no match): $*"; _fail=1; fi; }
 
 # 1. The vendored file is the companion, byte-identical to the scaffolder's copy.
 if [ -f .claude/claude-md/workflow.md ]; then
-  cmp -s "$SCAFFOLDER/setup/snapshot/claude-md-workflow.md" .claude/claude-md/workflow.md
-  grep -q '^> \*\*Authoritative source:' .claude/claude-md/workflow.md
+  _assert cmp -s "$SCAFFOLDER/setup/snapshot/claude-md-workflow.md" .claude/claude-md/workflow.md
+  _assert grep -q '^> \*\*Authoritative source:' .claude/claude-md/workflow.md
 fi
 
 # 2. It no longer DUPLICATES the SKILL's rule blocks. This is the whole point of
 #    the migration, so it is asserted rather than assumed.
 if [ -f .claude/claude-md/workflow.md ]; then
-  ! grep -qE '^#{2,4} [0-9]+ Red Flags' .claude/claude-md/workflow.md
-  ! grep -q '^## Workflow commitment$'  .claude/claude-md/workflow.md
-  ! grep -q 'If you think\.\.\.'        .claude/claude-md/workflow.md
+  _refute grep -qE '^#{2,4} [0-9]+ Red Flags' .claude/claude-md/workflow.md
+  _refute grep -q  '^## Workflow commitment$' .claude/claude-md/workflow.md
+  _refute grep -q  'If you think\.\.\.'      .claude/claude-md/workflow.md
 fi
 
 # 3. The SKILL still carries them — deferring to a document that lost the
 #    content would be worse than duplicating it.
-grep -q '^## 14 Red Flags — STOP → DELETE → RESTART$' .claude/skills/agentic-apps-workflow/SKILL.md
-grep -q 'If you think\.\.\.' .claude/skills/agentic-apps-workflow/SKILL.md
+_assert grep -q '^## 14 Red Flags — STOP → DELETE → RESTART$' .claude/skills/agentic-apps-workflow/SKILL.md
+_assert grep -q 'If you think\.\.\.' .claude/skills/agentic-apps-workflow/SKILL.md
 
-# 4. 0033's guarantee is not regressed: still no GSD references.
+# 4. 0033's guarantee is not regressed: still no GSD references. Note the
+#    accumulator rather than a bare `! grep` inside the loop — the loop's own
+#    status is the last iteration's, so a hit in the FIRST file passed silently.
 for f in .claude/claude-md/workflow.md .claude/workflow-config.md; do
   if [ -f "$f" ]; then
-    ! grep -qiE '/gsd-|GSD state|gsd-execute-phase' "$f"
+    _refute grep -qiE '/gsd-|GSD state|gsd-execute-phase' "$f"
   fi
 done
 
 # 5. CLAUDE.md still points at the file (0034 never touches CLAUDE.md).
 if [ -f .claude/claude-md/workflow.md ]; then
-  grep -q "claude-md/workflow.md" CLAUDE.md
+  _assert grep -q "claude-md/workflow.md" CLAUDE.md
 fi
 
 # 6. Version bumped; spec claim unchanged.
-grep -q '^version: 3.2.0$' .claude/skills/agentic-apps-workflow/SKILL.md
-grep -q '^implements_spec: 1.0.0$' .claude/skills/agentic-apps-workflow/SKILL.md
+_assert grep -q '^version: 3.2.0$' .claude/skills/agentic-apps-workflow/SKILL.md
+_assert grep -q '^implements_spec: 1.0.0$' .claude/skills/agentic-apps-workflow/SKILL.md
+
+test "$_fail" -eq 0
 ```
 
 - Drift test green: SKILL.md `version` (3.2.0) == latest migration `to_version` (3.2.0)

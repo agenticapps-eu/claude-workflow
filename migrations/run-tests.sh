@@ -2392,6 +2392,13 @@ test_migration_0032() {
   # every executable line instead: each non-comment, non-blank line of
   # common-apply.sh must appear verbatim somewhere in the migration doc.
   local apply_file="$fixtures/common-apply.sh"
+  # A missing or empty common-apply.sh made the loop body never run, leaving
+  # drift=0 and checked=0 — reported as PASS. Parity over nothing is not parity.
+  if [ ! -s "$apply_file" ]; then
+    echo "  ${RED}✗${RESET} apply-parity — $apply_file is missing or empty"
+    FAIL=$((FAIL+1))
+    return
+  fi
   local drift=0 checked=0 line norm
   while IFS= read -r line; do
     norm="$(printf '%s' "$line" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
@@ -2408,9 +2415,12 @@ test_migration_0032() {
     fi
   done < "$apply_file"
 
-  if [ "$drift" -eq 0 ]; then
+  if [ "$drift" -eq 0 ] && [ "$checked" -gt 0 ]; then
     echo "  ${GREEN}✓${RESET} apply-parity — all $checked fixture lines appear in the migration"
     PASS=$((PASS+1))
+  elif [ "$checked" -eq 0 ]; then
+    echo "  ${RED}✗${RESET} apply-parity — zero lines checked; the fixture is all comments or unreadable"
+    FAIL=$((FAIL+1))
   else
     FAIL=$((FAIL+1))
   fi
@@ -2497,6 +2507,13 @@ test_migration_0033() {
   # the migration doc or the fixtures are proving something the migration does
   # not do.
   local apply_file="$fixtures/common-apply.sh"
+  # A missing or empty common-apply.sh made the loop body never run, leaving
+  # drift=0 and checked=0 — reported as PASS. Parity over nothing is not parity.
+  if [ ! -s "$apply_file" ]; then
+    echo "  ${RED}✗${RESET} apply-parity — $apply_file is missing or empty"
+    FAIL=$((FAIL+1))
+    return
+  fi
   local drift=0 checked=0 line norm
   while IFS= read -r line; do
     norm="$(printf '%s' "$line" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
@@ -2513,9 +2530,12 @@ test_migration_0033() {
     fi
   done < "$apply_file"
 
-  if [ "$drift" -eq 0 ]; then
+  if [ "$drift" -eq 0 ] && [ "$checked" -gt 0 ]; then
     echo "  ${GREEN}✓${RESET} apply-parity — all $checked fixture lines appear in the migration"
     PASS=$((PASS+1))
+  elif [ "$checked" -eq 0 ]; then
+    echo "  ${RED}✗${RESET} apply-parity — zero lines checked; the fixture is all comments or unreadable"
+    FAIL=$((FAIL+1))
   else
     FAIL=$((FAIL+1))
   fi
@@ -2566,6 +2586,25 @@ test_no_gsd_refs_in_shipped_templates() {
     "setup/snapshot/gitignore"
   )
 
+  # The scan must fail LOUDLY when it cannot see the tree. `2>/dev/null || true`
+  # over a missing templates/ yields empty output, which reads as "no GSD
+  # references" — a clean bill of health for a scan that ran over nothing.
+  local d
+  for d in templates setup/snapshot; do
+    if [ ! -d "$REPO_ROOT/$d" ]; then
+      echo "  ${RED}✗${RESET} $d/ is missing — the scan cannot vouch for a tree it never read"
+      FAIL=$((FAIL+1))
+      return
+    fi
+  done
+  local scanned
+  scanned="$(cd "$REPO_ROOT" && find templates setup/snapshot -type f 2>/dev/null | wc -l | tr -d ' ')"
+  if [ "$scanned" -eq 0 ]; then
+    echo "  ${RED}✗${RESET} templates/ and setup/snapshot/ contain no files — nothing was scanned"
+    FAIL=$((FAIL+1))
+    return
+  fi
+
   local found=0 hits
   hits="$(cd "$REPO_ROOT" && grep -rniE '/gsd-|GSD state|gsd-execute-phase' \
             templates setup/snapshot 2>/dev/null || true)"
@@ -2576,7 +2615,13 @@ test_no_gsd_refs_in_shipped_templates() {
     path="${line%%:*}"
     keep=1
     for ex in "${EXCLUDED[@]}"; do
-      case "$path" in "$ex"*) keep=0; break ;; esac
+      # A DIRECTORY exclusion ends in `/` and matches as a prefix; a FILE
+      # exclusion must match exactly. Prefix-matching files silently excused
+      # siblings — `templates/gitignore` also excused `templates/gitignore.backup`.
+      case "$ex" in
+        */) case "$path" in "$ex"*) keep=0; break ;; esac ;;
+        *)  [ "$path" = "$ex" ] && { keep=0; break; } ;;
+      esac
     done
     if [ "$keep" = "1" ]; then
       if [ "$found" -eq 0 ]; then
@@ -2606,6 +2651,48 @@ test_no_gsd_refs_in_shipped_templates() {
 # (skill/SKILL.md). The vendored `.claude/claude-md/workflow.md` used to carry a
 # reworded 13-flag variant — disclosed in `## Spec deltas` rather than fixed.
 # 0033 made them byte-identical and deleted the disclosure; this keeps them so.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# No migration ships an EMPTY fenced block
+# ─────────────────────────────────────────────────────────────────────────────
+# Found the hard way: a bad edit emptied 0034's Step 1 idempotency-check fence
+# and the whole suite stayed green, because the fixtures replay `common-apply.sh`
+# and never evaluate the idempotency / pre-condition / rollback fences at all.
+# An empty idempotency check evaluates to success, so the runner would skip the
+# step and report the migration applied. Cheap structural guard for a class the
+# fixtures structurally cannot see.
+
+test_no_empty_fenced_blocks_in_migrations() {
+  echo ""
+  echo "${YELLOW}━━━ Migrations ship no empty fenced blocks ━━━${RESET}"
+
+  local bad=0 f n
+  for f in "$REPO_ROOT"/migrations/[0-9][0-9][0-9][0-9]-*.md; do
+    # Count ```-delimited blocks whose body is blank/whitespace only.
+    n="$(awk '
+      /^```/ {
+        if (inb) { if (body ~ /^[[:space:]]*$/) empty++; inb=0; body="" }
+        else     { inb=1; body="" }
+        next
+      }
+      inb { body = body $0 "\n" }
+      END { print empty+0 }' "$f")"
+    if [ "$n" -gt 0 ]; then
+      echo "  ${RED}✗${RESET} $(basename "$f") — $n empty fenced block(s)"
+      bad=1
+    fi
+  done
+
+  if [ "$bad" -eq 0 ]; then
+    echo "  ${GREEN}✓${RESET} every fenced block in migrations/ has a body"
+    PASS=$((PASS+1))
+  else
+    echo "        An empty idempotency check evaluates to SUCCESS — the runner"
+    echo "        would skip the step and report the migration applied."
+    FAIL=$((FAIL+1))
+  fi
+}
+
 
 test_migration_0034() {
   echo ""
@@ -2677,6 +2764,13 @@ test_migration_0034() {
 
   # apply-parity, same rule as 0032/0033.
   local apply_file="$fixtures/common-apply.sh"
+  # A missing or empty common-apply.sh made the loop body never run, leaving
+  # drift=0 and checked=0 — reported as PASS. Parity over nothing is not parity.
+  if [ ! -s "$apply_file" ]; then
+    echo "  ${RED}✗${RESET} apply-parity — $apply_file is missing or empty"
+    FAIL=$((FAIL+1))
+    return
+  fi
   local drift=0 checked=0 line norm
   while IFS= read -r line; do
     norm="$(printf '%s' "$line" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
@@ -2692,9 +2786,12 @@ test_migration_0034() {
     fi
   done < "$apply_file"
 
-  if [ "$drift" -eq 0 ]; then
+  if [ "$drift" -eq 0 ] && [ "$checked" -gt 0 ]; then
     echo "  ${GREEN}✓${RESET} apply-parity — all $checked fixture lines appear in the migration"
     PASS=$((PASS+1))
+  elif [ "$checked" -eq 0 ]; then
+    echo "  ${RED}✗${RESET} apply-parity — zero lines checked; the fixture is all comments or unreadable"
+    FAIL=$((FAIL+1))
   else
     FAIL=$((FAIL+1))
   fi
@@ -3383,6 +3480,10 @@ fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "0034" ]; then
   test_migration_0034
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "empty-fences" ]; then
+  test_no_empty_fenced_blocks_in_migrations
 fi
 
 # Renamed from `red-flags` at 3.2.0: 0034 removed the second copy of the §04
