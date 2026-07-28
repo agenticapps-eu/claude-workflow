@@ -96,18 +96,6 @@ if [ "$have_jq" = 1 ]; then
   else
     bad "config missing an observability scan skill ref"
   fi
-  # Knowledge capture (spec §15, ADR-0038): block present, enabled boolean, and
-  # the note targets the vault folder with the literal <repo-name> placeholder
-  # still in place — the SEED keeps the placeholder; setup Step 4d resolves it
-  # to the repo directory name at install time.
-  jq -e '.knowledge_capture.enabled | type == "boolean"' "$CFG" >/dev/null 2>&1 \
-    && ok "config has .knowledge_capture.enabled (boolean)" \
-    || bad "config missing .knowledge_capture.enabled boolean (spec §15.2)"
-  if jq -er '.knowledge_capture.note' "$CFG" 2>/dev/null | grep -qF '44 Agentic Coding Learnings/<repo-name>.md'; then
-    ok "config knowledge_capture.note targets the vault with <repo-name> placeholder"
-  else
-    bad "config .knowledge_capture.note must target the vault folder and keep the literal <repo-name> placeholder"
-  fi
 fi
 
 # ── 4. hooks: referential integrity + hashes ─────────────────────────────────
@@ -163,25 +151,16 @@ else
   bad "missing gitignore (canonical scaffolded ignore baseline)"
 fi
 
-# ── 7. knowledge capture (spec §15): the SKILL wires the ritual tail ─────────
-# The snapshot SKILL MUST carry the knowledge-capture step that fires at the
-# three §15 trigger points (session handoff, plan completion, phase completion)
-# and routes the destination through .planning/config.json → knowledge_capture
-# (never a hardcoded path). End-state invariant in the §6 style: the step can
-# never silently drop out of the seed. See ADR-0038 / core ADR-0017.
+# ── 7. the snapshot SKILL is present and OpenSpec-era ───────────────────────
+# Presence plus one freshness probe, so a stale pre-3.0.0 seed cannot pass as
+# current. The same probe backs setup/SKILL.md's Step 5 baseline assertion.
+# (This block previously guarded the §15 knowledge-capture ritual tail; §15 was
+# retired in core spec 1.2.0 and ADR-0038 is superseded.)
 SKL="$SNAP/agentic-apps-workflow-SKILL.md"
 if [ -f "$SKL" ]; then
-  grep -q '^## Knowledge Capture — Ritual Tail' "$SKL" \
-    && ok "SKILL carries the knowledge-capture ritual-tail section" \
-    || bad "SKILL missing the '## Knowledge Capture — Ritual Tail' section (spec §15)"
-  for t in "Session handoff" "Plan completion" "Phase completion"; do
-    grep -q "$t" "$SKL" \
-      && ok "SKILL wires §15 trigger: $t" \
-      || bad "SKILL missing §15 trigger point: $t"
-  done
-  grep -q 'knowledge_capture' "$SKL" \
-    && ok "SKILL routes destination via the knowledge_capture config block" \
-    || bad "SKILL does not read .planning/config.json → knowledge_capture (path must be config-routed)"
+  grep -q '^## Verification Check (after a change is archived)' "$SKL" \
+    && ok "SKILL carries the OpenSpec-era verification section" \
+    || bad "SKILL missing '## Verification Check (after a change is archived)' — stale seed?"
 else
   bad "missing agentic-apps-workflow-SKILL.md"
 fi

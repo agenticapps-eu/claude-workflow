@@ -179,21 +179,6 @@ d. **Gate bindings (§17 lifecycle)** — `mkdir -p .planning` and:
      installed project (Step 1), so this can only happen on a hand-assembled
      tree; if you see both blocks, run `/update-agenticapps-workflow` instead so
      migration 0032 does the replacement properly.
-   - **Knowledge capture (spec §15)** — the snapshot config seeds a
-     `knowledge_capture` block whose `note` carries a literal `<repo-name>`
-     placeholder. Resolve it now to the actual repo directory name (per §15.2
-     the name is written out literally at configuration time — never
-     substituted at runtime):
-     ```bash
-     REPO_NAME="$(basename "$(git rev-parse --show-toplevel)")"
-     jq --arg name "$REPO_NAME" \
-       '.knowledge_capture.note |= gsub("<repo-name>"; $name)' \
-       .planning/config.json > .planning/config.json.tmp \
-       && mv .planning/config.json.tmp .planning/config.json
-     ```
-     The block references only the operator's vault path — never a
-     claude-workflow path — so the repo stays self-contained. Machines without
-     the vault folder are silent by design (the skill's graceful skip).
    - In `--dry-run`: show the diff instead of writing.
 
 e. **Vendored CLAUDE.md block + reference** — `mkdir -p .claude/claude-md` and
@@ -327,9 +312,8 @@ i. **`.prettierignore` (exclude vendored hooks — migration 0028)** — the
    fi
    ```
    A project without a `.prettierignore` never configured Prettier ignores;
-   creating one would imply tooling it does not use (the same conservative
-   stance §15 takes with an absent vault). ESLint needs no equivalent — the
-   shipped hook carries a file-level `eslint-disable` header.
+   creating one would imply tooling it does not use. ESLint needs no
+   equivalent — the shipped hook carries a file-level `eslint-disable` header.
 
    The predicate MUST stay byte-identical to migration 0028's (its Step 1
    idempotency check and apply condition). §08 requires the setup flow to reach
@@ -419,14 +403,12 @@ Post-checks (fail the install, do not commit, if any fail):
 - `.claude/hooks/openspec-change-gate.sh` exists and is bound exactly once in
   `.claude/settings.json`; `.claude/hooks/multi-ai-review-gate.sh` does NOT exist
 - `openspec/` exists, OR the openspec CLI was absent and that was reported
-- `.planning/config.json` carries the `knowledge_capture` block with its
-  `<repo-name>` placeholder resolved:
-  `jq -e '.knowledge_capture.enabled | type == "boolean"' .planning/config.json`
-  and `! grep -qF '<repo-name>' .planning/config.json`
+- `.planning/config.json` carries no unresolved placeholders:
+  `! grep -qF '<repo-name>' .planning/config.json`
 - `.claude/claude-md/workflow.md` exists and `CLAUDE.md` references it
 - the snapshot's latest features are present (proves it's not an old baseline):
-  the spec §15 knowledge-capture ritual tail is in the installed skill —
-  `grep -q '^## Knowledge Capture — Ritual Tail' .claude/skills/agentic-apps-workflow/SKILL.md`
+  the OpenSpec-era verification section is in the installed skill —
+  `grep -q '^## Verification Check (after a change is archived)' .claude/skills/agentic-apps-workflow/SKILL.md`
   (§14 prompt-injection is delegated to the `injection-guard` skill at migration
   0023, so it is intentionally NOT baked into the snapshot's `.claude` payload)
 - `.gitignore` exists and does **not** ignore the `.planning/phases/` tree
@@ -449,7 +431,7 @@ Files created:
   - .claude/skills/agentic-apps-workflow/SKILL.md   (workflow skill)
   - .claude/workflow-config.md                      (project config)
   - .claude/settings.json + .claude/hooks/*         (enforcement hooks)
-  - .planning/config.json                           (hook bindings + knowledge capture)
+  - .planning/config.json                           (hook bindings)
   - .claude/claude-md/workflow.md                   (vendored workflow block)
   - CLAUDE.md                                       (§11 block + ## Workflow reference)
   - .gitignore                                      (commits .planning/phases/)

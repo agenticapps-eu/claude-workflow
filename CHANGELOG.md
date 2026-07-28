@@ -70,6 +70,34 @@ document shrinks from ~190 lines to ~85.
   clone that still ships the duplicate.
 - **ADR-0046.**
 
+### Removed
+- **Knowledge capture (spec §15) — every live surface in this host.** Core
+  removed §15 at spec 1.2.0 and superseded ADR-0017; this host follows.
+  Gone: the `## Knowledge Capture — Ritual Tail` section in `skill/SKILL.md`
+  (78 lines), the `knowledge_capture` seed in `templates/config-hooks.json`
+  and this repo's own `.planning/config.json`, `templates/obsidian-learnings-note.md`,
+  setup Step 4d's `<repo-name>` placeholder resolution and its three Step 5
+  verify bullets, and parity block 7. ADR-0038 carries a superseded banner.
+
+  **No migration.** A migration would install machinery to delete machinery;
+  the six installed projects are edited directly instead. Snapshot VERSION
+  stays 3.2.0 — nothing was added to the chain.
+
+  The Step 5 "not an old baseline" probe and parity block 7 now key on
+  `## Verification Check (after a change is archived)` — an OpenSpec-era (3.0.0)
+  heading, so the staleness check the ritual tail happened to be providing
+  survives its removal.
+
+- **Migration `0025`'s four fixtures**, retired *with* the feature. They
+  replayed Step 2 by extracting the ritual-tail section from the live
+  `skill/SKILL.md`; with the section gone they could not be kept green.
+  `test_migration_0025` is now a retirement check in the `0026`/`0016` shape:
+  the doc is retained as history (§08), and no `knowledge_capture` payload may
+  reappear under `templates/` or `setup/`.
+
+  The 32 references inside `migrations/` are otherwise **untouched** — they are
+  historical executables replayed for repos on old versions.
+
 ## [3.1.0] — 2026-07-28
 
 The runtime instruction payload catches up with the 3.0.0 front end. Migration
