@@ -1,6 +1,6 @@
 ---
 name: agentic-apps-workflow
-version: 3.0.0
+version: 3.1.0
 implements_spec: 1.0.0
 description: |
   Enforces the spec-first development workflow using OpenSpec + Superpowers +
@@ -322,19 +322,6 @@ with rationale. Audited 2026-07-14 (ADR-0040); re-audited 2026-07-24 for the
   conformant alternative to replay. A satisfied MUST per §09, not a delta;
   recorded here — like §10 above — because the mechanism differs from a naive
   reading of the section, and disclosure keeps the claim auditable.
-- **§04 — a divergent copy ships alongside the canonical block.** §09 item 1 is
-  satisfied: the canonical 13 are byte-identical here, at positions 1–13, in
-  this file — the one carrying `implements_spec`. But the vendored workflow
-  reference installed into every scaffolded project
-  (`.claude/claude-md/workflow.md`, from `templates/`) carries its own 13-flag
-  list under a reworded heading (`### 13 Red Flags — Trigger Automatic STOP →
-  DELETE → RESTART`) with four flags reworded (1, 6, 12, 13 — e.g. `Any "just
-  this once" reasoning` for canonical `"Just this once" reasoning`). That copy
-  is what agents read at runtime. It is not a §09 item-1 violation — the spec
-  binds the block to the host's instruction file, not to every downstream
-  artifact — but it is unreconciled canonical prose and is disclosed rather
-  than left silent. Reconciling it changes the payload of every scaffolded
-  project and needs its own migration; tracked separately.
 
 ## Knowledge Capture — Ritual Tail (spec §15)
 
