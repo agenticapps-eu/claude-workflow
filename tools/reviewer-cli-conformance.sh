@@ -98,6 +98,23 @@ run_row() { # $1=desc $2=expected-exit $3...=argv for the wrapper
   fi
 }
 
+# Asserts the wrapper's stderr carries a given substring. An exit code says a
+# failure happened; only the message says WHICH failure, and the message is what
+# the producer relays to a human. 1.1.0 exists because "reviewer unavailable" was
+# printed for a timeout — a correct non-zero exit paired with a wrong diagnosis.
+run_row_stderr_matches() { # $1=desc $2=expected-substring $3...=argv
+  local desc="$1" want="$2"; shift 2
+  local err
+  err="$(
+    PATH="$FX/stub:$PATH" STDIN_WITNESS="$FX/stdin.witness" \
+      bounded_cli "$@" 2>&1 >/dev/null </dev/null
+  )"
+  case "$err" in
+    *"$want"*) echo "  PASS  $desc"; pass=$((pass + 1)) ;;
+    *) echo "  FAIL  $desc — stderr lacked '$want'; got: $err"; fail=$((fail + 1)) ;;
+  esac
+}
+
 # Asserts the wrapper produced the stub's output AND left stdin empty. The
 # stdin half is the row that pins the hardening: a wrapper that forgets the
 # redirect on one arm still exits 0 and still prints a verdict, so exit code
@@ -128,10 +145,13 @@ score_one() {
   FX="$(make_fixture)"; WORK="$FX"
 
   echo "  ── A. Argument handling ──"
+  # 1.1.0 splits the old single `exit 3` into three codes. Usage and lookup
+  # failures stay 3 (unavailable); an unknown vendor is 5. Asserted separately
+  # because the producer reports them differently — see row group D.
   run_row "no arguments -> 3"              3
   run_row "vendor without prompt file -> 3" 3 claude
   run_row "missing prompt file -> 3"       3 claude "$FX/nope.txt"
-  run_row "unknown vendor -> 3"            3 nosuchvendor "$FX/prompt.txt"
+  run_row "unknown vendor -> 5"            5 nosuchvendor "$FX/prompt.txt"
 
   echo "  ── B. Vendor arms ──"
   local v
@@ -151,7 +171,14 @@ sleep 10
 SLOW
   chmod +x "$FX/stub/codex"
   if command -v timeout >/dev/null 2>&1 || command -v gtimeout >/dev/null 2>&1; then
-    REVIEWER_TIMEOUT=1 run_row "REVIEWER_TIMEOUT honoured; 124 -> die 3" 3 codex "$FX/prompt.txt"
+    # 4, not 3. A timeout means the vendor was REACHABLE and ran — the operator
+    # needs to raise REVIEWER_TIMEOUT, not go looking for a missing binary.
+    # Reporting it as 3 sent someone to check PATH for a working opencode.
+    REVIEWER_TIMEOUT=1 run_row "REVIEWER_TIMEOUT honoured; 124 -> die_timeout 4" 4 codex "$FX/prompt.txt"
+    # The timeout code must be distinguishable from unavailable, not merely
+    # non-zero: the whole point of 1.1.0 is that the producer can tell them apart.
+    REVIEWER_TIMEOUT=1 run_row_stderr_matches "timeout message names the bound" \
+      'timed out after 1s' codex "$FX/prompt.txt"
   else
     echo "  SKIP  timeout contract (no timeout(1)/gtimeout(1) on PATH)"
   fi

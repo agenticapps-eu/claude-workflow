@@ -184,7 +184,27 @@ else
   run install -m 0755 "$SCAFFOLDER/bin/openspec-change-gate.sh" "$AA_BIN/openspec-change-gate.sh"
   [ "$_installed" = "$_incoming" ] || echo "  OK     gate: $_installed -> $_incoming"
 fi
-run install -m 0755 "$SCAFFOLDER/bin/run-plan-review.sh"      "$AA_BIN/run-plan-review.sh"
+# The PRODUCER is the third artifact in this shared directory, and until now the
+# only one installed blind — this line was a bare `install` sitting between the
+# gate's arbitration block above and the reviewer-cli's below, both of which
+# exist because of core#41. It never bit only because no sibling host ships a
+# producer to overwrite it with. Same rule, same parser shape, same reasons.
+run_plan_review_version() {
+  [ -f "$1" ] || { echo "0.0.0"; return; }
+  awk '/^# run-plan-review-version: [0-9]+\.[0-9]+\.[0-9]+[ \t]*$/ { print $3; found=1; exit }
+       END { if (!found) print "0.0.0" }' "$1"
+}
+_rp_incoming="$(run_plan_review_version "$SCAFFOLDER/bin/run-plan-review.sh")"
+_rp_installed="$(run_plan_review_version "$AA_BIN/run-plan-review.sh")"
+_rp_older="$(printf '%s\n%s\n' "$_rp_incoming" "$_rp_installed" | sort -V | head -n1)"
+if [ "$_rp_installed" != "$_rp_incoming" ] && [ "$_rp_older" = "$_rp_incoming" ]; then
+  echo "  SKIP   run-plan-review: installed $_rp_installed is NEWER than this repo's $_rp_incoming"
+  echo "         Refusing to downgrade the shared producer. Update this scaffolder"
+  echo "         (git pull) so every host publishes the same version."
+else
+  run install -m 0755 "$SCAFFOLDER/bin/run-plan-review.sh" "$AA_BIN/run-plan-review.sh"
+  [ "$_rp_installed" = "$_rp_incoming" ] || echo "  OK     run-plan-review: $_rp_installed -> $_rp_incoming"
+fi
 
 # The producer's vendor wrapper is the SAME shared-path hazard as the gate, and
 # it is not hypothetical: on 2026-07-25 a host installer delivered the correctly

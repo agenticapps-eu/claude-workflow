@@ -1,4 +1,24 @@
 #!/usr/bin/env bash
+# run-plan-review-version: 1.0.0
+#
+# VERSION MARKER — read by every host installer before writing this file to the
+# SHARED path ~/.agenticapps/bin/. Installers MUST refuse to overwrite a higher
+# version (treat an unmarked file as 0.0.0). Bump whenever behaviour changes.
+#
+# This marker is LATE. The gate and reviewer-cli were both given one after
+# core#41 — a host installer blind-installed its 3-arm reviewer-cli over a 4-arm
+# one, the `opencode` arm vanished, and the next review that asked for it was
+# recorded as "reviewer unavailable" and waved through with one fewer opinion.
+# The producer sat in the same shared directory, installed by the same script,
+# three lines below the gate's arbitration block — and was left blind. Nothing
+# has broken yet only because no sibling host ships a producer to overwrite it
+# with; that is luck, not design.
+#
+#   1.0.0 — first marked version. Carries the stdout sanitiser (vendor banners
+#           and session-hook logs were landing in REVIEWS.md as review prose),
+#           the `## Reviewer:` forge guard, and per-code reporting of
+#           reviewer-cli 1.1.0's 3/4/5 exits.
+#
 # run-plan-review.sh — drive >=2 other-vendor agent CLIs to adversarially review an
 # active OpenSpec change and write changes/<slug>/REVIEWS.md. Retarget of ADR-0018.
 #
@@ -111,16 +131,71 @@ for r in "${REVIEWERS[@]}"; do
   # cap actually applied.
   resp="$(REVIEWER_TIMEOUT="$TIMEOUT" "$REVIEWER_CLI" "$r" "$PROMPT_FILE" 2>/dev/null)"
   rc=$?
-  # A non-zero wrapper exit means "reviewer unavailable" — unknown vendor, CLI
-  # absent, or a timeout. It must never be counted, because §18's whole purpose
-  # is TWO independent opinions and one reachable vendor scored twice is one
-  # opinion wearing two names. Checked explicitly rather than inferred from
-  # empty output: a vendor can fail late and still have printed something.
+  # ANY non-zero wrapper exit means "not counted" — §18's whole purpose is TWO
+  # independent opinions, and one reachable vendor scored twice is one opinion
+  # wearing two names. Checked explicitly rather than inferred from empty
+  # output: a vendor can fail late and still have printed something.
+  #
+  # But WHICH failure decides what the operator does next, and collapsing them
+  # sent someone to check PATH for an opencode that was present and working —
+  # it had timed out at the default bound on a full-artifact prompt.
+  # reviewer-cli 1.1.0 splits the codes; report them apart. An unrecognised code
+  # is described as such rather than guessed at, so an older wrapper (where
+  # every failure was 3) still degrades honestly instead of lying specifically.
   if [ "$rc" -ne 0 ]; then
-    echo "  (reviewer unavailable: $r exited $rc — not counted)" >&2
+    case "$rc" in
+      3) echo "  (reviewer unavailable: $r — CLI absent or usage error; not counted)" >&2 ;;
+      4) echo "  (reviewer timed out: $r exceeded ${TIMEOUT}s — not counted; raise REVIEW_TIMEOUT to keep this opinion)" >&2 ;;
+      5) echo "  (unknown vendor: $r is not one of claude|gemini|opencode|codex — not counted)" >&2 ;;
+      *) echo "  ($r failed with exit $rc — not counted)" >&2 ;;
+    esac
     continue
   fi
   [ -n "$resp" ] || { echo "  (no output from $r — skipped)" >&2; continue; }
+
+  # SANITISE before this reaches REVIEWS.md. Vendor CLIs print banners and
+  # session-hook logs to STDOUT, inline with the review: gemini emitted four
+  # lines of SessionEnd hook expansion into a recorded review, and opencode
+  # prints a `> build · <model>` banner ahead of any content. Discarding stderr
+  # (the 2>/dev/null above) touches neither. REVIEWS.md is the gate's evidence
+  # artifact, so what lands in it has to be the review.
+  #
+  # Strip banner/log lines from BOTH ENDS, never from between content. Leading
+  # covers opencode's `> build · <model>`; TRAILING is the one that actually
+  # bit — gemini's four SessionEnd hook lines landed AFTER its findings, so a
+  # leading-only filter would have sailed straight past the case this exists
+  # for. Anything between the first and last content line is passed through
+  # untouched: a filter that dropped mid-review lines would silently edit a
+  # reviewer's findings, a worse failure than a surviving banner.
+  resp="$(printf '%s' "$resp" | awk '
+    function is_noise(s) {
+      return s ~ /^[[:space:]]*$/ \
+          || s ~ /^[[:space:]]*[>[]/ \
+          || s ~ /^[[:space:]]*(Created execution plan|Expanding hook command|Hook execution)/
+    }
+    { line[NR] = $0 }
+    END {
+      first = 0; last = 0
+      for (i = 1; i <= NR; i++) if (!is_noise(line[i])) { if (!first) first = i; last = i }
+      if (!first) exit          # nothing but noise — caller skips this reviewer
+      for (i = first; i <= last; i++) print line[i]
+    }
+  ')"
+  [ -n "$resp" ] || { echo "  (only banner output from $r — skipped)" >&2; continue; }
+
+  # A captured body carrying its own `## Reviewer:` heading would FORGE extra
+  # reviewers: the gate counts distinct headings, so one vendor whose chatter
+  # contained that string could clear a threshold that exists to require two.
+  # The gate already hardens against this for hand-written document content
+  # (fence skipping, distinct names) — this is the same attack arriving through
+  # captured stdout, which no amount of gate-side hardening can see.
+  # Refuse the whole response rather than rewriting it: a reviewer emitting
+  # section headings is not answering in the format we asked for.
+  if printf '%s' "$resp" | grep -qE '^[[:space:]]*##[[:space:]]*[Rr]eviewer[[:space:]]*:'; then
+    echo "  (rejected $r: response contains a '## Reviewer:' heading — would forge reviewers; not counted)" >&2
+    continue
+  fi
+
   {
     echo "## Reviewer: $r"
     echo "_generated $(date -u +%Y-%m-%dT%H:%M:%SZ) · timeout ${TIMEOUT}s_"
