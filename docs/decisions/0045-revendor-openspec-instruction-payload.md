@@ -28,9 +28,12 @@ That is not stale prose. It is the instruction surface contradicting the
 enforcement surface: the §18 change-gate blocks the edits that document tells
 the agent to make, and the agent has no way to tell which of the two is current.
 
-Eleven repos carry a vendored copy. `agents-task-viewer` — at
-`version: 3.0.0`, `implements_spec: 1.0.0` — additionally carries the
-`## GSD Workflow Enforcement` section inlined verbatim in its `CLAUDE.md`.
+Eleven repos carry at least one of the two vendored documents — **ten** carry
+`workflow.md` (`agenticapps-dashboard` removed its deliberately) and all eleven
+carry `workflow-config.md`. Seven are at `version: 3.0.0` /
+`implements_spec: 1.0.0` and can apply the fix. Five of those seven were still
+serving the GSD-teaching bytes at the time this shipped. Per-repo state is in
+`0033`'s `## Downstream` table.
 
 Two facts about how this survived five migrations matter more than the defect:
 
@@ -129,11 +132,53 @@ that is its own migration with the hook change alongside it.
   Replace / Keep / Vendor-local pick defined in `update/SKILL.md`, defaulting to
   Keep. An operator who chooses Keep stays on GSD-teaching prose *by explicit
   decision* — which is the point of the prompt.
-- **`agents-task-viewer`'s inlined `## GSD Workflow Enforcement` section is not
-  removed by this migration.** Stripping a section from the file that carries
-  the canonical §11 block is the surgery migrations `0029`, `0030` and `0043`
-  exist because of. It is a hand edit with the diff in front of you.
-- **Two follow-ups are now named rather than latent:** the two hooks' stale
-  advice, and `docs/ENFORCEMENT-PLAN.md`, which the vendored `workflow.md`
-  cites as its enforcement contract and which is still written in phases,
-  `*-PLAN.md` and `/gsd-review`.
+- **But every eligible copy of `workflow.md` turned out to be divergent**, so
+  the prompt fires on all of them — and the safe default is the wrong answer for
+  **five of the seven** eligible repos. The other two are not counted:
+  `agents-task-viewer` carries a deliberate rewrite, where the Keep default is
+  *right*, and `agenticapps-dashboard` has no `workflow.md` at all, so Step 1
+  no-ops and no prompt fires. For the five the divergence is *age*, not
+  customization — copies vendored before `0027` repointed `ENFORCEMENT-PLAN.md`
+  and before the `observability-postphase-scan.sh` hook was dropped at 2.5.0.
+  Rollout guidance and the per-repo table live in `0033`'s `## Downstream`. The
+  general lesson: "default to Keep" is right when divergence means customization
+  and wrong when it means staleness, and the prompt cannot tell them apart.
+  Whoever runs the migration must.
+- **No repo carries the `## GSD Workflow Enforcement` section inlined in
+  `CLAUDE.md`.** An earlier revision of this ADR said `agents-task-viewer` did;
+  that was a stale measurement inherited from the defect report, and it was
+  already untrue when `0033` shipped. `0033` still touches no `CLAUDE.md` — the
+  reason is unchanged (`0029`/`0030`/`0043`), and `cparx` does still carry an
+  older *inlined* workflow block that needs a hand edit.
+- **Three follow-ups are now named rather than latent:** the two hooks' stale
+  advice; `docs/ENFORCEMENT-PLAN.md`, which the vendored `workflow.md` cites as
+  its enforcement contract and which is still written in phases, `*-PLAN.md` and
+  `/gsd-review`; and the open question below.
+
+## Open question this raised — should `workflow.md` exist at all?
+
+`agents-task-viewer` answered it locally before this migration did: it replaced
+its vendored copy with a **67-line companion** that states the three disciplines
+and then points at `.claude/skills/agentic-apps-workflow/SKILL.md` as
+authoritative, under an explicit rule that it *"never duplicates the SKILL's
+lifecycle or gate rules (§11: one source, no drift)"*.
+
+That is a better structure than what this ADR ships, and it is worth saying so
+plainly. What `0033` vendors is ~190 lines that restate the trigger skill's
+commitment ritual, lifecycle table, gate map, rationalization table and red
+flags. Two copies of one rule set is the exact failure this migration exists to
+repair — and the `test_workflow_md_red_flags_match_canonical` guard added here
+is a *pin holding the §04 red-flag block in sync*, which is a workaround for
+having two copies at all.
+
+Note what that guard does **not** cover, because it sharpens the argument rather
+than weakening it: it compares the red-flag block only. The lifecycle table, the
+gate-to-skill map and the rationalization table are duplicated in both files and
+pinned in neither — they can drift exactly as §04 did, and nothing would notice.
+Extending the pin to the whole file is not the fix either; a byte-identical
+"companion" is just the SKILL with extra steps.
+
+Not resolved here, because collapsing the file is a different change with real
+coupling: `CLAUDE.md`'s `## Workflow` link, `0000`/`0009`'s post-checks that
+grep its headings, and `normalize-claude-md.sh`'s dependence on its existence
+(live in two repos today). Tracked as the successor to this ADR.
