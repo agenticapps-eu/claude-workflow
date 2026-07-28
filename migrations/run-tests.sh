@@ -309,20 +309,23 @@ test_migration_0009() {
     'test -f .claude/claude-md/workflow.md' "$idempotent_dir" applied
 
   # ── Step 2: vendored content current (canonical marker present) ──────────
-  # Idempotency check: `grep -q "Superpowers Integration Hooks (MANDATORY" .claude/claude-md/workflow.md`
+  # Idempotency check (0009 Step 2, made shape-tolerant by 0034): matches either
+  # the pre-3.2.0 hooks heading or the 3.2.0 companion's Authoritative-source
+  # sentinel. The fixtures below carry the pre-3.2.0 shape, so they hit the
+  # first alternative — which is exactly the replay path the tolerance protects.
   # Note: when the file doesn't exist, grep returns non-zero — same outcome
   # as "content not current". The migration runtime distinguishes via Step 1
   # ordering (Step 2 only runs after Step 1 succeeds).
   assert_check "Step 2 idempotency: needs apply on before-fresh (no file)" \
-    'grep -q "Superpowers Integration Hooks (MANDATORY" .claude/claude-md/workflow.md 2>/dev/null' "$fresh_dir" not-applied
+    'grep -qE "Superpowers Integration Hooks \(MANDATORY|^> \*\*Authoritative source:" .claude/claude-md/workflow.md 2>/dev/null' "$fresh_dir" not-applied
   assert_check "Step 2 idempotency: needs apply on before-inlined-pristine (no file)" \
-    'grep -q "Superpowers Integration Hooks (MANDATORY" .claude/claude-md/workflow.md 2>/dev/null' "$inlined_pristine_dir" not-applied
+    'grep -qE "Superpowers Integration Hooks \(MANDATORY|^> \*\*Authoritative source:" .claude/claude-md/workflow.md 2>/dev/null' "$inlined_pristine_dir" not-applied
   assert_check "Step 2 idempotency: needs apply on before-inlined-customised (no file)" \
-    'grep -q "Superpowers Integration Hooks (MANDATORY" .claude/claude-md/workflow.md 2>/dev/null' "$inlined_customised_dir" not-applied
+    'grep -qE "Superpowers Integration Hooks \(MANDATORY|^> \*\*Authoritative source:" .claude/claude-md/workflow.md 2>/dev/null' "$inlined_customised_dir" not-applied
   assert_check "Step 2 idempotency: skip on after-vendored" \
-    'grep -q "Superpowers Integration Hooks (MANDATORY" .claude/claude-md/workflow.md' "$vendored_dir" applied
+    'grep -qE "Superpowers Integration Hooks \(MANDATORY|^> \*\*Authoritative source:" .claude/claude-md/workflow.md' "$vendored_dir" applied
   assert_check "Step 2 idempotency: skip on after-idempotent" \
-    'grep -q "Superpowers Integration Hooks (MANDATORY" .claude/claude-md/workflow.md' "$idempotent_dir" applied
+    'grep -qE "Superpowers Integration Hooks \(MANDATORY|^> \*\*Authoritative source:" .claude/claude-md/workflow.md' "$idempotent_dir" applied
 
   # ── Step 3: CLAUDE.md links to vendored file ──────────────────────────────
   # Idempotency check: `grep -q "claude-md/workflow.md" CLAUDE.md`
@@ -2604,54 +2607,165 @@ test_no_gsd_refs_in_shipped_templates() {
 # reworded 13-flag variant — disclosed in `## Spec deltas` rather than fixed.
 # 0033 made them byte-identical and deleted the disclosure; this keeps them so.
 
-test_workflow_md_red_flags_match_canonical() {
+test_migration_0034() {
   echo ""
-  echo "${YELLOW}━━━ §04 red flags — vendored copy == canonical block ━━━${RESET}"
+  echo "${YELLOW}━━━ Migration 0034 — Collapse the workflow reference to a companion ━━━${RESET}"
+
+  local fixtures="$REPO_ROOT/migrations/test-fixtures/0034"
+  if [ ! -d "$fixtures" ]; then
+    echo "  ${RED}SKIP${RESET}: fixtures directory missing"
+    SKIP=$((SKIP+1))
+    return
+  fi
+
+  local migration_file="$REPO_ROOT/migrations/0034-collapse-workflow-md-to-companion.md"
+  if [ ! -f "$migration_file" ]; then
+    echo "  ${RED}✗${RESET} migration file missing: $migration_file — RED state"
+    FAIL=$((FAIL+1))
+    return
+  fi
+
+  run_0034_fixture() {
+    local fixname="$1"
+    local fixdir="$fixtures/$fixname"
+    local tmp; tmp="$(mktemp -d -t "migration-0034-${fixname}-XXXXXX")"
+    local fake_home="$tmp/home"
+    mkdir -p "$fake_home"
+
+    if [ -x "$fixdir/setup.sh" ]; then
+      (
+        cd "$tmp" && \
+        HOME="$fake_home" REPO_ROOT="$REPO_ROOT" FIXTURES_ROOT="$fixtures" \
+          "$fixdir/setup.sh" >/dev/null 2>&1
+      ) || {
+        echo "  ${RED}✗${RESET} $fixname — setup.sh failed"
+        FAIL=$((FAIL+1))
+        rm -rf "$tmp"
+        return
+      }
+    fi
+
+    local verify_out verify_exit
+    verify_out=$(
+      cd "$tmp" && \
+      HOME="$fake_home" REPO_ROOT="$REPO_ROOT" FIXTURES_ROOT="$fixtures" \
+        "$fixdir/verify.sh" 2>&1
+    )
+    verify_exit=$?
+
+    local expected_exit
+    expected_exit="$(cat "$fixdir/expected-exit" 2>/dev/null || echo 0)"
+
+    if [ "$verify_exit" -ne "$expected_exit" ]; then
+      echo "  ${RED}✗${RESET} $fixname — exit $verify_exit, expected $expected_exit"
+      printf '%s\n' "$verify_out" | sed 's/^/      /'
+      FAIL=$((FAIL+1))
+      rm -rf "$tmp"
+      return
+    fi
+
+    echo "  ${GREEN}✓${RESET} $fixname"
+    PASS=$((PASS+1))
+    rm -rf "$tmp"
+  }
+
+  for fix in "$fixtures"/[0-9]*-*/; do
+    local name
+    name="$(basename "${fix%/}")"
+    run_0034_fixture "$name"
+  done
+
+  # apply-parity, same rule as 0032/0033.
+  local apply_file="$fixtures/common-apply.sh"
+  local drift=0 checked=0 line norm
+  while IFS= read -r line; do
+    norm="$(printf '%s' "$line" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+    case "$norm" in
+      ''|'#'*|'set -uo pipefail'|'fi'|'else'|'done'|'}'|"'"*) continue ;;
+      SCAFFOLDER=*) continue ;;
+    esac
+    checked=$((checked+1))
+    if ! grep -qF "$norm" "$migration_file"; then
+      echo "  ${RED}✗${RESET} apply-parity — fixture line absent from the migration doc:"
+      echo "        $norm"
+      drift=1
+    fi
+  done < "$apply_file"
+
+  if [ "$drift" -eq 0 ]; then
+    echo "  ${GREEN}✓${RESET} apply-parity — all $checked fixture lines appear in the migration"
+    PASS=$((PASS+1))
+  else
+    FAIL=$((FAIL+1))
+  fi
+}
+
+
+test_workflow_md_defers_to_the_skill() {
+  echo ""
+  echo "${YELLOW}━━━ Vendored workflow reference defers to the SKILL (no duplicate) ━━━${RESET}"
 
   local canon_src="$REPO_ROOT/skill/SKILL.md"
   local vendored="$REPO_ROOT/templates/.claude/claude-md/workflow.md"
   local snapshot="$REPO_ROOT/setup/snapshot/claude-md-workflow.md"
 
+  # ── 1. The SKILL still carries the canonical rule blocks ───────────────────
+  # Deferring to a document that lost the content is worse than duplicating it,
+  # so the authority is checked first and by content, not by presence.
   _rf_block() {
     awk '/^## 14 Red Flags — STOP → DELETE → RESTART$/ { f=1; print; next }
          f && /^## / { exit }
          f { print }' "$1"
   }
-
-  local a b c
-  a="$(_rf_block "$canon_src")"
-  b="$(_rf_block "$vendored")"
-  c="$(_rf_block "$snapshot")"
-
-  if [ -z "$a" ]; then
-    echo "  ${RED}✗${RESET} no '## 14 Red Flags — STOP → DELETE → RESTART' block in skill/SKILL.md"
+  local canon; canon="$(_rf_block "$canon_src")"
+  if [ -z "$canon" ] || ! printf '%s\n' "$canon" | grep -q '^14\. '; then
+    echo "  ${RED}✗${RESET} skill/SKILL.md is missing the canonical §04 block (or it does not run to flag 14)"
     FAIL=$((FAIL+1))
     return
   fi
-  # Guards the extractor itself: a block that lost its numbered list would still
-  # compare equal against an equally-empty copy.
-  if ! printf '%s\n' "$a" | grep -q '^14\. '; then
-    echo "  ${RED}✗${RESET} canonical block does not run to flag 14 — extractor or source is wrong"
-    FAIL=$((FAIL+1))
-    return
-  fi
+  echo "  ${GREEN}✓${RESET} skill/SKILL.md carries the canonical §04 block, flags 1-14"
+  PASS=$((PASS+1))
 
-  if [ "$a" = "$b" ]; then
-    echo "  ${GREEN}✓${RESET} templates/.claude/claude-md/workflow.md matches the canonical block"
+  if grep -q 'If you think\.\.\.' "$canon_src"; then
+    echo "  ${GREEN}✓${RESET} skill/SKILL.md carries the rationalization table"
     PASS=$((PASS+1))
   else
-    echo "  ${RED}✗${RESET} templates/.claude/claude-md/workflow.md diverges from skill/SKILL.md:"
-    diff <(printf '%s\n' "$a") <(printf '%s\n' "$b") | sed 's/^/        /'
+    echo "  ${RED}✗${RESET} skill/SKILL.md lost the rationalization table"
     FAIL=$((FAIL+1))
   fi
 
-  if [ "$a" = "$c" ]; then
-    echo "  ${GREEN}✓${RESET} setup/snapshot/claude-md-workflow.md matches the canonical block"
-    PASS=$((PASS+1))
-  else
-    echo "  ${RED}✗${RESET} setup/snapshot/claude-md-workflow.md diverges (rebuild: bash bin/build-snapshot.sh)"
-    FAIL=$((FAIL+1))
-  fi
+  # ── 2. The vendored companion must NOT restate them ───────────────────────
+  # 0033 pinned two copies byte-identical; 0034 removed the second copy, so the
+  # invariant inverts (same treatment check-snapshot-parity.sh §10 gave
+  # GitNexus). Asserting the ABSENCE means a revert that reintroduces the
+  # duplicate fails here instead of silently re-opening the drift window.
+  local f name dup
+  for f in "$vendored" "$snapshot"; do
+    name="${f#$REPO_ROOT/}"
+    dup=0
+    grep -qE '^#{2,4} [0-9]+ Red Flags' "$f" && { echo "  ${RED}✗${RESET} $name restates a Red Flags block"; dup=1; }
+    grep -q  '^## Workflow commitment$'   "$f" && { echo "  ${RED}✗${RESET} $name restates the commitment ritual template"; dup=1; }
+    grep -q  'If you think\.\.\.'        "$f" && { echo "  ${RED}✗${RESET} $name restates the rationalization table"; dup=1; }
+    if [ "$dup" -eq 0 ]; then
+      echo "  ${GREEN}✓${RESET} $name duplicates none of the SKILL's rule blocks"
+      PASS=$((PASS+1))
+    else
+      FAIL=$((FAIL+1))
+    fi
+  done
+
+  # ── 3. ...and it must say so, in the sentinel 0000/0009/0034 anchor on ────
+  for f in "$vendored" "$snapshot"; do
+    name="${f#$REPO_ROOT/}"
+    if grep -q '^> \*\*Authoritative source:' "$f"; then
+      echo "  ${GREEN}✓${RESET} $name carries the Authoritative-source sentinel"
+      PASS=$((PASS+1))
+    else
+      echo "  ${RED}✗${RESET} $name is missing the '> **Authoritative source:' sentinel"
+      echo "        0000's post-check, 0009's Step 2 check and 0034's pre-flight all anchor on it."
+      FAIL=$((FAIL+1))
+    fi
+  done
 }
 
 
@@ -3267,8 +3381,17 @@ if [ -z "$FILTER" ] || [ "$FILTER" = "0033" ] || [ "$FILTER" = "no-gsd-refs" ]; 
   test_no_gsd_refs_in_shipped_templates
 fi
 
-if [ -z "$FILTER" ] || [ "$FILTER" = "0033" ] || [ "$FILTER" = "red-flags" ]; then
-  test_workflow_md_red_flags_match_canonical
+if [ -z "$FILTER" ] || [ "$FILTER" = "0034" ]; then
+  test_migration_0034
+fi
+
+# Renamed from `red-flags` at 3.2.0: 0034 removed the second copy of the §04
+# block, so the check inverted from "the two copies match" to "there is only
+# one copy". The old filter token is kept as an alias so muscle memory and any
+# CI invocation that pinned it keep working.
+if [ -z "$FILTER" ] || [ "$FILTER" = "0033" ] || [ "$FILTER" = "0034" ] \
+   || [ "$FILTER" = "defers-to-skill" ] || [ "$FILTER" = "red-flags" ]; then
+  test_workflow_md_defers_to_the_skill
 fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "0032" ] || [ "$FILTER" = "review-producer" ]; then

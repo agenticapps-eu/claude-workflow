@@ -319,8 +319,15 @@ if [ -f .claude/workflow-config.md ]; then
   grep -q '^## Project$' .claude/workflow-config.md
 fi
 
-# 5. §04 reconciled: the red-flag block in the vendored workflow reference is
-#    byte-identical to the canonical block in the installed trigger skill.
+# 5. §04 reconciled: the vendored workflow reference carries no red-flag block
+#    that DIFFERS from the canonical one in the installed trigger skill. Two
+#    states satisfy that and both are correct:
+#      - byte-identical (the 3.1.0 payload this migration shipped), or
+#      - absent entirely (the 3.2.0 companion — migration 0034 removed the
+#        duplicate rather than keeping two copies pinned in sync).
+#    A present-but-different block is the defect, and only that fails here.
+#    Pinning "byte-identical" alone would make this post-check false on a
+#    correct 0034 install; the guarantee is one source, not two copies.
 if [ -f .claude/claude-md/workflow.md ]; then
   _rf() {
     awk '/^## 14 Red Flags — STOP → DELETE → RESTART$/ { f=1; print; next }
@@ -330,13 +337,20 @@ if [ -f .claude/claude-md/workflow.md ]; then
   _x="$(mktemp)"; _y="$(mktemp)"
   _rf .claude/skills/agentic-apps-workflow/SKILL.md > "$_x"
   _rf .claude/claude-md/workflow.md > "$_y"
-  cmp -s "$_x" "$_y"; _rc=$?
+  if [ -s "$_y" ]; then cmp -s "$_x" "$_y"; _rc=$?; else _rc=0; fi
   rm -f "$_x" "$_y"
   test "$_rc" -eq 0
 fi
 
-# 6. Version bumped; spec claim unchanged.
-grep -q '^version: 3.1.0$' .claude/skills/agentic-apps-workflow/SKILL.md
+# 6. Version bumped; spec claim unchanged. Asserted as "the trigger skill IS the
+#    scaffolder's copy, at 3.1.0 or later" rather than "== 3.1.0": Step 3 copies
+#    whatever the scaffolder ships, so a literal pin turns false the moment a
+#    later migration bumps the payload even though Step 3 did exactly its job.
+#    (Hit for real by 0034 — same class as the shape pin in post-check 5.)
+cmp -s "$SCAFFOLDER/setup/snapshot/agentic-apps-workflow-SKILL.md" \
+       .claude/skills/agentic-apps-workflow/SKILL.md
+_v="$(awk '/^version:/{print $2; exit}' .claude/skills/agentic-apps-workflow/SKILL.md)"
+test "$(printf '3.1.0\n%s\n' "$_v" | sort -V | head -n1)" = "3.1.0"
 grep -q '^implements_spec: 1.0.0$' .claude/skills/agentic-apps-workflow/SKILL.md
 
 # 7. Nothing else moved.

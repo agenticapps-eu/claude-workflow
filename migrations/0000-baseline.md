@@ -183,7 +183,9 @@ field, insert `version: 1.2.0` as the second frontmatter line (after `name:`).
 - `jq -e '.hooks.pre_phase.brainstorm_ui' .planning/config.json` — config valid
 - `test -f .claude/claude-md/workflow.md` — workflow block vendored
 - `grep -q "claude-md/workflow.md" CLAUDE.md` — CLAUDE.md links to vendored block
-- `grep -q "Superpowers Integration Hooks (MANDATORY" .claude/claude-md/workflow.md` — vendored content sane
+- `grep -qE "Superpowers Integration Hooks \(MANDATORY|^> \*\*Authoritative source:" .claude/claude-md/workflow.md` — vendored content sane
+  (either shape: the pre-3.2.0 full block, or the 3.2.0 companion that defers
+  to the SKILL — see migration `0034`)
 - `grep -q '^version: 1.2.0' .claude/skills/agentic-apps-workflow/SKILL.md` — version recorded
 
 ## Skip cases
