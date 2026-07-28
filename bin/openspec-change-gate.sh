@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# gate-version: 1.2.2
+# gate-version: 1.3.0
 #
 # VERSION MARKER — read by every host installer before writing this file to the
 # SHARED path ~/.agenticapps/bin/. That path is written by claude / codex /
@@ -7,6 +7,14 @@
 # a host still vendoring an older copy silently republishes it over a newer one
 # and reverts the fix for every agent on the machine. Installers MUST refuse to
 # overwrite a higher version. Bump this whenever the gate's behaviour changes.
+#   1.3.0 — report, but do not act on, outstanding REQUEST-CHANGES verdicts.
+#           §18's truth table has no verdict term, so the threshold is a QUORUM:
+#           two rejections open the gate exactly as two approvals do, and that
+#           stays true here. What changed is the silence — the producer asks
+#           every reviewer for a verdict and nothing read the answer, so a
+#           change could step over two rejections without a word. Now the gate
+#           names the objectors on the allow path. Reporting only; promoting
+#           verdicts to blocking is a §18 change, not a gate change.
 #   1.2.2 — close two symlink escapes in the openspec/ exemption, both present
 #           since 1.2.0. (a) `..` was collapsed textually BEFORE physical
 #           resolution, so a symlink inside openspec/ followed by `..` was
@@ -137,6 +145,49 @@ reviewer_count(){                      # $1 = change dir ; echo number of DISTIN
   ' "$f" 2>/dev/null || echo 0
 }
 
+# Names the reviewers whose section carries a REQUEST-CHANGES verdict, comma
+# separated; empty when none do. REPORTING ONLY — nothing here can block, and
+# nothing here may ever change an exit code. §18's truth table has no verdict
+# term, so a gate that blocked on this would be non-conformant.
+#
+# Deliberately mirrors reviewer_count's parsing rather than sharing it: fences
+# are skipped for the same reason (a REVIEWS.md quoting the convention inside
+# ``` must not register), self-exclusion applies for the same reason (the
+# implementing host's own verdict is not an independent opinion), and both walk
+# the file once. Divergence between the two would mean the gate counts one set
+# of reviewers and reports on another.
+#
+# A section with no verdict line at all is NOT a rejection. Reviewers that
+# ignore the producer's format, or vendors whose output was truncated, must not
+# be reported as objecting when they said nothing.
+pending_rejections(){
+  local f="$1/REVIEWS.md"
+  [ -f "$f" ] || { echo ""; return; }
+  awk -v self="${OPENSPEC_GATE_SELF:-}" '
+    /^[[:space:]]*```/ { fence = !fence; next }
+    fence { next }
+    /^##[[:space:]]*[Rr]eviewer[[:space:]]*:[[:space:]]*[^[:space:]]/ {
+      name = $0
+      sub(/^##[[:space:]]*[Rr]eviewer[[:space:]]*:[[:space:]]*/, "", name)
+      sub(/[[:space:]]+$/, "", name)
+      name = tolower(name)
+      cur = (self != "" && name ~ ("^" tolower(self) "([-_ ].*)?$")) ? "" : name
+      next
+    }
+    # Anchored at line start so a reviewer QUOTING the verdict vocabulary mid
+    # prose ("...I nearly said REQUEST-CHANGES here...") does not register as
+    # one. The producer writes it as its own line.
+    cur != "" && /^[[:space:]]*VERDICT[[:space:]]*:[[:space:]]*REQUEST-CHANGES/ {
+      if (!(cur in flagged)) { flagged[cur] = 1; order[++k] = cur }
+    }
+    END {
+      out = ""
+      for (i = 1; i <= k; i++) out = (out == "" ? order[i] : out ", " order[i])
+      print out
+    }
+  ' "$f" 2>/dev/null || echo ""
+}
+
 validate_ok(){ ( cd "$ROOT" && "$OPENSPEC_BIN" validate --all >/dev/null 2>&1 ); }
 
 # Core check. Returns: 0 = satisfied, 2 = blocked. Never errors out.
@@ -151,14 +202,32 @@ gate_check(){
   fi
   if ! validate_ok; then log "openspec validate --all FAILED — fix the spec delta first"; return 2; fi
   if [ "${GSD_SKIP_REVIEWS:-0}" = "1" ]; then log "GSD_SKIP_REVIEWS=1 — review requirement bypassed"; return 0; fi
-  local blocked=0 d n
+  local blocked=0 d n v
   while IFS= read -r d; do
     [ -n "$d" ] || continue
     n="$(reviewer_count "$d")"
     if [ "$n" -lt "$MIN_REVIEWERS" ]; then
       log "change '${d#"$ROOT"/}' has $n/$MIN_REVIEWERS reviewers — run plan-review to write REVIEWS.md"
       blocked=1
+      continue
     fi
+    # The threshold is a QUORUM, not an approval: §18's truth table keys `allow`
+    # on the reviewer COUNT and carries no verdict term, so two REQUEST-CHANGES
+    # verdicts open the gate exactly as two APPROVEs would. That is deliberate —
+    # promoting verdicts to blocking needs a re-review trigger, a staleness rule
+    # for an edited proposal, and an override path, none of which §18 defines.
+    #
+    # But silently stepping over a rejection is its own failure. The producer
+    # ASKS every reviewer for "VERDICT: APPROVE" or "VERDICT: REQUEST-CHANGES",
+    # so the answer is always there; before this the gate simply never read it.
+    # On the run that surfaced this, both reviewers said REQUEST-CHANGES — one
+    # of them having found a 77-record identity-migration hazard the plan missed
+    # entirely — and the gate allowed the edit without a word.
+    #
+    # So: still allow, but say so. Reporting only, never blocking; a change to
+    # that is a §18 change, not a gate change.
+    v="$(pending_rejections "$d")"
+    [ -n "$v" ] && log "NOTE change '${d#"$ROOT"/}' has $n reviewer(s) but $v requested changes — allowed on quorum; address or record why not"
   done <<< "$changes"
   [ "$blocked" -eq 0 ] && return 0 || return 2
 }

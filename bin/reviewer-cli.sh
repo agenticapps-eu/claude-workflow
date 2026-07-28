@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# reviewer-cli-version: 1.0.0
+# reviewer-cli-version: 1.1.0
 #
 # VERSION MARKER — read by every host installer before writing this file to the
 # SHARED path ~/.agenticapps/bin/. That path is written by claude / codex /
@@ -18,6 +18,10 @@
 #           pi's structure (stdin pinned inside run_bounded, explicit usage
 #           checks, unbounded-run warning) with codex's coverage (four vendor
 #           arms and the opencode model-provenance note).
+#   1.1.0 — split the single `exit 3` into 3 unavailable / 4 timed out /
+#           5 unknown vendor. A live opencode that timed out was being reported
+#           to the operator as "unavailable", sending them to check PATH for a
+#           CLI that was present and working.
 #
 # reviewer-cli.sh — defensive wrapper for an external-vendor reviewer CLI (§18).
 #
@@ -42,13 +46,18 @@
 # Env:
 #   REVIEWER_TIMEOUT   hard wall-clock cap in seconds (default 300)
 #
-# Output: the reviewer's raw verdict text on stdout.
-# Exit:   0 on a completed review; 3 on a usage/lookup/timeout error; otherwise
-#         the vendor CLI's own code. The producer MUST treat a non-zero vendor as
-#         "reviewer unavailable" and say so in REVIEWS.md — it must NEVER be
-#         silently counted as a passing reviewer, because that would let one
-#         reachable vendor satisfy a rule whose whole purpose is two independent
-#         ones.
+# Output: the reviewer's raw verdict text on stdout. NOTE the producer must not
+#         assume this is review prose only — vendor CLIs print banners and
+#         session-hook logs to stdout, and that chatter reaches the producer
+#         inline with the review. Sanitising it is the PRODUCER's job (it knows
+#         the artifact format); this wrapper stays vendor-dispatch-only.
+# Exit:   0 on a completed review; 3 unavailable (CLI absent / usage error);
+#         4 timed out; 5 unknown vendor; otherwise the vendor CLI's own code.
+#         The producer MUST treat ANY non-zero as "not counted" and say so in
+#         REVIEWS.md — it must NEVER be silently counted as a passing reviewer,
+#         because that would let one reachable vendor satisfy a rule whose whole
+#         purpose is two independent ones. It SHOULD distinguish 3/4/5 in what it
+#         tells the operator: they have different fixes.
 #
 # VENDOR EXCLUSION IS THE PRODUCER'S JOB, NOT THE WRAPPER'S. A host must never
 # review its own change, but the arm for a host's own vendor still ships here:
@@ -67,7 +76,25 @@ vendor="${1:-}"
 prompt_file="${2:-}"
 TIMEOUT="${REVIEWER_TIMEOUT:-300}"
 
-die() { printf 'reviewer-cli: %s\n' "$*" >&2; exit 3; }
+# EXIT CODES — distinct per failure kind, because the producer reports them to a
+# human who has to act on the difference.
+#
+#   3  unavailable    — CLI not on PATH, or the wrapper was called wrong
+#   4  timed out      — the vendor was reachable and ran, but exceeded TIMEOUT
+#   5  unknown vendor — not one of claude | gemini | opencode | codex
+#
+# Before 1.1.0 all three were `exit 3` and the producer printed one string,
+# "reviewer unavailable". A live `opencode` that timed out at the default bound
+# was therefore reported as absent; the operator checked PATH, found the CLI
+# present and working, and the actionable signal (raise REVIEWER_TIMEOUT) was
+# gone. Not counting a failed reviewer is correct; misdiagnosing WHY is not.
+#
+# Keep 3 as the unavailable code so an installer mid-fleet-upgrade that still
+# reads "non-zero means don't count" is unaffected — every code here is non-zero
+# and none may ever be 0.
+die()         { printf 'reviewer-cli: %s\n' "$*" >&2; exit 3; }
+die_timeout() { printf 'reviewer-cli: %s\n' "$*" >&2; exit 4; }
+die_vendor()  { printf 'reviewer-cli: %s\n' "$*" >&2; exit 5; }
 
 # Both arguments are checked explicitly. Letting an empty prompt_file fall
 # through to `[ -f "" ]` reports `prompt file not found: ` with nothing after the
@@ -126,10 +153,14 @@ case "$vendor" in
     run_bounded codex exec "$prompt"
     ;;
   *)
-    die "unknown vendor '$vendor' (expected: claude | gemini | opencode | codex)"
+    die_vendor "unknown vendor '$vendor' (expected: claude | gemini | opencode | codex)"
     ;;
 esac
 rc=$?
 
-[ "$rc" -eq 124 ] && die "$vendor timed out after ${TIMEOUT}s"
+# `timeout(1)` returns 124 on expiry. Map it to the dedicated timeout code and
+# name the bound that was exceeded — the producer surfaces this verbatim, and
+# "after 180s" is what tells the operator to raise REVIEWER_TIMEOUT rather than
+# go hunting for a missing binary.
+[ "$rc" -eq 124 ] && die_timeout "$vendor timed out after ${TIMEOUT}s"
 exit "$rc"
