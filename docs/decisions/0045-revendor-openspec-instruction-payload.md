@@ -130,14 +130,18 @@ that is its own migration with the hook change alongside it.
   Replace / Keep / Vendor-local pick defined in `update/SKILL.md`, defaulting to
   Keep. An operator who chooses Keep stays on GSD-teaching prose *by explicit
   decision* — which is the point of the prompt.
-- **But every eligible copy turned out to be divergent**, so the prompt fires on
-  all of them and the safe default is the wrong answer for six of the seven. The
-  divergence is *age*, not customization — copies vendored before `0027`
-  repointed `ENFORCEMENT-PLAN.md` and before the `observability-postphase-scan.sh`
-  hook was dropped at 2.5.0. Rollout guidance and the per-repo table live in
-  `0033`'s `## Downstream`. The general lesson: "default to Keep" is right when
-  divergence means customization and wrong when it means staleness, and the
-  prompt cannot tell them apart. Whoever runs the migration must.
+- **But every eligible copy of `workflow.md` turned out to be divergent**, so
+  the prompt fires on all of them — and the safe default is the wrong answer for
+  **five of the seven** eligible repos. The other two are not counted:
+  `agents-task-viewer` carries a deliberate rewrite, where the Keep default is
+  *right*, and `agenticapps-dashboard` has no `workflow.md` at all, so Step 1
+  no-ops and no prompt fires. For the five the divergence is *age*, not
+  customization — copies vendored before `0027` repointed `ENFORCEMENT-PLAN.md`
+  and before the `observability-postphase-scan.sh` hook was dropped at 2.5.0.
+  Rollout guidance and the per-repo table live in `0033`'s `## Downstream`. The
+  general lesson: "default to Keep" is right when divergence means customization
+  and wrong when it means staleness, and the prompt cannot tell them apart.
+  Whoever runs the migration must.
 - **No repo carries the `## GSD Workflow Enforcement` section inlined in
   `CLAUDE.md`.** An earlier revision of this ADR said `agents-task-viewer` did;
   that was a stale measurement inherited from the defect report, and it was
@@ -162,8 +166,15 @@ plainly. What `0033` vendors is ~190 lines that restate the trigger skill's
 commitment ritual, lifecycle table, gate map, rationalization table and red
 flags. Two copies of one rule set is the exact failure this migration exists to
 repair — and the `test_workflow_md_red_flags_match_canonical` guard added here
-is a *pin holding two copies in sync*, which is a workaround for having two
-copies at all.
+is a *pin holding the §04 red-flag block in sync*, which is a workaround for
+having two copies at all.
+
+Note what that guard does **not** cover, because it sharpens the argument rather
+than weakening it: it compares the red-flag block only. The lifecycle table, the
+gate-to-skill map and the rationalization table are duplicated in both files and
+pinned in neither — they can drift exactly as §04 did, and nothing would notice.
+Extending the pin to the whole file is not the fix either; a byte-identical
+"companion" is just the SKILL with extra steps.
 
 Not resolved here, because collapsing the file is a different change with real
 coupling: `CLAUDE.md`'s `## Workflow` link, `0000`/`0009`'s post-checks that
