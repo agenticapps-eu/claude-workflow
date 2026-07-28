@@ -88,6 +88,25 @@ reviewers() { # $1 = change dir, remaining args = reviewer names
   for n in "$@"; do printf '## Reviewer: %s\n\nLooks fine.\n\n' "$n" >> "$f"; done
 }
 
+# Same, but each reviewer is given a verdict: `name:A` approves, `name:R`
+# requests changes, a bare `name` writes no verdict line at all. The third form
+# matters — a reviewer that ignored the producer's format said nothing, and must
+# never be reported as objecting.
+reviewers_with_verdicts() { # $1 = change dir, remaining args = name[:A|:R]
+  local dir="$1"; shift
+  local f="$dir/REVIEWS.md" spec n v
+  : > "$f"
+  for spec in "$@"; do
+    n="${spec%%:*}"; v="${spec#"$n"}"; v="${v#:}"
+    printf '## Reviewer: %s\n\n' "$n" >> "$f"
+    case "$v" in
+      A) printf 'VERDICT: APPROVE\n\nLooks fine.\n\n' >> "$f" ;;
+      R) printf 'VERDICT: REQUEST-CHANGES\n\n- something is wrong\n\n' >> "$f" ;;
+      *) printf 'Some prose with no verdict line.\n\n' >> "$f" ;;
+    esac
+  done
+}
+
 # ── the assertion ────────────────────────────────────────────────────────────
 # Runs GATE inside a fixture with the stub on PATH and compares the exit code.
 run_row() { # $1=desc $2=expected $3=fixture $4=payload $5...=gate args
@@ -137,6 +156,34 @@ run_row_stderr_lacks() { # $1=desc $2=expected $3=marker $4=fixture $5=payload $
     pass=$((pass + 1))
   elif [ "$got" = "$want" ]; then
     echo "  FAIL  $desc — exit $got is correct but reached via '$marker' (no mode dispatch?)"
+    fail=$((fail + 1))
+  else
+    echo "  FAIL  $desc — expected $want, got $got"
+    fail=$((fail + 1))
+  fi
+}
+
+# Mirror of run_row_stderr_lacks: asserts the marker IS present. Used for the
+# verdict NOTE, where the exit code alone cannot distinguish "allowed and told
+# the operator about an outstanding rejection" from "allowed silently" — both
+# are exit 0, and silence was the defect.
+run_row_stderr_has() { # $1=desc $2=expected $3=marker $4=fixture $5=payload $6...=gate args
+  local desc="$1" want="$2" marker="$3" fx="$4" payload="$5"; shift 5
+  local err got
+  err="$(
+    cd "$fx/repo" || exit 99
+    printf '%s' "$payload" | PATH="$fx/stub:$PATH" bash "$GATE" "$@" 2>&1 >/dev/null
+  )"
+  got="$(
+    cd "$fx/repo" || exit 99
+    printf '%s' "$payload" | PATH="$fx/stub:$PATH" bash "$GATE" "$@" >/dev/null 2>&1
+    printf '%s' "$?"
+  )"
+  if [ "$got" = "$want" ] && printf '%s' "$err" | grep -qF -- "$marker"; then
+    echo "  PASS  $desc (exit $got)"
+    pass=$((pass + 1))
+  elif [ "$got" = "$want" ]; then
+    echo "  FAIL  $desc — exit $got correct but stderr lacked '$marker'"
     fail=$((fail + 1))
   else
     echo "  FAIL  $desc — expected $want, got $got"
@@ -381,6 +428,60 @@ score_gate() {
   # Anchored: a reviewer whose name merely starts with the host's is not swallowed.
   fx="$(make_fixture 0)"; reviewers "$fx/repo/openspec/changes/add-thing" pi pilot-crew claude
   OPENSPEC_GATE_SELF=pi run_row "exclusion is anchored, not a prefix -> allow" 0 "$fx" "$(p_claude src/main.go)"
+  rm -rf "$fx"
+
+  echo "  ── F. Verdict reporting (quorum, not approval; advisory) ──"
+  # §18's truth table keys `allow` on the reviewer COUNT and carries no verdict
+  # term, so REQUEST-CHANGES must NOT block — a gate that blocked here would be
+  # non-conformant. But the producer asks every reviewer for a verdict, and
+  # before gate 1.3.0 nothing read the answer: two rejections opened the gate in
+  # silence. These rows pin both halves — still allow, but say so.
+  fx="$(make_fixture 0)"
+  reviewers_with_verdicts "$fx/repo/openspec/changes/add-thing" gemini:R codex:R
+  run_row_stderr_has "2x REQUEST-CHANGES still allows (quorum, not approval)" 0 \
+    "NOTE" "$fx" "$(p_claude src/main.go)"
+  run_row_stderr_has "...and names every objecting reviewer" 0 \
+    "gemini, codex" "$fx" "$(p_claude src/main.go)"
+  rm -rf "$fx"
+
+  # Silence on the happy path. A NOTE on every allow is noise that trains the
+  # operator to ignore the one that matters.
+  fx="$(make_fixture 0)"
+  reviewers_with_verdicts "$fx/repo/openspec/changes/add-thing" gemini:A codex:A
+  run_row_stderr_lacks "2x APPROVE allows with no NOTE" 0 "NOTE" "$fx" "$(p_claude src/main.go)"
+  rm -rf "$fx"
+
+  fx="$(make_fixture 0)"
+  reviewers_with_verdicts "$fx/repo/openspec/changes/add-thing" gemini:A codex:R
+  run_row_stderr_has "mixed verdicts name only the objector" 0 \
+    "but codex requested changes" "$fx" "$(p_claude src/main.go)"
+  rm -rf "$fx"
+
+  # A reviewer who ignored the producer's format said nothing. Reporting them as
+  # objecting would manufacture an objection out of a formatting miss.
+  fx="$(make_fixture 0)"
+  reviewers_with_verdicts "$fx/repo/openspec/changes/add-thing" gemini codex
+  run_row_stderr_lacks "no verdict line is not a rejection" 0 "NOTE" "$fx" "$(p_claude src/main.go)"
+  rm -rf "$fx"
+
+  # Same fence rule as reviewer counting: a REVIEWS.md quoting the verdict
+  # vocabulary inside ``` is documentation, not a rejection.
+  fx="$(make_fixture 0)"
+  {
+    printf '## Reviewer: gemini\n\nVERDICT: APPROVE\n\n'
+    printf '## Reviewer: codex\n\nVERDICT: APPROVE\n\n'
+    printf 'Reviewers may reply:\n\n```\nVERDICT: REQUEST-CHANGES\n```\n'
+  } > "$fx/repo/openspec/changes/add-thing/REVIEWS.md"
+  run_row_stderr_lacks "fenced verdict is not a rejection" 0 "NOTE" "$fx" "$(p_claude src/main.go)"
+  rm -rf "$fx"
+
+  # Reporting must agree with counting about who is a reviewer. If the excluded
+  # self could raise a NOTE, the gate would report on an opinion it refuses to
+  # count — the same disagreement OPENSPEC_GATE_SELF exists to prevent.
+  fx="$(make_fixture 0)"
+  reviewers_with_verdicts "$fx/repo/openspec/changes/add-thing" pi:R claude:A codex:A
+  OPENSPEC_GATE_SELF=pi run_row_stderr_lacks "excluded self's rejection is not reported" 0 \
+    "NOTE" "$fx" "$(p_claude src/main.go)"
   rm -rf "$fx"
 
   local pd=$((pass - p0)) fd=$((fail - f0)) idd=$((inconclusive - i0))
