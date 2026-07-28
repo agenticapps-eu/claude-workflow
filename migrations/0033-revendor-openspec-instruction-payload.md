@@ -380,8 +380,10 @@ test -d .planning
 
 ## Downstream
 
-Re-measured on the merged 3.1.0 tree. Eleven repos carry a vendored copy, but
-only **seven are at 3.0.0** and can apply this migration at all — the other four
+Re-measured on the merged 3.1.0 tree. Eleven repos carry at least one of the two
+vendored documents — **ten** carry `workflow.md` (`agenticapps-dashboard` removed
+its deliberately) and all eleven carry `workflow-config.md`. Only **seven are at
+3.0.0** and can apply this migration at all — the other four
 sit at 2.1.0, where `0033` skips silently on `from_version` and the chain must
 replay through `0032` first.
 

@@ -28,7 +28,9 @@ That is not stale prose. It is the instruction surface contradicting the
 enforcement surface: the §18 change-gate blocks the edits that document tells
 the agent to make, and the agent has no way to tell which of the two is current.
 
-Eleven repos carry a vendored copy; seven are at `version: 3.0.0` /
+Eleven repos carry at least one of the two vendored documents — **ten** carry
+`workflow.md` (`agenticapps-dashboard` removed its deliberately) and all eleven
+carry `workflow-config.md`. Seven are at `version: 3.0.0` /
 `implements_spec: 1.0.0` and can apply the fix. Five of those seven were still
 serving the GSD-teaching bytes at the time this shipped. Per-repo state is in
 `0033`'s `## Downstream` table.
