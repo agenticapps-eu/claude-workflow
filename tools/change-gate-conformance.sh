@@ -475,6 +475,39 @@ score_gate() {
   run_row_stderr_lacks "fenced verdict is not a rejection" 0 "NOTE" "$fx" "$(p_claude src/main.go)"
   rm -rf "$fx"
 
+  # Markdown emphasis around the verdict label. 1.3.0 anchored on a bare
+  # `VERDICT:` and missed `**VERDICT: REQUEST-CHANGES**` — exactly what opencode
+  # wrote on the first real run after 1.3.0 shipped. Under-reporting a genuine
+  # rejection is the same class of failure as inventing one.
+  fx="$(make_fixture 0)"
+  {
+    printf '## Reviewer: gemini\n\nVERDICT: APPROVE\n\n'
+    printf '## Reviewer: opencode\n\n**VERDICT: REQUEST-CHANGES**\n\n- a finding\n'
+  } > "$fx/repo/openspec/changes/add-thing/REVIEWS.md"
+  run_row_stderr_has "bolded verdict is still a verdict" 0 \
+    "but opencode requested changes" "$fx" "$(p_claude src/main.go)"
+  rm -rf "$fx"
+
+  # Underscore emphasis, and emphasis on the label only.
+  fx="$(make_fixture 0)"
+  {
+    printf '## Reviewer: gemini\n\nVERDICT: APPROVE\n\n'
+    printf '## Reviewer: codex\n\n__VERDICT: REQUEST-CHANGES__\n'
+  } > "$fx/repo/openspec/changes/add-thing/REVIEWS.md"
+  run_row_stderr_has "underscore-emphasised verdict counts" 0 \
+    "but codex requested changes" "$fx" "$(p_claude src/main.go)"
+  rm -rf "$fx"
+
+  # Emphasis must not turn a mid-prose mention into a rejection: still anchored.
+  fx="$(make_fixture 0)"
+  {
+    printf '## Reviewer: gemini\n\nVERDICT: APPROVE\n\n'
+    printf '## Reviewer: codex\n\nVERDICT: APPROVE\n\nI nearly said **VERDICT: REQUEST-CHANGES** but did not.\n'
+  } > "$fx/repo/openspec/changes/add-thing/REVIEWS.md"
+  run_row_stderr_lacks "emphasised mention mid-prose is not a rejection" 0 \
+    "NOTE" "$fx" "$(p_claude src/main.go)"
+  rm -rf "$fx"
+
   # Reporting must agree with counting about who is a reviewer. If the excluded
   # self could raise a NOTE, the gate would report on an opinion it refuses to
   # count — the same disagreement OPENSPEC_GATE_SELF exists to prevent.
