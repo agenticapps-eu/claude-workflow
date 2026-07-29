@@ -1325,82 +1325,46 @@ test_migration_0024() {
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# test_migration_0025 — Knowledge capture / spec §15 (2.2.0 -> 2.3.0)
-# WORKFLOW — verify body specific to migration 0025 content; stays in claude-workflow.
-# Same fixture-replay shape as 0022/0023/0024: each fixture's setup.sh builds a
-# sandboxed before/after state, verify.sh replays the migration's deterministic
-# Step 1/2/3 shell (config-block insert, section append extracted from
-# $REPO_ROOT/skill/SKILL.md standing in for the scaffolder clone, version bump)
-# and asserts surgical insert + idempotency; expected-exit asserts the rc.
+# test_migration_0025 — Knowledge capture / spec §15 (2.2.0 -> 2.3.0) — RETIRED
+# WORKFLOW — stays in claude-workflow.
+#
+# Spec §15 was removed at core spec 1.2.0 (core ADR-0025; host ADR-0038
+# superseded), so the feature this migration installs no longer exists. Its four
+# fixtures replayed Step 2 by extracting the ritual-tail section from
+# $REPO_ROOT/skill/SKILL.md — a live coupling to a section that is now gone, so
+# they could not be kept green and were retired WITH the feature.
+#
+# The migration doc itself is retained as history per §08 (history is superseded,
+# never deleted). It can only fire for a repo below 2.3.0; every live repo is
+# well past that, and a replay reaching it would halt at its own preflight.
 # ─────────────────────────────────────────────────────────────────────────────
 test_migration_0025() {
   echo ""
-  echo "${YELLOW}━━━ Migration 0025 — Knowledge capture (spec §15) ━━━${RESET}"
-
-  local fixtures="$REPO_ROOT/migrations/test-fixtures/0025"
-
-  if [ ! -d "$fixtures" ]; then
-    echo "  ${RED}SKIP${RESET}: fixtures directory missing"
-    SKIP=$((SKIP+1))
-    return
-  fi
+  echo "${YELLOW}━━━ Migration 0025 — Knowledge capture (spec §15) (RETIRED in 3.2.0) ━━━${RESET}"
 
   local migration_file="$REPO_ROOT/migrations/0025-knowledge-capture.md"
-  if [ ! -f "$migration_file" ]; then
-    echo "  ${RED}✗${RESET} migration file missing: $migration_file — RED state"
+  if [ -f "$migration_file" ]; then
+    echo "  ${GREEN}✓${RESET} migration doc retained as history: $(basename "$migration_file")"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} migration 0025 doc missing — history must be superseded, not deleted (§08)"
     FAIL=$((FAIL+1))
-    return
   fi
 
-  run_0025_fixture() {
-    local fixname="$1"
-    local fixdir="$fixtures/$fixname"
-    local tmp; tmp="$(mktemp -d -t "migration-0025-${fixname}-XXXXXX")"
-    local fake_home="$tmp/home"
-    mkdir -p "$fake_home"
-
-    if [ -x "$fixdir/setup.sh" ]; then
-      (
-        cd "$tmp" && \
-        HOME="$fake_home" REPO_ROOT="$REPO_ROOT" FIXTURES_ROOT="$fixtures" \
-          "$fixdir/setup.sh" >/dev/null 2>&1
-      ) || {
-        echo "  ${RED}✗${RESET} $fixname — setup.sh failed"
-        FAIL=$((FAIL+1))
-        rm -rf "$tmp"
-        return
-      }
-    fi
-
-    local verify_out verify_exit
-    verify_out=$(
-      cd "$tmp" && \
-      HOME="$fake_home" REPO_ROOT="$REPO_ROOT" \
-        bash "$fixdir/verify.sh" 2>&1
-    )
-    verify_exit=$?
-
-    local expected_exit
-    expected_exit=$(tr -d '\n' < "$fixdir/expected-exit")
-    if [ "$verify_exit" != "$expected_exit" ]; then
-      echo "  ${RED}✗${RESET} $fixname — verify exit $verify_exit, expected $expected_exit"
-      echo "      verify output:"
-      printf '%s\n' "$verify_out" | sed 's/^/        /' | head -10
-      FAIL=$((FAIL+1))
-      rm -rf "$tmp"
-      return
-    fi
-
-    echo "  ${GREEN}✓${RESET} $fixname"
+  local stray
+  stray="$(grep -rl 'knowledge_capture' "$REPO_ROOT/templates" "$REPO_ROOT/setup" \
+             2>/dev/null | head -5)"
+  if [ -z "$stray" ]; then
+    echo "  ${GREEN}✓${RESET} no knowledge_capture payload ships from templates/ or the snapshot"
     PASS=$((PASS+1))
-    rm -rf "$tmp"
-  }
+  else
+    echo "  ${RED}✗${RESET} knowledge_capture payload reappeared (retired — core spec 1.2.0):"
+    printf '%s\n' "$stray" | sed 's/^/      /'
+    FAIL=$((FAIL+1))
+  fi
 
-  for fix in "$fixtures"/[0-9]*-*/; do
-    local name
-    name="$(basename "${fix%/}")"
-    run_0025_fixture "$name"
-  done
+  echo "  ${YELLOW}note${RESET}: fixtures under test-fixtures/0025/ were removed with the feature;"
+  echo "        they replayed a section that no longer exists in skill/SKILL.md."
 }
 
 

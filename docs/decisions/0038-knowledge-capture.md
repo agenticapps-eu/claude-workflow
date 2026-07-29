@@ -1,6 +1,15 @@
+> **Superseded 2026-07-28.** Spec §15 was removed at core spec 1.2.0 and the
+> knowledge-capture ritual retired fleet-wide (core ADR-0025 supersedes
+> ADR-0017). This host's live surfaces are gone: the ritual tail in
+> `skill/SKILL.md`, the `knowledge_capture` seed in `templates/config-hooks.json`,
+> setup Step 4d's placeholder resolution, and parity block 7. The 32 references
+> inside `migrations/` are left untouched — they are historical executables
+> replayed for repos on old versions. Notes already written to the operator's
+> vault are left in place; nothing reads or updates them.
+
 # ADR-0038: Knowledge capture ritual tail — spec §15 in the claude host
 
-**Status**: Accepted  **Date**: 2026-07-06  **Linear**: —
+**Status**: Superseded (2026-07-28, by core ADR-0025)  **Date**: 2026-07-06  **Linear**: —
 **Core contract**: `agenticapps-workflow-core/spec/15-knowledge-capture.md` (v0.7.0), core ADR-0017
 
 ## Context
