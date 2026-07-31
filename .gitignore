@@ -42,3 +42,7 @@ claude-workflow-update-prompt.md
 # CI-only sibling checkout of agenticapps-workflow-core (canonical spec source
 # for the mirror ↔ core-spec guard; see migrations/run-tests.sh)
 .core-spec/
+
+# Verified copies of core artifacts, materialised from tools/core-vendor.manifest
+# by CI (ADR-0047). Build output, never committed — the pin is the source.
+.core-bin/

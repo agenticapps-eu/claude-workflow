@@ -17,19 +17,39 @@ jobs:
           node-version: "20"
       - name: Install OpenSpec
         run: npm i -g @fission-ai/openspec
+      - name: Resolve core artifacts from the pin
+        # Since ADR-0047 this repo does not vendor the gate or the wrapper — it
+        # pins them. Materialise the pinned bytes once, here, and let every step
+        # below score and run exactly what install.sh would publish.
+        #
+        # The `test -s` is not belt-and-braces. When these were vendored and the
+        # files went missing, change-gate-conformance.sh printed
+        # "SKIP (not found)" and "TOTAL: 0 passed, 0 failed" — and exited 0. A
+        # harness that reports success for a file that is not there certifies
+        # nothing while looking green, so prove the bytes exist before scoring.
+        run: |
+          set -euo pipefail
+          mkdir -p .core-bin
+          for f in openspec-change-gate reviewer-cli; do
+            src="$(bash bin/resolve-core-artifact.sh tools/core-vendor.manifest "bin/$f.sh")"
+            install -m 0755 "$src" ".core-bin/$f.sh"
+            rm -f "$src"
+            test -s ".core-bin/$f.sh"
+          done
       - name: Prove the gate itself is conformant
         # A gate that has drifted can pass every repo it guards while enforcing
         # nothing (core#32: five copies, none conformant). Score it before
-        # trusting its verdict. Both files are vendored from
-        # agenticapps-workflow-core; keep them in sync — a stale harness
-        # certifies a stale gate.
-        run: bash tools/change-gate-conformance.sh bin/openspec-change-gate.sh
+        # trusting its verdict. The harness is still vendored and is checked
+        # against the same pin by the migration suite, so a stale harness cannot
+        # quietly certify a stale gate.
+        run: bash tools/change-gate-conformance.sh .core-bin/openspec-change-gate.sh
       - name: Prove the review producer's wrapper is conformant
         # The gate consumes review evidence; reviewer-cli.sh produces it. A
         # wrapper that silently lost a vendor arm degrades that evidence and
-        # reports nothing while doing it (core#41). Same bar, same reason —
-        # and the harness is vendored alongside it, so keep the two in sync.
-        run: bash tools/reviewer-cli-conformance.sh bin/reviewer-cli.sh
+        # reports nothing while doing it (core#41). Same bar, same reason.
+        run: bash tools/reviewer-cli-conformance.sh .core-bin/reviewer-cli.sh
       - name: Run the change gate
-        # exit 0 = all active changes validate and carry >=2 reviewers; exit 1 = block the PR.
-        run: bash bin/openspec-change-gate.sh --ci
+        # exit 0 = all active changes validate; exit 1 = block the PR. Since gate
+        # 2.0.0 review evidence is REPORTED, never enforced — a missing or stale
+        # review is a NOTE, and only `openspec validate --all` can block.
+        run: bash .core-bin/openspec-change-gate.sh --ci
