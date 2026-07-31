@@ -26,10 +26,11 @@ History becomes a by-product instead of the primary artifact.
   /opsx:explore ──▶ /opsx:propose ──▶ validate ──▶ /opsx:apply ──▶ /opsx:archive ──▶ ship
    (optional)         proposal        openspec      Superpowers     fold delta       git
                       design.md       validate      TDD, review     into specs/      commit
-                      spec delta      + ≥2 AI                                        + PR
-                      tasks.md        reviewers
+                      spec delta      + AI review                                    + PR
+                      tasks.md        (reported)
                                           ▲
-                                          └── the §18 gate blocks code until BOTH pass
+                                          └── the §18 gate blocks code until VALIDATE
+                                              passes; the review half is reported
 ```
 
 ### 1 · Propose
@@ -44,18 +45,25 @@ requirement needs at least one `#### Scenario:` block. `openspec validate` will
 tell you precisely what is missing.
 
 ### 2 · Validate — **the gate**
-Two independent checks, both required, both **before any code**:
+Two independent checks, both **before any code**. Only the first is enforced:
 
-| Check | What it catches | Replaces |
-|---|---|---|
-| `openspec validate --all` | the delta is structurally wrong or incomplete | `spec-review` |
-| `run-plan-review.sh <slug>` → `REVIEWS.md` with ≥2 other-vendor reviewers | the delta describes the **wrong behavior** | `plan-review` |
+| Check | What it catches | Enforcement | Replaces |
+|---|---|---|---|
+| `openspec validate --all` | the delta is structurally wrong or incomplete | **blocks** (exit 2) | `spec-review` |
+| `run-plan-review.sh <slug>` → `REVIEWS.md`, floor 1 / two preferred | the delta describes the **wrong behavior** | **reported, never blocks** | `plan-review` |
 
 Validate is a schema check. It cannot tell you the spec is wrong about the
 world — that is what the reviewers are for. In the cParX pilot the Codex
 reviewer returned REQUEST-CHANGES on the first real change and caught a genuine
 semantic defect in the delta (a field was wrong on the fallback paths), *before
-a line of code existed*. That is the whole argument for keeping this gate.
+a line of code existed*. That is the whole argument for running this review.
+
+Since gate **2.0.0** it is an argument, not a gate. The block was removed
+because it fired on the wrong cases — the reviewers are third-party CLIs that
+are slow, rate-limited and sometimes return nothing, so the floor went unmet for
+reasons unrelated to the quality of the change, at a measured cost of three
+rollbacks and a six-repository outage on 2026-07-30. What it prevented was never
+identifiable. Nothing now makes you run the review; run it anyway.
 
 ### 3 · Execute
 `/opsx:apply` plus the retained Superpowers gates: TDD (RED→GREEN commit pair),
@@ -87,9 +95,11 @@ modes, one rule.
 | No active change | **allow** — incidental edits are not blocked |
 | Edit targets `openspec/**` | **allow** — you must be able to author the change |
 | Active change, `validate` fails | **block** |
-| Active change, `validate` green, `REVIEWS.md` < 2 reviewers | **block** |
-| Active change, `validate` green **and** ≥2 reviewers | **allow** |
-| `GSD_SKIP_REVIEWS=1` | **allow** — documented, logged override |
+| Active change, `validate` green, no `REVIEWS.md` at all | **allow + report** |
+| Active change, `validate` green, 1 reviewer (below the preferred 2) | **allow + report** |
+| Active change, `validate` green, reviewers carrying REQUEST-CHANGES | **allow + report** |
+| Active change, `validate` green, `REVIEWS.md` stale or unverifiable | **allow + report** |
+| `GSD_SKIP_REVIEWS=1` | **allow** — suppresses the review *reporting*; validate still blocks |
 | Unparseable stdin | **allow** — fail open on *parse* error, never on policy |
 
 ```bash
@@ -101,7 +111,14 @@ openspec-change-gate.sh --ci           # whole-repo check (exit 1)
 ```
 
 Set `OPENSPEC_GATE_STRICT=1` for the stricter "no code outside a change at all"
-posture. `MIN_REVIEWERS` overrides the threshold.
+posture. `MIN_REVIEWERS` (default 1) and `PREFERRED_REVIEWERS` (default 2) move
+the thresholds the gate *reports* against — neither makes it refuse an edit.
+
+**Divergence on the books.** Core `spec/18-retargeted-change-gate.md` is at spec
+1.3.0 and its truth table still says zero counted reviewers is a block; the
+reference gate 2.0.0 reports instead, and this host follows the gate. The spec
+is expected to move to 2.0.0 semantics; until it does, this table describes the
+binary and §18 describes the intent.
 
 ### Where it is wired
 - **Claude** — `.claude/settings.json` `PreToolUse`, matcher

@@ -130,13 +130,14 @@ they will notice is an edit being blocked:
 - Planning moves from GSD phases to **OpenSpec changes**. `openspec/specs/`
   becomes current truth; `openspec/changes/` holds in-flight deltas.
 - The **§18 change-gate** goes live at `PreToolUse`, `git commit`, and CI. Once a
-  change is open, code edits are blocked until `openspec validate --all` is green
-  **and** `REVIEWS.md` carries ≥2 other-vendor reviewers. That is the gate
-  working. The escape hatch is `GSD_SKIP_REVIEWS=1`, and it is logged.
-- It needs the `openspec` CLI (`npm i -g @fission-ai/openspec`) and **≥2
-  reviewer CLIs from other vendors**. Step 4's `requires` check surfaces the
-  first; the second is a `optional_for` note, so call it out here — without
-  reviewers the first change cannot clear stage 2.
+  change is open, code edits are blocked until `openspec validate --all` is green.
+  Review evidence is reported on every invocation and never blocks (gate 2.0.0).
+  `GSD_SKIP_REVIEWS=1` suppresses that reporting and is logged; nothing overrides
+  a red validate.
+- It needs the `openspec` CLI (`npm i -g @fission-ai/openspec`). Reviewer CLIs
+  from other vendors are **strongly recommended, not required** — a machine with
+  only Claude installed can now clear stage 2, it just clears it without an
+  independent opinion on the delta. Step 4's `requires` check surfaces the CLI.
 - **`.planning/` is preserved.** 0032 never touches it. Folding phase history
   into `openspec/specs/` is a separate, supervised job (phases merge into
   *capabilities*, not one-phase-one-spec) and needs a human to ratify it.

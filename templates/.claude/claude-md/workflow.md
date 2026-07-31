@@ -39,22 +39,33 @@ change is open. A bug goes straight to `superpowers:systematic-debugging` — no
 a lifecycle stage, and it opens a change only if the fix changes what the spec
 promises.
 
-## The §18 change-gate (enforced, not advisory)
+## The §18 change-gate (one blocking clause, one reported)
 
-Once a change is open, **no non-`openspec/` edit or commit is allowed** until:
+Once a change is open, **no non-`openspec/` edit or commit is allowed** until
+`openspec validate --all` is GREEN. That is the whole blocking rule.
 
-1. `openspec validate --all` is GREEN, **and**
-2. every active change carries `REVIEWS.md` with ≥2 reviewers from other vendors.
+Review evidence is the second clause and since change-gate **2.0.0** it is
+**reported on every invocation and never enforced**. Missing, stale,
+unverifiable and REQUEST-CHANGES reviews all print a `NOTE` and allow the edit.
+`MIN_REVIEWERS` (default 1) and `PREFERRED_REVIEWERS` (default 2) set what gets
+reported, not what gets refused. Set `MIN_REVIEWERS=2` if you want the old
+threshold back in the report — it still will not block.
 
 It fires at three points: the `PreToolUse` hook
 (`.claude/hooks/openspec-change-gate.sh`), the `git` pre-commit floor, and
-`--ci`. The pre-commit + CI floor is the real guarantee — a `PreToolUse` hook
-sees one agent and cannot gate its own installing session. A blocked edit is the
-gate working; go get the review. Produce the reviews with
-`~/.agenticapps/bin/run-plan-review.sh` — the retained ADR-0018 multi-AI review,
-retargeted at the active change rather than a standalone PLAN.md gate.
-Documented, logged escape hatch: `GSD_SKIP_REVIEWS=1` (validate is still
-required).
+`--ci`. All three call the same predicate, so none of them goes red on the
+review count. A blocked edit means a **broken spec delta** — fix the delta.
+
+Produce the reviews with `~/.agenticapps/bin/run-plan-review.sh` — the retained
+ADR-0018 multi-AI review, retargeted at the active change rather than a
+standalone PLAN.md gate. Two independent other-vendor reviewers remain the
+target and are worth the wait: across the 2026-07-28 fleet migration the
+decisive finding was unique to one vendor every time. Nothing will make you run
+them, which is exactly why it is now a judgement call rather than a formality.
+
+`GSD_SKIP_REVIEWS=1` survives as a documented flag but is close to inert: it
+suppresses the review *reporting*. A red `openspec validate` still blocks and no
+override clears it.
 
 ## Superpowers execution discipline
 

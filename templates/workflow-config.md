@@ -51,8 +51,8 @@ programmatic teeth (`PreToolUse`, `git commit`, CI).
 
 | Hook | Trigger | Rule | What it does |
 |------|---------|------|-------------|
-| `change_gate` | Any code edit while a change is open | `openspec validate --all` green AND `REVIEWS.md` carries ≥2 reviewers | Spec §18. Blocks the edit (exit 2) until both clauses hold. Same script runs as git `pre-commit` and in CI — that floor is the real guarantee. Override: `GSD_SKIP_REVIEWS=1` (logged). |
-| `multi_ai_review` | Before the first code edit of a change | `run-plan-review.sh <slug>` | ≥2 independent other-vendor reviewer CLIs critique the proposal + design note + spec delta. Output: `openspec/changes/<slug>/REVIEWS.md`. |
+| `change_gate` | Any code edit while a change is open | `openspec validate --all` green | Spec §18. Blocks the edit (exit 2) on that clause alone. Review evidence is REPORTED, never enforced (gate 2.0.0) — missing, stale and REQUEST-CHANGES all print a `NOTE` and allow. Same script runs as git `pre-commit` and in CI, and neither goes red on the review count either. `GSD_SKIP_REVIEWS=1` suppresses the reporting; nothing overrides a red validate. |
+| `multi_ai_review` | Before the first code edit of a change | `run-plan-review.sh <slug>` | Independent other-vendor reviewer CLIs critique the proposal + design note + spec delta. Floor 1, two preferred, neither enforced. Output: `openspec/changes/<slug>/REVIEWS.md`. |
 
 ### Stage 3 — execute (executor follows during task execution)
 
@@ -81,9 +81,10 @@ programmatic teeth (`PreToolUse`, `git commit`, CI).
   │   ├── brainstorm_ui (if the change adds a UI surface)
   │   └── brainstorm_architecture (if the change adds a service/model)
   │
-  ├── STAGE 2 — VALIDATE (before any code; the §18 gate blocks otherwise)
-  │   ├── openspec validate --all
-  │   └── run-plan-review.sh {slug}  ->  REVIEWS.md (>= 2 reviewers)
+  ├── STAGE 2 — VALIDATE (before any code)
+  │   ├── openspec validate --all                                       [BLOCKS]
+  │   └── run-plan-review.sh {slug} --implementing-host <vendor>      [REPORTED]
+  │         ->  REVIEWS.md (floor 1, two preferred, neither enforced)
   │
   ├── STAGE 3 — EXECUTE (/opsx:apply + Superpowers)
   │   ├── per-task: tdd, ui_preview, verification

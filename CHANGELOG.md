@@ -4,6 +4,43 @@ All notable changes to the AgenticApps Claude Workflow scaffolder are
 documented here. The format follows [Keep a Changelog](https://keepachangelog.com/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **Every live surface now describes change-gate 2.0.0's actual rule: one
+  blocking clause, not two.** The gate blocks on `openspec validate --all`
+  alone. Review evidence — absent, thin, stale, unverifiable, or carrying
+  REQUEST-CHANGES — is reported on every invocation and never refuses an edit.
+  The `≥2 other-vendor reviewers` requirement stated across `skill/SKILL.md`,
+  `update/SKILL.md`, `CLAUDE.md`, `docs/WORKFLOW.md`, `docs/ENFORCEMENT-PLAN.md`,
+  `templates/.claude/claude-md/workflow.md`, `templates/workflow-config.md` and
+  `templates/config-hooks.json` had been wrong on two counts since spec 1.2.0
+  dropped the floor to one, and wrong on enforcement since core published gate
+  2.0.0 on 2026-07-31.
+
+  `MIN_REVIEWERS` (1) and `PREFERRED_REVIEWERS` (2) are now described as
+  reporting thresholds. `GSD_SKIP_REVIEWS=1` is documented as near-inert: it
+  suppresses review *reporting*; nothing overrides a red validate. The
+  `--pre-commit` and `--ci` arms call the same predicate as the hook, so the
+  "the CI floor is the real guarantee" claim is corrected too — no surface goes
+  red on the review count any more.
+
+  Two reviewers remain the stated target, with the evidence for why (across the
+  2026-07-28 fleet migration the decisive finding was unique to one vendor every
+  time). What changed is that nothing makes you run them.
+
+  **Divergence recorded, not resolved.** Core `spec/18-retargeted-change-gate.md`
+  is at spec 1.3.0 and its normative truth table still blocks on zero counted
+  reviewers; the reference gate 2.0.0 (commit `1250c41`, which did not touch
+  `spec/`) reports instead. This host follows the shipped gate and says so in
+  `docs/WORKFLOW.md`. Core's spec is expected to move to 2.0.0 semantics.
+
+  No migration — prose only, per the §15 precedent in `4ce2b35`; a migration
+  would install machinery to correct machinery. Installed projects are edited
+  directly. Snapshot VERSION stays 3.2.0; nothing was added to the chain.
+  Snapshot rebuilt via `bin/build-snapshot.sh`; parity PASS; migration suite
+  226 pass / 0 fail.
+
 ## [3.2.0] — 2026-07-28
 
 `0033` stopped the vendored workflow reference teaching a retired front end.
