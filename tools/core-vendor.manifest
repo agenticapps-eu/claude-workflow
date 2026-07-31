@@ -35,20 +35,21 @@
 #
 # ── the pin ──────────────────────────────────────────────────────────────────
 #
-# 2b82a91 is a commit on core's feat/step3-hook-shims-and-dead-gate-removal
-# (core PR #47), NOT a commit on main, and not necessarily that branch's tip —
-# the pin names the revision whose BYTES were verified, which is the only thing
-# it is allowed to claim. It carries gate 2.0.0, producer 1.2.0, wrapper 1.2.0
-# and shared-install 1.0.1. GitHub serves raw content by sha for any pushed
-# commit, so this resolves everywhere today.
+# 6cd3b9c is core's main at the merge of PR #47 — the merge commit itself. It
+# carries gate 2.0.0, producer 1.2.0, wrapper 1.2.0 and shared-install 1.0.1.
 #
-# KNOWN LIMIT, recorded rather than glossed: if core PR #47 is SQUASH-merged,
-# this sha is orphaned and will eventually be unreachable, and the network
-# fallback dies with it. Re-pin to the resulting main commit once #47 lands.
-# The test above fails loudly if that is forgotten — an unresolvable pin is a
-# failing row, not a silent fallback to a stale copy.
+# It first pinned 2b82a91, a commit on #47's branch, while that PR was open;
+# #47 was then merged with a MERGE COMMIT rather than a squash, precisely so
+# that sha stayed reachable and the pin could not break underneath this repo.
+# Advancing to a main commit is the follow-through, not a fix for a breakage.
+#
+# Every one of the seven entries below was re-verified at 6cd3b9c and all seven
+# are byte-identical to what they were at 2b82a91. That is the manifest's rule
+# honoured, not skipped: advancing core_commit means re-checking the files
+# already listed, not just appending new ones. Same bytes, said about a
+# different and more durable revision.
 core_repo=agenticapps-eu/agenticapps-workflow-core
-core_commit=2b82a917bd8df90566dc7a4fba967be55cdab0fc
+core_commit=6cd3b9c40eb409ab1b256e3b9e8d50c7268538ab
 
 # RESOLVED at install time — not vendored in this repo.
 file=bin/openspec-change-gate.sh sha256=4ad996cb7f95ebc45c35177eaad70781c23f166fb14283dc693a8ecc31476780

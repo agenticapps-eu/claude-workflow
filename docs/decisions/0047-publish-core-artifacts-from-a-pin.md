@@ -92,13 +92,13 @@ hard failure. Projects that already applied it are unaffected either way.
 
 ## Known limits
 
-- **The pin names a non-main commit.** `2b82a91` is a commit on core's
-  `feat/step3-hook-shims-and-dead-gate-removal` (core PR #47) — the revision
-  whose bytes were verified, not necessarily that branch's tip. GitHub serves raw
-  content by sha for any pushed commit, so it resolves everywhere today. **If
-  #47 is squash-merged that sha is orphaned and will eventually be unreachable.**
-  Re-pin to the resulting main commit once #47 lands. This is loud, not silent:
-  an unresolvable pin is a failing test row and a refusing installer.
+- ~~**The pin names a non-main commit.**~~ **Closed 2026-07-31.** The pin was
+  briefly `2b82a91`, a commit on core PR #47's branch, while that PR was open.
+  #47 was merged with a **merge commit** rather than a squash — deliberately, so
+  the sha stayed reachable and the pin could not break underneath this repo —
+  and the manifest then advanced to `6cd3b9c`, core's main at that merge. All
+  seven entries were re-verified at the new revision and all seven were
+  unchanged.
 - **Migration 0032 installs the producer without version arbitration.** It is a
   pre-existing hazard, untouched here to keep the edit to a shipped migration as
   small as possible. The gate and wrapper are arbitrated; the producer is not.
