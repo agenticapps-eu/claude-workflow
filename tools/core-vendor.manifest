@@ -1,0 +1,6 @@
+core_repo=agenticapps-eu/agenticapps-workflow-core
+core_commit=519b14ea08b226b1560b08fe979395a7e0bfcd98
+file=bin/openspec-change-gate.sh sha256=23ad9f89d31f76aa6278dec95ded718d4b6fe337c1d4a85c79393732f6eee68d
+file=bin/reviewer-cli.sh sha256=6d9adc77dea3b878417a69da54f222589dc40bc6b50c0d60cd8873a9e2bd8b88
+file=bin/install-shared-artifact.sh sha256=b87533f357269b401db2b8b9ee6417ea40f69f092729a36cbc99499060a1826f
+file=bin/resolve-core-artifact.sh sha256=00aa251bea99b5eb5dbf38e24330624293d743f88cd9f01ad53a3558a094444f
