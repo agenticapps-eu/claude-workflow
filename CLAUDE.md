@@ -108,9 +108,10 @@ separate act.
 - `openspec/specs/` is durable current truth · `openspec/changes/` are in-flight
   deltas · `changes/archive/` is history.
 - **Before any code**, the active change MUST have `openspec validate --all`
-  green **and** `REVIEWS.md` carrying ≥2 independent other-vendor reviewers.
-  Both clauses are enforced by the §18 change-gate at `PreToolUse`, at
-  `git commit`, and in CI. Blocked edits mean the gate is working.
+  green. That clause alone is enforced by the §18 change-gate at `PreToolUse`,
+  at `git commit`, and in CI; a blocked edit means a broken spec delta.
+  `REVIEWS.md` SHOULD carry two independent other-vendor reviewers — since gate
+  **2.0.0** that clause is reported on every invocation and never blocks.
 - `archive ≠ ship` — `openspec archive` folds the delta into `specs/` and
   produces **no** git commit.
 - Execution discipline is unchanged Superpowers: TDD, on-disk evidence, and an

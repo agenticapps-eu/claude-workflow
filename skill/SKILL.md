@@ -114,13 +114,17 @@ This is the gate-to-skill map (§17). Every row is a commitment.
 
 - `openspec validate --all` MUST be green. This is what `spec-review` used to do
   after the fact; it is now a machine check done first.
-- `run-plan-review.sh <change-slug>` MUST write `changes/<slug>/REVIEWS.md` with
-  **≥2 independent other-vendor reviewers**. This is the retargeted ADR-0018
-  multi-AI review: the reviewers critique the *change* — proposal, design note,
-  spec delta — not a PLAN.md, and they do it before code exists. The cParX pilot
-  reviewer caught a real semantic defect in a spec delta at exactly this point.
-- Both clauses are enforced by the §18 change-gate. It will block your edits.
-  That is the gate working, not a malfunction — go get the review.
+- `run-plan-review.sh <change-slug>` SHOULD write `changes/<slug>/REVIEWS.md` with
+  **two or more independent other-vendor reviewers**; one is the floor. This is
+  the retargeted ADR-0018 multi-AI review: the reviewers critique the *change* —
+  proposal, design note, spec delta — not a PLAN.md, and they do it before code
+  exists. The cParX pilot reviewer caught a real semantic defect in a spec delta
+  at exactly this point.
+- Only the first clause is enforced. Since change-gate **2.0.0** the gate blocks
+  on one condition — `openspec validate --all` is not green. Missing, stale,
+  unverifiable and REQUEST-CHANGES review evidence is **reported on every
+  invocation and never blocks**. A blocked edit means a broken spec delta, so
+  fix the delta; it never means "go get a review".
 
 ### Stage 3 — execute (retained)
 
@@ -190,7 +194,7 @@ design, UX direction) get an ADR at `docs/decisions/NNNN-short-title.md`:
 | "TDD is impractical for frontend" | Snapshot tests, `/browse` screenshot diffs, visual regression count as TDD. Write the test first. |
 | "I've already thought about alternatives" | If you didn't write them down, you didn't consider them. List ≥2 in RESEARCH.md. |
 | "The multi-AI change review is excessive — one model's spec delta is fine" | Different LLMs catch different blind spots, and this review runs *before code exists*, where a fix is cheapest. Run it. (cparx phases 04.9 → 05 silently dropped its ancestor for 8 phases — the failure mode ADR-0018 closes. The cParX pilot's reviewer then caught a real semantic defect in a spec delta on the very first change.) |
-| "`openspec validate` is green, so the change is reviewed" | Validate is a schema/structure check. It cannot tell you the delta describes the wrong behavior. That is what the ≥2 reviewers are for — §17 requires both, and the §18 gate enforces both. |
+| "`openspec validate` is green, so the change is reviewed" | Validate is a schema/structure check. It cannot tell you the delta describes the wrong behavior. That is what the reviewers are for — and since gate 2.0.0 nothing makes you run them, so a green gate is the weakest possible evidence that anyone read the delta. |
 | "Two-stage review is excessive" | Stage 1 catches spec drift, Stage 2 catches code-quality drift. Different failures, different agents. |
 | "Dev server isn't worth booting for this change" | If you touched JSX/TSX, boot it. 30 seconds. |
 | "The user explicitly said ship fast" | Acknowledge urgency, explain risk in one sentence, offer minimum discipline that protects the critical path. |
@@ -232,7 +236,7 @@ CH=$(ls -d openspec/changes/archive/*"$SLUG" 2>/dev/null | tail -1)
 # The spec slot states the new truth (the delta was folded, not just moved)
 openspec validate --all
 
-# Multi-AI review evidence, produced BEFORE code (>=2 independent reviewers)
+# Multi-AI review evidence, produced BEFORE code (floor 1, two preferred)
 grep -ciE '^##[[:space:]]*reviewer' "$CH/REVIEWS.md"
 
 # TDD tasks produced RED + GREEN commits
@@ -249,9 +253,12 @@ bash ~/.agenticapps/bin/openspec-change-gate.sh --ci
 ```
 
 If the reviewer count is < 2, or `tasks.md` still has unchecked items, or
-`--ci` is red, the change did NOT honor the enforcement plan. File this as a
-process bug, update `docs/ENFORCEMENT-PLAN.md` to close the loophole, and
-re-run the failed gate.
+`--ci` is red, the change did NOT honor the enforcement plan. **Since gate
+2.0.0 no surface goes red on the reviewer count** — `--ci` calls the same
+`gate_check` as the hook, so it too reports and exits 0. That makes the
+`grep -c` above the only thing standing between a thin review and an archived
+change, and it has to be read by a person. File the gap as a process bug,
+update `docs/ENFORCEMENT-PLAN.md`, and re-run the failed gate.
 
 ## Daily Quick Reference
 
@@ -260,7 +267,7 @@ re-run the failed gate.
 3. Pull latest from base branch
 4. Pick the task, emit the commitment ritual
 5. Open or resume a change (`/opsx:propose`), or say why none is needed
-6. Validate + get ≥2 reviews **before** writing code
+6. Validate (enforced) + get reviews, two preferred (not enforced), **before** writing code
 7. Invoke the mapped Superpowers skills in order
 8. Archive the change, then ship it — two separate acts
 9. Update decision log + session-handoff at end of session

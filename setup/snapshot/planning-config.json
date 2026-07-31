@@ -52,9 +52,10 @@
           "git pre-commit (bin/git-hooks/pre-commit)",
           "CI check (.github/workflows/openspec-gate.yml)"
         ],
-        "requires": "active change with `openspec validate --all` green AND REVIEWS.md carrying >= 2 '## Reviewer:' headings",
+        "requires": "active change with `openspec validate --all` green — that clause alone blocks (gate 2.0.0)",
+        "reports_only": "REVIEWS.md coverage: missing, below PREFERRED_REVIEWERS, stale digest, unverifiable, or REQUEST-CHANGES all print a NOTE and allow the edit",
         "exempts": "openspec/** artifact writes (author the change while gated)",
-        "escape_hatch": "GSD_SKIP_REVIEWS=1 (documented, logged override)",
+        "escape_hatch": "GSD_SKIP_REVIEWS=1 (suppresses the review reporting; nothing overrides a red validate)",
         "fail_open": "malformed/unparseable stdin only (parse error, never policy)",
         "block_when_cli_absent": true,
         "note": "A PreToolUse hook is loaded at session start and cannot gate its own installing session; the pre-commit + CI floor is the real guarantee and catches any agent or a human."
@@ -63,15 +64,15 @@
         "implements_spec": "1.0.0",
         "producer": "bin/run-plan-review.sh (installed to ~/.agenticapps/bin/)",
         "hardening": "</dev/null + timeout per reviewer — codex exec reads stdin and hangs otherwise (PILOT-REPORT friction #3)",
-        "reviewers": ">= 2 DISTINCT external-vendor CLIs; AGENT_SELF defaults to `claude` so this host is always excluded",
+        "reviewers": "MIN_REVIEWERS 1 (floor), PREFERRED_REVIEWERS 2 (target) — DISTINCT external-vendor CLIs; AGENT_SELF defaults to `claude` so this host is always excluded. Both thresholds are reported, not enforced.",
         "target": "the active OpenSpec change (proposal + design + spec delta), BEFORE code",
         "evidence": "openspec/changes/<slug>/REVIEWS.md — one '## Reviewer: <vendor>' section per reviewer",
-        "override": "GSD_SKIP_REVIEWS=1 env var",
-        "rationale": "ADR-0018, retargeted. Under spec 1.0.0 this is NOT a standalone gate (§17 MUST NOT): its obligation is discharged here in stage 2 and enforced by the §18 change_gate. spec-review's structural role is now `openspec validate --all`."
+        "override": "GSD_SKIP_REVIEWS=1 env var (suppresses reporting)",
+        "rationale": "ADR-0018, retargeted. NOT a standalone gate (§17 MUST NOT): its obligation is discharged here in stage 2. Since change-gate 2.0.0 the §18 gate REPORTS this clause rather than enforcing it — running the review is a judgement call, and two vendors remain the target because the decisive finding was unique to one vendor on every change reviewed in the 2026-07-28 fleet migration. spec-review's structural role is now `openspec validate --all`."
       }
     },
     "execute": {
-      "description": "Superpowers-execute the change's tasks (§17 stage 3). The change_gate blocks code edits until stage 2 (validate + review) has passed for the active change.",
+      "description": "Superpowers-execute the change's tasks (§17 stage 3). The change_gate blocks code edits until the active change's `openspec validate --all` is green; stage 2's review half is reported, not enforced.",
       "retained": {
         "tdd": {
           "skill": "superpowers:test-driven-development",
