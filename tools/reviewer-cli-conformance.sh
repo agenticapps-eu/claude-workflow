@@ -29,6 +29,27 @@ set -uo pipefail
 
 pass=0
 fail=0
+
+# ── target screening (capability: conformance-harness-reporting) ─────────────
+# This harness's explicit-path handling was already correct — it scored a
+# missing target as a failure row rather than skipping it, and is the reference
+# the other harnesses were fixed against. What it lacked was a REASON: every
+# unscoreable target was reported as "file not found", including directories,
+# empty files and unreadable ones.
+harness_screen_target() { # $1 = path; sets REASON, returns 1 if unscoreable
+  REASON=""
+  if [ -L "$1" ] && [ ! -e "$1" ]; then REASON="not a regular file (dangling symlink)"; return 1; fi
+  if [ ! -e "$1" ]; then REASON="not found"; return 1; fi
+  if [ ! -f "$1" ]; then REASON="not a regular file"; return 1; fi
+  if [ ! -s "$1" ]; then REASON="empty"; return 1; fi
+  if [ ! -r "$1" ]; then REASON="unreadable"; return 1; fi
+  return 0
+}
+
+harness_safe_label() { # $1 = path
+  printf '%s' "$1" | LC_ALL=C tr -c '[:print:]' '?'
+}
+
 WORK=""
 
 # Used to bound the harness's own invocations of the wrapper under test. Distinct
@@ -165,8 +186,14 @@ run_row_no_argv_leak() { # $1=vendor
 
 score_one() {
   CLI="$1"
-  echo "═══ $CLI"
-  [ -f "$CLI" ] || { echo "  FAIL  file not found"; fail=$((fail + 1)); return; }
+  # $2 is a stable logical label from roster mode; without it the heading
+  # printed a resolved absolute path, carrying $HOME into CI logs and making
+  # two sweeps on different machines undiffable.
+  echo "═══ ${2:-$(harness_safe_label "$CLI")}"
+  if ! harness_screen_target "$CLI"; then
+    echo "  UNSCOREABLE  ${2:-$(harness_safe_label "$CLI")} — $REASON"
+    fail=$((fail + 1)); return
+  fi
   FX="$(make_fixture)"; WORK="$FX"
 
   echo "  ── A. Argument handling ──"
@@ -221,21 +248,73 @@ SLOW
 }
 
 # ── entry ────────────────────────────────────────────────────────────────────
-if [ "${1:-}" = "--family" ]; then
-  root="$(cd "$(dirname "$0")/../.." && pwd)"
-  targets=""
-  for h in claude-workflow codex-workflow opencode-workflow pi-agentic-apps-workflow; do
-    [ -f "$root/$h/bin/reviewer-cli.sh" ] && targets="$targets $root/$h/bin/reviewer-cli.sh"
-  done
-  [ -f "$HOME/.agenticapps/bin/reviewer-cli.sh" ] && targets="$targets $HOME/.agenticapps/bin/reviewer-cli.sh"
-  # The canonical goes first so a fleet run reads as "the bar, then the fleet".
-  set -- "$(dirname "$0")/../reference-implementations/reviewer-cli/reviewer-cli.sh" $targets
+USAGE="usage: $0 <path-to-reviewer-cli> [...]  |  --family"
+
+FAMILY_MODE=0
+if [ "${1:-}" = "--family" ]; then FAMILY_MODE=1; shift; fi
+
+# A roster flag with explicit paths used to discard the paths silently — the
+# same defect this harness exists to close, reached through argument parsing.
+if [ "$FAMILY_MODE" = "1" ] && [ "$#" -gt 0 ]; then
+  echo "$USAGE" >&2
+  echo "--family cannot be combined with explicit target paths (got: $(harness_safe_label "$1"))" >&2
+  exit 2
 fi
 
-[ "$#" -ge 1 ] || { echo "usage: $0 <path-to-reviewer-cli> [...]  |  --family" >&2; exit 2; }
+if [ "$FAMILY_MODE" = "1" ]; then
+  root="$(cd "$(dirname "$0")/../.." && pwd)"
+  # label|path. The canonical goes first so a fleet run reads as "the bar,
+  # then the fleet". Entries are named by a stable logical label throughout.
+  ROSTER="core|$(dirname "$0")/../reference-implementations/reviewer-cli/reviewer-cli.sh
+claude-workflow|$root/claude-workflow/bin/reviewer-cli.sh
+codex-workflow|$root/codex-workflow/bin/reviewer-cli.sh
+opencode-workflow|$root/opencode-workflow/bin/reviewer-cli.sh
+pi-agentic-apps-workflow|$root/pi-agentic-apps-workflow/bin/reviewer-cli.sh
+shared-install|$HOME/.agenticapps/bin/reviewer-cli.sh"
 
-for target in "$@"; do score_one "$target"; done
+  roster_total=0 roster_scored=0 roster_unscored=""
+  # The absence filter runs AFTER the argument-count check, never before it.
+  while IFS='|' read -r label path; do
+    [ -n "$label" ] || continue
+    roster_total=$((roster_total + 1))
+    if harness_screen_target "$path"; then
+      p0="$pass"; f0="$fail"
+      score_one "$path" "$label"
+      # An entry counts as scored only if it contributed a scored row —
+      # otherwise `scored 6 of 6` is reachable with a scored total of zero.
+      if [ $((pass - p0 + fail - f0)) -gt 0 ]; then
+        roster_scored=$((roster_scored + 1))
+      else
+        roster_unscored="$roster_unscored  $label — reached but produced no scored row"$'\n'
+      fi
+    else
+      host_dir="${path%/bin/reviewer-cli.sh}"
+      if [ "$REASON" = "not found" ] &&
+         [ -f "$host_dir/bin/resolve-core-artifact.sh" ] &&
+         [ -f "$host_dir/tools/core-vendor.manifest" ]; then
+        roster_unscored="$roster_unscored  $label — not vendored; resolvable from pin, not attempted"$'\n'
+      else
+        roster_unscored="$roster_unscored  $label — $REASON"$'\n'
+      fi
+    fi
+  done <<< "$ROSTER"
+
+  echo
+  # Emitted on every roster run, complete ones included: a line that appears
+  # only when something is wrong becomes the signal, and its absence then has
+  # to be noticed to mean anything.
+  echo "═══ COVERAGE: scored $roster_scored of $roster_total roster entries"
+  [ -n "$roster_unscored" ] && printf '%s' "$roster_unscored"
+else
+  [ "$#" -ge 1 ] || { echo "$USAGE" >&2; exit 2; }
+  for target in "$@"; do score_one "$target"; done
+fi
 
 echo
 echo "═══ TOTAL: $pass passed, $fail failed"
+# Backstop, folded into the one place the exit code is computed.
+if [ $((pass + fail)) -eq 0 ]; then
+  echo "openspec-conformance: certified NOTHING — no row reached a verdict" >&2
+  exit 1
+fi
 [ "$fail" -eq 0 ]

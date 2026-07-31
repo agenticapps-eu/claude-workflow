@@ -35,21 +35,28 @@
 #
 # ── the pin ──────────────────────────────────────────────────────────────────
 #
-# 6cd3b9c is core's main at the merge of PR #47 — the merge commit itself. It
-# carries gate 2.0.0, producer 1.2.0, wrapper 1.2.0 and shared-install 1.0.1.
+# ef030d0 is core's main at the merge of PR #49 — the merge commit itself. It
+# carries gate 2.0.0, producer 1.2.0, wrapper 1.2.0 and shared-install 1.0.1,
+# all four unchanged from the previous pin, plus core spec 1.4.0 / §20: a
+# conformance harness that scored nothing is no longer green. Both harnesses
+# now report `UNSCOREABLE <label> — <reason>` and fail on a named target that
+# is absent, empty or unreadable, instead of exiting 0 having certified
+# nothing.
 #
-# It first pinned 2b82a91, a commit on #47's branch, while that PR was open;
-# #47 was then merged with a MERGE COMMIT rather than a squash, precisely so
-# that sha stayed reachable and the pin could not break underneath this repo.
-# Advancing to a main commit is the follow-through, not a fix for a breakage.
+# The previous pin, 6cd3b9c, is why that matters here. It resolved the two
+# harnesses as they stood BEFORE that fix — the exact defect ADR-0047 recorded
+# as a known limit and deferred to core, worked around in this repo with a
+# `test -s` after each resolve in `openspec-gate.yml`. Until this re-pin, the
+# fix was merged in core and had reached no host.
 #
-# Every one of the seven entries below was re-verified at 6cd3b9c and all seven
-# are byte-identical to what they were at 2b82a91. That is the manifest's rule
-# honoured, not skipped: advancing core_commit means re-checking the files
-# already listed, not just appending new ones. Same bytes, said about a
-# different and more durable revision.
+# All seven entries below were re-verified at ef030d0. Five are byte-identical
+# to 6cd3b9c; the two vendored harnesses changed, their sha256s were recomputed
+# from this commit, and the copies on disk were replaced with those bytes.
+# That is the manifest's rule honoured, not skipped: advancing core_commit
+# means re-checking every file already listed, not only the ones expected to
+# move.
 core_repo=agenticapps-eu/agenticapps-workflow-core
-core_commit=6cd3b9c40eb409ab1b256e3b9e8d50c7268538ab
+core_commit=ef030d0430e6c0df6dc13ab567baab3f9e006dbe
 
 # RESOLVED at install time — not vendored in this repo.
 file=bin/openspec-change-gate.sh sha256=4ad996cb7f95ebc45c35177eaad70781c23f166fb14283dc693a8ecc31476780
@@ -59,5 +66,5 @@ file=bin/reviewer-cli.sh sha256=9a26ebcda9f8c7e3839778337c1b56a4a421610735c08b8b
 # VENDORED on disk — pinned so the copies are checkable against a fixed commit.
 file=bin/resolve-core-artifact.sh sha256=1274598c07c0853b91c08d9b27da85d46cc754eff57b9c456cb79f293caf11ac
 file=bin/install-shared-artifact.sh sha256=c5dbdbe29e211b924dbbdc6d3d25e8dde8936fac3a4f2d46ebdef59f71ed9e8a
-file=tools/change-gate-conformance.sh sha256=e99ca5eded430925107c53a78d992d4df01599ee16dc47fdffab9aae0853d316
-file=tools/reviewer-cli-conformance.sh sha256=cee2ab002e5261df8c504e56b2cde0d0e4c14df7a897ec5ac498b3b4ea3fdc14
+file=tools/change-gate-conformance.sh sha256=9ddfd5d641464920a4240c656384db722b3b7738768b09cc2a0beb2a2c3aeb21
+file=tools/reviewer-cli-conformance.sh sha256=f5161c8b7025e889eec0c78c3b0d6091d51e630ee2b5585d6e7c721089855011
