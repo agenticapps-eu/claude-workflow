@@ -173,19 +173,26 @@ RESOLVED=()   # temp copies to clean up on the way out
 cleanup_resolved() { [ "${#RESOLVED[@]}" -gt 0 ] && rm -f "${RESOLVED[@]}" || true; }
 trap cleanup_resolved EXIT
 
-# Prints the path of a verified temp copy, or explains and exits non-zero.
+# Answers in $RESOLVE_OUT rather than on stdout, and is called DIRECTLY rather
+# than in a command substitution. `x="$(resolve_core ...)"` would run this in a
+# subshell, so the `RESOLVED+=` below would be discarded with it and the trap
+# would have nothing to clean — verified: three leaked temp copies per run.
+RESOLVE_OUT=""
 resolve_core() { # $1 = logical path, e.g. bin/run-plan-review.sh
   local out
-  if ! out="$("$RESOLVER" "$MANIFEST" "$1" 2>&1)"; then
-    echo "  ✗ could not resolve $1 from core:" >&2
-    printf '%s\n' "$out" | sed 's/^/      /' >&2
+  # stderr is NOT folded into $out. The resolver prints a path on stdout and
+  # diagnostics on stderr; merging them means one stray warning on a SUCCESSFUL
+  # resolve turns the captured path into "warning\n/path" and `install` fails
+  # somewhere much less obvious than here.
+  if ! out="$("$RESOLVER" "$MANIFEST" "$1")"; then
+    echo "  ✗ could not resolve $1 from core (diagnostics above)." >&2
     echo "      Nothing was published. Fix the pin or the source, then re-run." >&2
     echo "      Offline with no core checkout? Clone core beside this repo, or set" >&2
     echo "      CORE_CHECKOUT=/path/to/agenticapps-workflow-core." >&2
     return 1
   fi
   RESOLVED+=("$out")
-  printf '%s\n' "$out"
+  RESOLVE_OUT="$out"
 }
 
 if [ ! -x "$RESOLVER" ] || [ ! -f "$MANIFEST" ]; then
@@ -195,9 +202,9 @@ if [ ! -x "$RESOLVER" ] || [ ! -f "$MANIFEST" ]; then
   exit 1
 fi
 
-_gate_src="$(resolve_core bin/openspec-change-gate.sh)" || exit 1
-_rp_src="$(resolve_core bin/run-plan-review.sh)"        || exit 1
-_rc_src="$(resolve_core bin/reviewer-cli.sh)"           || exit 1
+resolve_core bin/openspec-change-gate.sh || exit 1; _gate_src="$RESOLVE_OUT"
+resolve_core bin/run-plan-review.sh      || exit 1; _rp_src="$RESOLVE_OUT"
+resolve_core bin/reviewer-cli.sh         || exit 1; _rc_src="$RESOLVE_OUT"
 
 # $AA_BIN is SHARED by every host installer (claude / codex / opencode / pi), so
 # writing it unconditionally is last-writer-wins: a host still vendoring an older
