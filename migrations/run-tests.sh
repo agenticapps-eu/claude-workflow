@@ -2153,6 +2153,165 @@ reviewer_cli_version '$vt/${case_name%%:*}'" 2>/dev/null)"
 }
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# The pin replaces the copies (core task 8.4, ADR-0047)
+# ─────────────────────────────────────────────────────────────────────────────
+# Every host carried byte-copies of the gate, the producer and the wrapper so
+# its install.sh had something to publish into the shared ~/.agenticapps/bin/.
+# The runtime never read those copies. They existed to feed the installer, and
+# they drifted — which is why the two parity tests above exist at all. On
+# 2026-07-31 all three were stale at once (gate 1.3.1 vs 2.0.0, producer 1.0.0
+# vs 1.2.0, wrapper 1.1.0 vs 1.2.0) and the suite was RED for exactly that.
+#
+# core-vendor.manifest names ONE core commit and a sha256 per file;
+# resolve-core-artifact.sh turns that into verified bytes on disk. The
+# installer resolves what it publishes, so core is the operational source of
+# truth rather than a thing this repo mirrors and forgets.
+#
+# Two categories, deliberately different:
+#   RESOLVED — the three artifacts install.sh publishes. NOT vendored. Vendoring
+#              them is what this change removes; a copy on disk is a copy that
+#              drifts.
+#   VENDORED — the bootstrap resolver (it cannot resolve itself), the shared
+#              installer, and the conformance harnesses CI executes from the
+#              repo. These stay on disk, but are checked against the PIN rather
+#              than against a core working tree.
+#
+# Checking against the pin, not against $CORE_SPEC_DIR, is the point. CI checks
+# core out at `ref: main`, so the old comparison silently asked "does this match
+# whatever main happens to say today?" — an unpinned question that changes
+# answer without either repo changing. The manifest makes it a fixed one.
+test_core_artifacts_resolve_from_pin() {
+  echo ""
+  echo "${YELLOW}━━━ Core artifacts resolve from the pin ━━━${RESET}"
+
+  local manifest="$REPO_ROOT/tools/core-vendor.manifest"
+  local resolver="$REPO_ROOT/bin/resolve-core-artifact.sh"
+
+  if [ ! -f "$manifest" ]; then
+    echo "  ${RED}✗${RESET} no tools/core-vendor.manifest — nothing pins what the installer publishes"
+    FAIL=$((FAIL+1)); return
+  fi
+  if [ ! -x "$resolver" ]; then
+    echo "  ${RED}✗${RESET} no executable bin/resolve-core-artifact.sh — the manifest has no reader"
+    FAIL=$((FAIL+1)); return
+  fi
+
+  # The three the installer publishes must be pinned, or install.sh cannot
+  # resolve them and falls back to nothing.
+  local RESOLVED=(bin/openspec-change-gate.sh bin/run-plan-review.sh bin/reviewer-cli.sh)
+  # Still on disk, still core's. Listed so the manifest's "every file this repo
+  # vendors from core is listed" claim is true rather than convenient.
+  local VENDORED=(bin/resolve-core-artifact.sh bin/install-shared-artifact.sh
+                  tools/change-gate-conformance.sh tools/reviewer-cli-conformance.sh)
+
+  local f missing=""
+  for f in "${RESOLVED[@]}" "${VENDORED[@]}"; do
+    grep -qE "^file=$(printf '%s' "$f" | sed 's/[.[\*^$/]/\\&/g')[[:space:]]+sha256=[0-9a-f]{64}[[:space:]]*$" \
+      "$manifest" || missing="$missing $f"
+  done
+  if [ -z "$missing" ]; then
+    echo "  ${GREEN}✓${RESET} manifest pins every core-derived file (${#RESOLVED[@]} resolved + ${#VENDORED[@]} vendored)"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} manifest does not pin:$missing"
+    echo "      A manifest naming some of the files is internally consistent while"
+    echo "      recording nothing about the ones it omits."
+    FAIL=$((FAIL+1))
+  fi
+
+  # A vendored copy of a RESOLVED artifact is the defect itself: two sources,
+  # one of which nothing reads and everything trusts.
+  local stray=""
+  for f in "${RESOLVED[@]}"; do
+    [ -e "$REPO_ROOT/$f" ] && stray="$stray $f"
+  done
+  if [ -z "$stray" ]; then
+    echo "  ${GREEN}✓${RESET} no vendored copies of the resolved artifacts"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} vendored copies still present:$stray"
+    echo "      These are what drift. The installer resolves from core now; delete them."
+    FAIL=$((FAIL+1))
+  fi
+
+  # install.sh must not name a vendored path as an install SOURCE. Anchored on
+  # \$SCAFFOLDER/bin/<artifact> so the git-hooks install (a file this repo really
+  # does own) and the echoed summary lines do not read as violations.
+  local bad=""
+  for f in "${RESOLVED[@]}"; do
+    grep -qE '\$SCAFFOLDER/'"$(basename "$(dirname "$f")")"'/'"$(basename "$f")" \
+      "$REPO_ROOT/install.sh" 2>/dev/null && bad="$bad $f"
+  done
+  if [ -z "$bad" ]; then
+    echo "  ${GREEN}✓${RESET} install.sh names no vendored source for the resolved artifacts"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} install.sh still installs from the vendored copy:$bad"
+    FAIL=$((FAIL+1))
+  fi
+  if grep -q 'resolve-core-artifact.sh' "$REPO_ROOT/install.sh" 2>/dev/null; then
+    echo "  ${GREEN}✓${RESET} install.sh resolves through the pin"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} install.sh never calls resolve-core-artifact.sh"
+    FAIL=$((FAIL+1))
+  fi
+
+  # Migration 0032 is the OTHER writer of the shared path. Auditing only
+  # install.sh is how 0032 came to clobber the gate unconditionally; the same
+  # blind spot applies to the source it installs FROM.
+  local m0032="$REPO_ROOT/migrations/0032-bind-openspec-v1.md"
+  if [ -f "$m0032" ]; then
+    if grep -q 'resolve-core-artifact.sh' "$m0032"; then
+      echo "  ${GREEN}✓${RESET} migration 0032 resolves through the pin too"
+      PASS=$((PASS+1))
+    else
+      echo "  ${RED}✗${RESET} migration 0032 still installs from \$SCAFFOLDER/bin — a second, unpinned writer"
+      echo "      A project below 3.0.0 replays 0032 against files this repo no longer has."
+      FAIL=$((FAIL+1))
+    fi
+  fi
+
+  # The pin has to actually resolve. Everything above is text-matching; this is
+  # the only row that proves bytes.
+  local unresolvable="" mismatched=""
+  for f in "${RESOLVED[@]}" "${VENDORED[@]}"; do
+    local got
+    if ! got="$(CORE_CHECKOUT="${CORE_SPEC_DIR:-$REPO_ROOT/../agenticapps-workflow-core}" \
+                bash "$resolver" "$manifest" "$f" 2>/dev/null)"; then
+      unresolvable="$unresolvable $f"
+      continue
+    fi
+    # A VENDORED file must equal the bytes the pin names. That is the drift
+    # check, asked against a fixed commit instead of a moving branch.
+    case " ${VENDORED[*]} " in
+      *" $f "*)
+        cmp -s "$got" "$REPO_ROOT/$f" || mismatched="$mismatched $f" ;;
+    esac
+    rm -f "$got"
+  done
+  if [ -n "$unresolvable" ]; then
+    echo "  ${RED}✗${RESET} pinned file(s) did not resolve or failed hash verification:$unresolvable"
+    echo "      Either the manifest is stale (re-pin it) or the pinned commit is"
+    echo "      unreachable — a sha that only exists on an unpushed branch resolves"
+    echo "      on the machine that made it and nowhere else."
+    FAIL=$((FAIL+1))
+  else
+    echo "  ${GREEN}✓${RESET} every pinned file resolves and hash-verifies at the pinned commit"
+    PASS=$((PASS+1))
+  fi
+  if [ -n "$mismatched" ]; then
+    echo "  ${RED}✗${RESET} vendored copy differs from the pinned bytes:$mismatched"
+    echo "      Re-vendor from the pinned commit, or advance the pin deliberately."
+    FAIL=$((FAIL+1))
+  else
+    echo "  ${GREEN}✓${RESET} every still-vendored core file matches the pinned bytes"
+    PASS=$((PASS+1))
+  fi
+}
+
+
 test_migration_payloads_still_published() {
   echo ""
   echo "${YELLOW}━━━ Migration payloads — nothing fetches a deleted file ━━━${RESET}"
@@ -3473,6 +3632,10 @@ fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "reviewer-parity" ]; then
   test_reviewer_cli_matches_core_canonical
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "resolve-pin" ]; then
+  test_core_artifacts_resolve_from_pin
 fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "phase-sentinel" ]; then
