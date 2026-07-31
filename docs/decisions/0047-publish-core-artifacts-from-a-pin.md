@@ -92,8 +92,9 @@ hard failure. Projects that already applied it are unaffected either way.
 
 ## Known limits
 
-- **The pin names a non-main commit.** `2b82a91` is the tip of core's
-  `feat/step3-hook-shims-and-dead-gate-removal` (core PR #47). GitHub serves raw
+- **The pin names a non-main commit.** `2b82a91` is a commit on core's
+  `feat/step3-hook-shims-and-dead-gate-removal` (core PR #47) — the revision
+  whose bytes were verified, not necessarily that branch's tip. GitHub serves raw
   content by sha for any pushed commit, so it resolves everywhere today. **If
   #47 is squash-merged that sha is orphaned and will eventually be unreachable.**
   Re-pin to the resulting main commit once #47 lands. This is loud, not silent:
