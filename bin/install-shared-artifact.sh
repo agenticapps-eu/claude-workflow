@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
-# shared-install-version: 1.0.0
+# shared-install-version: 1.0.1
+#
+#   1.0.1 — `--allow-downgrade` no longer glob-expands. Unquoted, the value was
+#           pathname-expanded as well as split, so `'*'` could authorise a
+#           downgrade from a directory that happened to contain a matching
+#           filename — against the "there is no wildcard" promise this flag is
+#           documented with.
 #
 # install-shared-artifact.sh — serialised, monotonic install of a versioned
 # artifact into the shared ~/.agenticapps/bin/ path.
@@ -61,8 +67,44 @@ set -u
 SRC="${1:-}"
 DST="${2:-}"
 KEY="${3:-}"
+shift 3 2>/dev/null || true
 LOCK_TIMEOUT="${SHARED_INSTALL_LOCK_TIMEOUT:-30}"
 TEST_DELAY="${SHARED_INSTALL_TEST_DELAY:-0}"
+INSTALL_LOG="${AGENTICAPPS_INSTALL_LOG:-${HOME:-/tmp}/.agenticapps/install.log}"
+
+# ── opt-in downgrade ─────────────────────────────────────────────────────────
+# The arbiter above refuses to overwrite a newer copy, which is what stops an
+# older host installer silently reverting a fix for every agent on the machine.
+# It also makes every rollback row in every migration plan unexecutable: there
+# is no supported way to put 1.0.0 back after 1.1.0 ships.
+#
+# The escape is deliberately narrow:
+#   --allow-downgrade <artifact> --reason <text>
+# Both are mandatory together. It authorises exactly the one named artifact for
+# exactly this invocation. Repeating the flag authorises several, each named.
+# There is no wildcard and NO ENVIRONMENT VARIABLE — an env var would make the
+# weakening inheritable by every child process, which is the property this
+# exists to deny.
+#
+# The flag IS the authorisation, and that is stated rather than dressed up:
+# anyone who can run this installer can already write the shared directory
+# directly. What the flag buys is that a downgrade is deliberate and recorded,
+# not that it is privileged.
+ALLOW_DOWNGRADE=""
+REASON=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --allow-downgrade)
+      [ $# -ge 2 ] || { printf 'install-shared-artifact: --allow-downgrade requires an artifact name\n' >&2; exit 1; }
+      ALLOW_DOWNGRADE="$ALLOW_DOWNGRADE $2"; shift 2 ;;
+    --allow-downgrade=*) ALLOW_DOWNGRADE="$ALLOW_DOWNGRADE ${1#*=}"; shift ;;
+    --reason)
+      [ $# -ge 2 ] || { printf 'install-shared-artifact: --reason requires a value\n' >&2; exit 1; }
+      REASON="$2"; shift 2 ;;
+    --reason=*) REASON="${1#*=}"; shift ;;
+    *) printf 'install-shared-artifact: unknown option: %s\n' "$1" >&2; exit 1 ;;
+  esac
+done
 
 die() { printf 'install-shared-artifact: %s\n' "$*" >&2; exit 1; }
 note() { printf 'install-shared-artifact: %s\n' "$*" >&2; }
@@ -146,8 +188,55 @@ want="$(version_of "$SRC")"
 have="$(version_of "$DST")"
 
 if [ -f "$DST" ] && version_gt "$have" "$want"; then
-  note "keeping $DST at $have (refusing downgrade to $want)"
-  exit 3
+  _dst_name="$(basename "$DST")"
+  _authorised=0
+  # Unquoted here, the value is GLOB-expanded as well as split, so
+  # `--allow-downgrade '*'` run from a directory happening to contain a file
+  # named like the artifact authorised the downgrade — directly contradicting
+  # the "there is no wildcard" promise above it. Splitting is wanted; globbing
+  # is not, so it is disabled for the loop and restored immediately.
+  set -f
+  for _a in $ALLOW_DOWNGRADE; do [ "$_a" = "$_dst_name" ] && _authorised=1; done
+  set +f
+
+  if [ "$_authorised" != "1" ]; then
+    if [ -n "$ALLOW_DOWNGRADE" ]; then
+      # A typo must not read as a successful authorisation.
+      note "keeping $DST at $have — --allow-downgrade named '$(echo $ALLOW_DOWNGRADE | tr -s ' ')', not '$_dst_name'"
+    else
+      note "keeping $DST at $have (refusing downgrade to $want)"
+    fi
+    exit 3
+  fi
+
+  # Reason is REQUIRED with the flag, and constrained so it cannot forge a
+  # second record: a single line, any control character rejected rather than
+  # escaped. Rejecting is deliberate — escaping would require every reader to
+  # un-escape identically, which is the under-specification this avoids.
+  case "$REASON" in
+    "") note "--allow-downgrade requires --reason <text>"; exit 1 ;;
+  esac
+  _trimmed="$(printf '%s' "$REASON" | tr -d '[:space:]')"
+  [ -n "$_trimmed" ] || { note "--reason must not be empty"; exit 1; }
+  if printf '%s' "$REASON" | LC_ALL=C grep -q '[[:cntrl:]]'; then
+    note "--reason must be a single line with no control characters"
+    exit 1
+  fi
+  [ "${#REASON}" -le 200 ] || { note "--reason must be at most 200 characters"; exit 1; }
+
+  # THE LOG WRITE GATES THE REPLACEMENT. Writing the artifact first and the log
+  # second loses the audit record in exactly the case it exists for — a full
+  # disk, a read-only home, a permissions error — and leaves a silently
+  # downgraded shared binary behind. A logged downgrade that then fails to
+  # install is a harmless over-record; the reverse is not.
+  mkdir -p "$(dirname "$INSTALL_LOG")" 2>/dev/null || {
+    note "cannot create the install log directory: $(dirname "$INSTALL_LOG")"; exit 1; }
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" downgrade "$_dst_name" "$have" "$want" \
+    "$(id -un 2>/dev/null || printf unknown)" "$REASON" >> "$INSTALL_LOG" || {
+      note "cannot write the audit record to $INSTALL_LOG — refusing the downgrade"; exit 1; }
+
+  note "downgrading $DST from $have to $want (authorised; reason: $REASON)"
 fi
 
 # TEST ONLY — see ENV above. Held INSIDE the lock, which is the whole point: a

@@ -56,10 +56,12 @@ make_fixture() {
   for v in $VENDORS; do
     cat > "$d/stub/$v" <<'STUB'
 #!/usr/bin/env bash
-# Record whether stdin is empty. `cat` on a pinned /dev/null returns nothing;
-# without the pin this inherits the caller's stdin and would read the payload.
-seen="$(cat 2>/dev/null | head -c 100)"
-printf '%s' "$seen" > "$STDIN_WITNESS"
+# Records what this vendor was actually handed, on both channels.
+#   stdin — must never carry the CALLER's payload (isolation)
+#   argv  — must never carry the prompt's CONTENT (the 1.2.0 property)
+[ -n "${ARGV_WITNESS:-}" ] && printf '%s\n' "$@" > "$ARGV_WITNESS"
+seen="$(cat 2>/dev/null | head -c 200)"
+[ -n "${STDIN_WITNESS:-}" ] && printf '%s' "$seen" > "$STDIN_WITNESS"
 printf 'VERDICT ok\n'
 STUB
     chmod +x "$d/stub/$v"
@@ -115,26 +117,49 @@ run_row_stderr_matches() { # $1=desc $2=expected-substring $3...=argv
   esac
 }
 
-# Asserts the wrapper produced the stub's output AND left stdin empty. The
-# stdin half is the row that pins the hardening: a wrapper that forgets the
-# redirect on one arm still exits 0 and still prints a verdict, so exit code
-# alone cannot see it.
-run_row_stdin_pinned() { # $1=vendor
+# Asserts the wrapper dispatched AND that the CALLER'S ambient stdin never
+# reaches the vendor.
+#
+# At 1.1.0 this row read "stdin is pinned to /dev/null", because the prompt
+# travelled in argv and stdin had no job but to reach EOF. At 1.2.0 the prompt
+# travels ON stdin — the argv exposure is the defect being fixed — so "the
+# vendor read nothing" is no longer the property. What survives, and is what
+# the row was really protecting, is ISOLATION: whatever the wrapper's own
+# caller happens to have on stdin must not be handed to a third-party CLI.
+#
+# The never-blocks guarantee is unchanged and still structural: every arm
+# redirects stdin from something that reaches EOF — a regular file rather than
+# /dev/null. A wrapper that forgot a redirect on one arm would leak the
+# caller's payload, which this row sees.
+run_row_stdin_isolated() { # $1=vendor
   local v="$1" out
   : > "$FX/stdin.witness"
-  # A finite payload down a pipe that closes: an unpinned wrapper reads it (and
-  # fails on the witness) rather than blocking on an open stdin.
   out="$(
     printf 'LEAKED PAYLOAD\n' | PATH="$FX/stub:$PATH" STDIN_WITNESS="$FX/stdin.witness" \
       bounded_cli "$v" "$FX/prompt.txt" 2>/dev/null
   )"
   local witness; witness="$(cat "$FX/stdin.witness" 2>/dev/null)"
-  if [ "$out" = "VERDICT ok" ] && [ -z "$witness" ]; then
-    echo "  PASS  $v: dispatches and pins stdin to /dev/null"; pass=$((pass + 1))
-  elif [ "$out" != "VERDICT ok" ]; then
+  if [ "$out" != "VERDICT ok" ]; then
     echo "  FAIL  $v: arm did not dispatch (got '${out:-<empty>}')"; fail=$((fail + 1))
+  elif printf '%s' "$witness" | grep -q 'LEAKED PAYLOAD'; then
+    echo "  FAIL  $v: caller's stdin REACHED the vendor — '$witness'"; fail=$((fail + 1))
   else
-    echo "  FAIL  $v: stdin NOT pinned — vendor read '$witness'"; fail=$((fail + 1))
+    echo "  PASS  $v: dispatches; caller stdin isolated from the vendor"; pass=$((pass + 1))
+  fi
+}
+
+# The 1.2.0 property proper: no change content in argv. A vendor CLI's argv is
+# world-readable in the process table for as long as it runs, and the prompt is
+# the entire change.
+run_row_no_argv_leak() { # $1=vendor
+  local v="$1"
+  : > "$FX/argv.witness"
+  PATH="$FX/stub:$PATH" ARGV_WITNESS="$FX/argv.witness" \
+    bounded_cli "$v" "$FX/prompt.txt" >/dev/null 2>&1 </dev/null
+  if grep -q 'review this change' "$FX/argv.witness" 2>/dev/null; then
+    echo "  FAIL  $v: prompt CONTENT appeared in the vendor's argv"; fail=$((fail + 1))
+  else
+    echo "  PASS  $v: prompt content never enters argv"; pass=$((pass + 1))
   fi
 }
 
@@ -159,8 +184,9 @@ score_one() {
     run_row "$v arm is dispatchable" 0 "$v" "$FX/prompt.txt"
   done
 
-  echo "  ── C. Hardening (stdin pinned, per arm) ──"
-  for v in $VENDORS; do run_row_stdin_pinned "$v"; done
+  echo "  ── C. Hardening (stdin isolated, no argv leak, per arm) ──"
+  for v in $VENDORS; do run_row_stdin_isolated "$v"; done
+  for v in $VENDORS; do run_row_no_argv_leak "$v"; done
 
   echo "  ── D. Timeout contract ──"
   # A vendor CLI that outlives the cap must surface as the wrapper's die (3),

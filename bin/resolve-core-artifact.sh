@@ -99,6 +99,7 @@ core_path_for() {
   case "$1" in
     bin/openspec-change-gate.sh) echo reference-implementations/openspec-change-gate/openspec-change-gate.sh ;;
     bin/reviewer-cli.sh)         echo reference-implementations/reviewer-cli/reviewer-cli.sh ;;
+    bin/run-plan-review.sh)      echo reference-implementations/run-plan-review/run-plan-review.sh ;;
     bin/install-shared-artifact.sh) echo reference-implementations/shared-install/install-shared-artifact.sh ;;
     bin/resolve-core-artifact.sh)   echo reference-implementations/shared-install/resolve-core-artifact.sh ;;
     *) echo "$1" ;;   # tools/* and anything else share core's layout
