@@ -1862,56 +1862,45 @@ test_migration_0030() {
 # Fix behaviour in core alongside a harness row, then re-vendor; do not patch
 # bin/ in place, because a host-local fix is how the copies diverged the first
 # time.
+# Resolve a pinned core artifact to a temp path and echo it; non-zero if the
+# pin cannot be satisfied. Callers own the file. Shared by the three tests that
+# used to read a vendored copy from $REPO_ROOT/bin (ADR-0047).
+#
+# Made executable on the way out. The resolver hands back a 0600 mktemp, which
+# is right for it — verified bytes should not become executable until a caller
+# decides they should, and the real publishers say so explicitly (`install -m
+# 0755`, in both install.sh and 0032). A test that EXECUTES the artifact has to
+# do the same, and one of them silently did not: the producer checks
+# `[ -x "$REVIEWER_CLI" ]`, found the resolved wrapper unexecutable, fell
+# through to a vendored path that no longer exists, and wrote no REVIEWS.md.
+resolve_pinned() { # $1 = logical path, e.g. bin/run-plan-review.sh
+  local out
+  out="$(CORE_CHECKOUT="${CORE_SPEC_DIR:-$REPO_ROOT/../agenticapps-workflow-core}" \
+         bash "$REPO_ROOT/bin/resolve-core-artifact.sh" \
+              "$REPO_ROOT/tools/core-vendor.manifest" "$1" 2>/dev/null)" || return 1
+  chmod 0755 "$out" || return 1
+  printf '%s\n' "$out"
+}
+
 test_gate_matches_core_canonical() {
   echo ""
   echo "${YELLOW}━━━ Change-gate ≡ workflow-core canonical ━━━${RESET}"
 
-  local core_dir="${CORE_SPEC_DIR:-$REPO_ROOT/../agenticapps-workflow-core}"
-  local canonical="$core_dir/reference-implementations/openspec-change-gate/openspec-change-gate.sh"
-  local ours="$REPO_ROOT/bin/openspec-change-gate.sh"
-
-  if [ ! -f "$ours" ]; then
-    echo "  ${RED}✗${RESET} this repo has no bin/openspec-change-gate.sh"
+  # Byte-identity with core is now asserted by test_core_artifacts_resolve_from_pin
+  # against a PINNED commit, and the harness comparison moved there with it. What
+  # remains here is the half a pin cannot express: that the shared path is
+  # arbitrated by every writer, and that the artifact carries the marker the
+  # arbitration reads.
+  local ours
+  if ! ours="$(resolve_pinned bin/openspec-change-gate.sh)"; then
+    echo "  ${RED}✗${RESET} could not resolve the pinned gate — cannot certify the shared path"
+    echo "      See the resolve-pin test for the reason; this test needs the bytes."
     FAIL=$((FAIL+1)); return
-  fi
-
-  if [ ! -d "$core_dir" ]; then
-    echo "  ${YELLOW}SKIP${RESET}: workflow-core not available at $core_dir"
-    SKIP=$((SKIP+1)); return
-  fi
-
-  if [ ! -f "$canonical" ]; then
-    # Core HAS published it (ae90483). Absent now means a stale core checkout or
-    # a path that moved again — either way the "one shared gate" invariant is
-    # unverifiable, and that must not read as "checked and fine".
-    echo "  ${RED}✗${RESET} workflow-core has no reference-implementations/openspec-change-gate/openspec-change-gate.sh"
-    echo "      Published upstream in ae90483 (core#33). A stale core checkout cannot"
-    echo "      certify this gate. Pull core, or update this path if it moved again."
-    FAIL=$((FAIL+1)); return
-  fi
-
-  # The harness scores the gate, and CI runs it against our vendored copy — so a
-  # stale harness certifies a stale gate. Core's vendoring steps require keeping
-  # the two in sync; this is what makes "in sync" checkable.
-  local harness_ours="$REPO_ROOT/tools/change-gate-conformance.sh"
-  local harness_canonical="$core_dir/tools/change-gate-conformance.sh"
-  if [ ! -f "$harness_ours" ]; then
-    echo "  ${RED}✗${RESET} tools/change-gate-conformance.sh not vendored — CI's conformance step cannot run"
-    FAIL=$((FAIL+1))
-  elif [ ! -f "$harness_canonical" ]; then
-    echo "  ${YELLOW}SKIP${RESET}: workflow-core has no tools/change-gate-conformance.sh to compare against"
-    SKIP=$((SKIP+1))
-  elif cmp -s "$harness_ours" "$harness_canonical"; then
-    echo "  ${GREEN}✓${RESET} conformance harness is byte-identical to core's"
-    PASS=$((PASS+1))
-  else
-    echo "  ${RED}✗${RESET} conformance harness has drifted from core's — a stale harness certifies a stale gate"
-    FAIL=$((FAIL+1))
   fi
 
   # The shared-path arbitration only works if the marker exists and the installer
   # reads it. Without both, install.sh silently reverts to last-writer-wins on
-  # ~/.agenticapps/bin — the propagation vector where a host still vendoring an
+  # ~/.agenticapps/bin — the propagation vector where a host publishing an
   # older gate republishes it over a newer one for every agent on the machine.
   if grep -qE '^# gate-version:[[:space:]]*[0-9]+\.[0-9]+\.[0-9]+' "$ours"; then
     echo "  ${GREEN}✓${RESET} gate carries a version marker (shared-path arbitration)"
@@ -1949,43 +1938,20 @@ test_gate_matches_core_canonical() {
     FAIL=$((FAIL+1))
   fi
 
-  if cmp -s "$ours" "$canonical"; then
-    echo "  ${GREEN}✓${RESET} gate script is byte-identical to the canonical upstream copy"
-    PASS=$((PASS+1))
-    if [ -f "$REPO_ROOT/bin/GATE-DIVERGENCE.md" ]; then
-      echo "  ${RED}✗${RESET} but bin/GATE-DIVERGENCE.md still exists — the fork is closed, delete it"
-      FAIL=$((FAIL+1))
-    fi
-    return
-  fi
+  rm -f "$ours"
 
-  # Diverged. Permitted ONLY while recorded in bin/GATE-DIVERGENCE.md, pinned to
-  # the exact diff. That keeps a deliberate, documented fix visible and bounded
-  # while any further unrecorded drift still fails.
-  local record="$REPO_ROOT/bin/GATE-DIVERGENCE.md"
-  if [ ! -f "$record" ]; then
-    echo "  ${RED}✗${RESET} gate script has DRIFTED from the canonical upstream copy, unrecorded"
-    echo "      One shared enforcement surface is the §18 design; a per-host fork means"
-    echo "      each host enforces a subtly different rule. Upstream the change and"
-    echo "      re-sync, or record the divergence in bin/GATE-DIVERGENCE.md."
-    diff -u "$canonical" "$ours" | head -30 | sed 's/^/        /'
-    FAIL=$((FAIL+1)); return
-  fi
-
-  local actual expected
-  actual="$(diff -u "$canonical" "$ours" | grep -vE '^(---|\+\+\+)' | shasum -a 256 | cut -d' ' -f1)"
-  expected="$(grep -oE '^[0-9a-f]{64}$' "$record" | head -n1)"
-  if [ "$actual" = "$expected" ]; then
-    echo "  ${YELLOW}RECORDED-DIVERGENCE${RESET}: gate differs from canonical, exactly as documented"
-    echo "      bin/GATE-DIVERGENCE.md pins this diff; it closes when the fixes are"
-    echo "      upstreamed into core and this copy is re-vendored. Not silent, not permanent."
-    PASS=$((PASS+1))
-  else
-    echo "  ${RED}✗${RESET} gate divergence CHANGED and no longer matches the recorded hash"
-    echo "      recorded: ${expected:-<none found>}"
-    echo "      actual:   $actual"
-    echo "      Either re-sync with upstream, or update bin/GATE-DIVERGENCE.md deliberately."
+  # bin/GATE-DIVERGENCE.md recorded a DELIBERATE local fork of the vendored gate,
+  # pinned to the exact diff so it stayed visible and bounded. There is no local
+  # copy to fork any more: the installer publishes the pinned bytes or fails. A
+  # divergence record now describes a file that does not exist, so its presence
+  # is itself the finding.
+  if [ -f "$REPO_ROOT/bin/GATE-DIVERGENCE.md" ]; then
+    echo "  ${RED}✗${RESET} bin/GATE-DIVERGENCE.md exists but nothing can diverge — the gate is resolved from the pin"
+    echo "      Upstream whatever it records into core, advance core_commit, delete the file."
     FAIL=$((FAIL+1))
+  else
+    echo "  ${GREEN}✓${RESET} no local gate fork is possible (published from the pin, not a copy)"
+    PASS=$((PASS+1))
   fi
 }
 
@@ -2007,40 +1973,14 @@ test_reviewer_cli_matches_core_canonical() {
   echo ""
   echo "${YELLOW}━━━ reviewer-cli ≡ workflow-core canonical ━━━${RESET}"
 
-  local core_dir="${CORE_SPEC_DIR:-$REPO_ROOT/../agenticapps-workflow-core}"
-  local canonical="$core_dir/reference-implementations/reviewer-cli/reviewer-cli.sh"
-  local ours="$REPO_ROOT/bin/reviewer-cli.sh"
-
-  if [ ! -f "$ours" ]; then
-    echo "  ${RED}✗${RESET} this repo has no bin/reviewer-cli.sh — the producer has nothing to call"
+  # Byte-identity with core, and the harness comparison that used to live here,
+  # moved to test_core_artifacts_resolve_from_pin — asked against a pinned commit
+  # rather than against whatever $CORE_SPEC_DIR happens to hold. What stays is
+  # the arbitration half, which a pin cannot express.
+  local ours
+  if ! ours="$(resolve_pinned bin/reviewer-cli.sh)"; then
+    echo "  ${RED}✗${RESET} could not resolve the pinned wrapper — the producer has nothing to call"
     FAIL=$((FAIL+1)); return
-  fi
-
-  if [ ! -d "$core_dir" ]; then
-    echo "  ${YELLOW}SKIP${RESET}: workflow-core not available at $core_dir"
-    SKIP=$((SKIP+1)); return
-  fi
-
-  if [ ! -f "$canonical" ]; then
-    echo "  ${RED}✗${RESET} workflow-core has no reference-implementations/reviewer-cli/reviewer-cli.sh"
-    echo "      Published upstream in 60cd83f (core#42). A stale core checkout cannot"
-    echo "      certify this wrapper. Pull core, or update this path if it moved."
-    FAIL=$((FAIL+1)); return
-  fi
-
-  # A stale harness certifies a stale wrapper — core's vendoring step 2 requires
-  # shipping the two together and keeping them in sync.
-  local harness_ours="$REPO_ROOT/tools/reviewer-cli-conformance.sh"
-  local harness_canonical="$core_dir/tools/reviewer-cli-conformance.sh"
-  if [ ! -f "$harness_ours" ]; then
-    echo "  ${RED}✗${RESET} tools/reviewer-cli-conformance.sh not vendored — CI cannot score the wrapper"
-    FAIL=$((FAIL+1))
-  elif cmp -s "$harness_ours" "$harness_canonical"; then
-    echo "  ${GREEN}✓${RESET} conformance harness is byte-identical to core's"
-    PASS=$((PASS+1))
-  else
-    echo "  ${RED}✗${RESET} conformance harness has drifted from core's — a stale harness certifies a stale wrapper"
-    FAIL=$((FAIL+1))
   fi
 
   # The marker is the whole mechanism. Without it every installer reads 0.0.0 and
@@ -2129,26 +2069,200 @@ reviewer_cli_version '$vt/${case_name%%:*}'" 2>/dev/null)"
   # wrapper the arms happened to use before: greping only for `bounded codex`
   # would wave through a re-added bare `codex exec` or `gemini -p`, which is the
   # same fork with the helper inlined.
-  if grep -qE '(^|[^-[:alnum:]_])(codex exec|gemini -p|claude -p|opencode run)' \
-       "$REPO_ROOT/bin/run-plan-review.sh" 2>/dev/null; then
-    echo "  ${RED}✗${RESET} run-plan-review.sh still dispatches vendors itself — a second copy of the arms"
-    echo "      Delegate to reviewer-cli.sh. A private copy of a shared artifact is a race,"
-    echo "      and it drifts the moment core adds or changes an arm."
-    FAIL=$((FAIL+1))
+  local producer
+  if producer="$(resolve_pinned bin/run-plan-review.sh)"; then
+    if grep -qE '(^|[^-[:alnum:]_])(codex exec|gemini -p|claude -p|opencode run)' \
+         "$producer" 2>/dev/null; then
+      echo "  ${RED}✗${RESET} run-plan-review.sh still dispatches vendors itself — a second copy of the arms"
+      echo "      Delegate to reviewer-cli.sh. A private copy of a shared artifact is a race,"
+      echo "      and it drifts the moment core adds or changes an arm."
+      FAIL=$((FAIL+1))
+    else
+      echo "  ${GREEN}✓${RESET} producer delegates dispatch to the wrapper (no second copy of the arms)"
+      PASS=$((PASS+1))
+    fi
+    rm -f "$producer"
   else
-    echo "  ${GREEN}✓${RESET} producer delegates dispatch to the wrapper (no second copy of the arms)"
-    PASS=$((PASS+1))
+    echo "  ${RED}✗${RESET} could not resolve the pinned producer — cannot check for a private copy of the arms"
+    FAIL=$((FAIL+1))
   fi
 
-  if cmp -s "$ours" "$canonical"; then
-    echo "  ${GREEN}✓${RESET} wrapper is byte-identical to the canonical upstream copy"
+  rm -f "$ours"
+}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# The pin replaces the copies (core task 8.4, ADR-0047)
+# ─────────────────────────────────────────────────────────────────────────────
+# Every host carried byte-copies of the gate, the producer and the wrapper so
+# its install.sh had something to publish into the shared ~/.agenticapps/bin/.
+# The runtime never read those copies. They existed to feed the installer, and
+# they drifted — which is why the two parity tests above exist at all. On
+# 2026-07-31 all three were stale at once (gate 1.3.1 vs 2.0.0, producer 1.0.0
+# vs 1.2.0, wrapper 1.1.0 vs 1.2.0) and the suite was RED for exactly that.
+#
+# core-vendor.manifest names ONE core commit and a sha256 per file;
+# resolve-core-artifact.sh turns that into verified bytes on disk. The
+# installer resolves what it publishes, so core is the operational source of
+# truth rather than a thing this repo mirrors and forgets.
+#
+# Two categories, deliberately different:
+#   RESOLVED — the three artifacts install.sh publishes. NOT vendored. Vendoring
+#              them is what this change removes; a copy on disk is a copy that
+#              drifts.
+#   VENDORED — the bootstrap resolver (it cannot resolve itself), the shared
+#              installer, and the conformance harnesses CI executes from the
+#              repo. These stay on disk, but are checked against the PIN rather
+#              than against a core working tree.
+#
+# Checking against the pin, not against $CORE_SPEC_DIR, is the point. CI checks
+# core out at `ref: main`, so the old comparison silently asked "does this match
+# whatever main happens to say today?" — an unpinned question that changes
+# answer without either repo changing. The manifest makes it a fixed one.
+test_core_artifacts_resolve_from_pin() {
+  echo ""
+  echo "${YELLOW}━━━ Core artifacts resolve from the pin ━━━${RESET}"
+
+  local manifest="$REPO_ROOT/tools/core-vendor.manifest"
+  local resolver="$REPO_ROOT/bin/resolve-core-artifact.sh"
+
+  if [ ! -f "$manifest" ]; then
+    echo "  ${RED}✗${RESET} no tools/core-vendor.manifest — nothing pins what the installer publishes"
+    FAIL=$((FAIL+1)); return
+  fi
+  if [ ! -x "$resolver" ]; then
+    echo "  ${RED}✗${RESET} no executable bin/resolve-core-artifact.sh — the manifest has no reader"
+    FAIL=$((FAIL+1)); return
+  fi
+
+  # The three the installer publishes must be pinned, or install.sh cannot
+  # resolve them and falls back to nothing.
+  local RESOLVED=(bin/openspec-change-gate.sh bin/run-plan-review.sh bin/reviewer-cli.sh)
+  # Still on disk, still core's. Listed so the manifest's "every file this repo
+  # vendors from core is listed" claim is true rather than convenient.
+  local VENDORED=(bin/resolve-core-artifact.sh bin/install-shared-artifact.sh
+                  tools/change-gate-conformance.sh tools/reviewer-cli-conformance.sh)
+
+  local f missing=""
+  for f in "${RESOLVED[@]}" "${VENDORED[@]}"; do
+    grep -qE "^file=$(printf '%s' "$f" | sed 's/[.[\*^$/]/\\&/g')[[:space:]]+sha256=[0-9a-f]{64}[[:space:]]*$" \
+      "$manifest" || missing="$missing $f"
+  done
+  if [ -z "$missing" ]; then
+    echo "  ${GREEN}✓${RESET} manifest pins every core-derived file (${#RESOLVED[@]} resolved + ${#VENDORED[@]} vendored)"
     PASS=$((PASS+1))
   else
-    echo "  ${RED}✗${RESET} wrapper has DRIFTED from the canonical upstream copy"
-    echo "      One shared wrapper is the design; a per-host fork is how the opencode arm"
-    echo "      went missing. Change it in core alongside a harness row, then re-vendor."
-    diff -u "$canonical" "$ours" | head -30 | sed 's/^/        /'
+    echo "  ${RED}✗${RESET} manifest does not pin:$missing"
+    echo "      A manifest naming some of the files is internally consistent while"
+    echo "      recording nothing about the ones it omits."
     FAIL=$((FAIL+1))
+  fi
+
+  # A vendored copy of a RESOLVED artifact is the defect itself: two sources,
+  # one of which nothing reads and everything trusts.
+  local stray=""
+  for f in "${RESOLVED[@]}"; do
+    [ -e "$REPO_ROOT/$f" ] && stray="$stray $f"
+  done
+  if [ -z "$stray" ]; then
+    echo "  ${GREEN}✓${RESET} no vendored copies of the resolved artifacts"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} vendored copies still present:$stray"
+    echo "      These are what drift. The installer resolves from core now; delete them."
+    FAIL=$((FAIL+1))
+  fi
+
+  # install.sh must not name a vendored path as an install SOURCE. Anchored on
+  # \$SCAFFOLDER/bin/<artifact> so the git-hooks install (a file this repo really
+  # does own) and the echoed summary lines do not read as violations.
+  local bad=""
+  for f in "${RESOLVED[@]}"; do
+    grep -qE '\$SCAFFOLDER/'"$(basename "$(dirname "$f")")"'/'"$(basename "$f")" \
+      "$REPO_ROOT/install.sh" 2>/dev/null && bad="$bad $f"
+  done
+  if [ -z "$bad" ]; then
+    echo "  ${GREEN}✓${RESET} install.sh names no vendored source for the resolved artifacts"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} install.sh still installs from the vendored copy:$bad"
+    FAIL=$((FAIL+1))
+  fi
+  if grep -q 'resolve-core-artifact.sh' "$REPO_ROOT/install.sh" 2>/dev/null; then
+    echo "  ${GREEN}✓${RESET} install.sh resolves through the pin"
+    PASS=$((PASS+1))
+  else
+    echo "  ${RED}✗${RESET} install.sh never calls resolve-core-artifact.sh"
+    FAIL=$((FAIL+1))
+  fi
+
+  # Migration 0032 is the OTHER writer of the shared path. Auditing only
+  # install.sh is how 0032 came to clobber the gate unconditionally; the same
+  # blind spot applies to the source it installs FROM.
+  #
+  # Assert what 0032 INSTALLS FROM, not merely that it mentions the resolver.
+  # The first cut of this row greped for the string `resolve-core-artifact.sh`
+  # anywhere in the file — and the migration's own pre-flight mentions it, so
+  # gutting the actual resolve call left the row green. Caught by mutation.
+  local m0032="$REPO_ROOT/migrations/0032-bind-openspec-v1.md"
+  if [ -f "$m0032" ]; then
+    local bad32=""
+    for f in "${RESOLVED[@]}"; do
+      grep -qE 'install .*\$SCAFFOLDER/bin/'"$(basename "$f")" "$m0032" && bad32="$bad32 $f"
+    done
+    # Each published artifact must be installed from a variable the migration
+    # resolved, not from a path in the scaffolder tree.
+    local unresolved32=""
+    for f in _gate_src _rp_src _rc_src; do
+      grep -qE "install -m 0755 \"\\\$$f\"" "$m0032" || unresolved32="$unresolved32 \$$f"
+    done
+    if [ -z "$bad32" ] && [ -z "$unresolved32" ]; then
+      echo "  ${GREEN}✓${RESET} migration 0032 installs the three from resolved sources"
+      PASS=$((PASS+1))
+    else
+      [ -n "$bad32" ] && echo "  ${RED}✗${RESET} migration 0032 still installs from \$SCAFFOLDER/bin:$bad32"
+      [ -n "$unresolved32" ] && echo "  ${RED}✗${RESET} migration 0032 installs without a resolved source:$unresolved32"
+      echo "      0032 is a second writer of the shared bin. A project below 3.0.0"
+      echo "      replays it against files this repo no longer has."
+      FAIL=$((FAIL+1))
+    fi
+  fi
+
+  # The pin has to actually resolve. Everything above is text-matching; this is
+  # the only row that proves bytes.
+  local unresolvable="" mismatched=""
+  for f in "${RESOLVED[@]}" "${VENDORED[@]}"; do
+    local got
+    if ! got="$(CORE_CHECKOUT="${CORE_SPEC_DIR:-$REPO_ROOT/../agenticapps-workflow-core}" \
+                bash "$resolver" "$manifest" "$f" 2>/dev/null)"; then
+      unresolvable="$unresolvable $f"
+      continue
+    fi
+    # A VENDORED file must equal the bytes the pin names. That is the drift
+    # check, asked against a fixed commit instead of a moving branch.
+    case " ${VENDORED[*]} " in
+      *" $f "*)
+        cmp -s "$got" "$REPO_ROOT/$f" || mismatched="$mismatched $f" ;;
+    esac
+    rm -f "$got"
+  done
+  if [ -n "$unresolvable" ]; then
+    echo "  ${RED}✗${RESET} pinned file(s) did not resolve or failed hash verification:$unresolvable"
+    echo "      Either the manifest is stale (re-pin it) or the pinned commit is"
+    echo "      unreachable — a sha that only exists on an unpushed branch resolves"
+    echo "      on the machine that made it and nowhere else."
+    FAIL=$((FAIL+1))
+  else
+    echo "  ${GREEN}✓${RESET} every pinned file resolves and hash-verifies at the pinned commit"
+    PASS=$((PASS+1))
+  fi
+  if [ -n "$mismatched" ]; then
+    echo "  ${RED}✗${RESET} vendored copy differs from the pinned bytes:$mismatched"
+    echo "      Re-vendor from the pinned commit, or advance the pin deliberately."
+    FAIL=$((FAIL+1))
+  else
+    echo "  ${GREEN}✓${RESET} every still-vendored core file matches the pinned bytes"
+    PASS=$((PASS+1))
   fi
 }
 
@@ -2217,9 +2331,18 @@ test_review_producer_delivers_prompt() {
   echo ""
   echo "${YELLOW}━━━ Review producer — prompt reaches the reviewer ━━━${RESET}"
 
-  local producer="$REPO_ROOT/bin/run-plan-review.sh"
-  if [ ! -x "$producer" ]; then
-    echo "  ${RED}✗${RESET} producer missing or non-executable at $producer — RED state"
+  # Resolved from the pin, not read from bin/ — this repo no longer vendors the
+  # producer (ADR-0047). What gets exercised is therefore what gets published,
+  # which is a stronger statement than the vendored copy ever made.
+  local producer wrapper
+  if ! producer="$(resolve_pinned bin/run-plan-review.sh)"; then
+    echo "  ${RED}✗${RESET} could not resolve the pinned producer — RED state"
+    FAIL=$((FAIL+1))
+    return
+  fi
+  if ! wrapper="$(resolve_pinned bin/reviewer-cli.sh)"; then
+    echo "  ${RED}✗${RESET} could not resolve the pinned wrapper — the producer has nothing to call"
+    rm -f "$producer"
     FAIL=$((FAIL+1))
     return
   fi
@@ -2233,25 +2356,34 @@ test_review_producer_delivers_prompt() {
     printf '# proposal\n%s\n' "$marker" > openspec/changes/demo/proposal.md
 
     # Shadow the two REAL vendor names so the producer reaches the wrapper's
-    # named arms. Since the producer delegates to reviewer-cli.sh, BOTH arms are
-    # argv-form and stdin is pinned to /dev/null — a stub that echoed stdin
-    # would now correctly print nothing. Each stub echoes the prompt ARGUMENT:
-    #   codex  <- `codex exec "$P"`  -> $2
-    #   gemini <- `gemini -p "$P"`   -> $2
-    printf '#!/usr/bin/env bash\nprintf "%%s" "$2"\n' > fakebin/codex
-    printf '#!/usr/bin/env bash\nprintf "%%s" "$2"\n' > fakebin/gemini
+    # named arms. Delivery is STDIN, not argv — wrapper 1.2.0 runs
+    # `codex exec < "$prompt_file"` and `gemini -p "$HINT" < "$prompt_file"`, so
+    # a stub reading $2 gets nothing. This comment asserted the opposite until
+    # 2026-07-31 and the test still passed, because it was exercising a vendored
+    # 1.0.0 producer against a 1.1.0-shaped assumption. Resolving from the pin
+    # is what surfaced it.
+    #
+    # Each stub echoes stdin and then a verdict line: 1.2.0 requires a review to
+    # state APPROVE or REQUEST-CHANGES, and rejects the section outright without
+    # one, so echoing the prompt alone produces zero counted reviewers.
+    printf '#!/usr/bin/env bash\ncat\nprintf "\\nVERDICT: APPROVE\\n"\n' > fakebin/codex
+    cp fakebin/codex fakebin/gemini
     chmod +x fakebin/codex fakebin/gemini
-    # Point at the repo's vendored wrapper: the fixture repo has no bin/, and the
+    # Point at the RESOLVED wrapper: the fixture repo has no bin/, and the
     # global install may be absent or a different version on a dev machine.
-    PATH="$tmp/fakebin:$PATH" MIN_REVIEWERS=2 AGENT_SELF=none \
-      REVIEWER_CLI="$REPO_ROOT/bin/reviewer-cli.sh" \
+    # AGENT_SELF names a REAL host, and deliberately not one of the two reviewers
+    # below, so neither is self-excluded. `none` was accepted by producer 1.0.0
+    # and is rejected outright by 1.2.0, which validates identity against
+    # claude|codex|gemini|opencode|pi — the run aborted before writing anything.
+    PATH="$tmp/fakebin:$PATH" MIN_REVIEWERS=2 AGENT_SELF=claude \
+      REVIEWER_CLI="$wrapper" \
       bash "$producer" demo codex gemini >/dev/null 2>&1
   )
 
   local out="$tmp/openspec/changes/demo/REVIEWS.md"
   if [ ! -f "$out" ]; then
     echo "  ${RED}✗${RESET} producer wrote no REVIEWS.md"
-    FAIL=$((FAIL+1)); rm -rf "$tmp"; return
+    FAIL=$((FAIL+1)); rm -rf "$tmp" "$producer" "$wrapper"; return
   fi
 
   # 1. The reviewer must have RECEIVED the change's content. The delivery path is
@@ -2277,7 +2409,7 @@ test_review_producer_delivers_prompt() {
     FAIL=$((FAIL+1))
   fi
 
-  rm -rf "$tmp"
+  rm -rf "$tmp" "$producer" "$wrapper"
 }
 
 
@@ -2370,6 +2502,14 @@ test_migration_0032() {
       ''|'#'*|'set -uo pipefail'|'fi'|'else'|'done'|'}'|"'"*) continue ;;
       # Fixture-only scaffolding that legitimately has no migration counterpart.
       SCAFFOLDER=*|'if [ -f .planning/config.json ]; then'|TPL=*) continue ;;
+      # Source resolution (ADR-0047). The migration resolves the three published
+      # artifacts from the core pin and ABORTS if it cannot; the fixture must do
+      # neither — aborting fails every fixture on a machine with no scaffolder
+      # clone (that is CI), and resolving for real makes the suite non-hermetic.
+      # Only the three assignments and the helper are exempt. Every line that
+      # CONSUMES them — the arbitration and all four installs — is still compared
+      # verbatim, which is the half that decides what lands in the shared bin.
+      _resolve_or_empty*|'"$SCAFFOLDER/bin/resolve-core-artifact.sh" \'|'"$SCAFFOLDER/tools/core-vendor.manifest" "$1" 2>/dev/null || true'|_gate_src=*|_rp_src=*|_rc_src=*) continue ;;
     esac
     checked=$((checked+1))
     if ! grep -qF "$norm" "$migration_file"; then
@@ -3473,6 +3613,10 @@ fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "reviewer-parity" ]; then
   test_reviewer_cli_matches_core_canonical
+fi
+
+if [ -z "$FILTER" ] || [ "$FILTER" = "resolve-pin" ]; then
+  test_core_artifacts_resolve_from_pin
 fi
 
 if [ -z "$FILTER" ] || [ "$FILTER" = "phase-sentinel" ]; then

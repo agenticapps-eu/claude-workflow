@@ -83,14 +83,18 @@ git rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
 #    producer whose every reviewer arm dies on a missing file — and Step 1 does
 #    not run under `set -e`, so that failure scrolls past as a stderr line while
 #    the migration reports success.
+#    Since ADR-0047 the scaffolder does not VENDOR those two files — it pins
+#    them. So the staleness check moved to the pin: a clone that has the
+#    resolver and the manifest can produce both halves, and one that has
+#    neither predates 0032 exactly as a missing gate used to signal.
 SCAFFOLDER=~/.claude/skills/agenticapps-workflow
-test -x "$SCAFFOLDER/bin/openspec-change-gate.sh" || {
+test -x "$SCAFFOLDER/bin/resolve-core-artifact.sh" || {
   echo "ABORT: scaffolder clone at $SCAFFOLDER predates 0032."
   echo "       cd $SCAFFOLDER && git pull --ff-only origin main"
   exit 3
 }
-test -x "$SCAFFOLDER/bin/reviewer-cli.sh" || {
-  echo "ABORT: scaffolder clone at $SCAFFOLDER predates the reviewer-cli adoption."
+test -f "$SCAFFOLDER/tools/core-vendor.manifest" || {
+  echo "ABORT: scaffolder clone at $SCAFFOLDER has no core pin — nothing to publish."
   echo "       cd $SCAFFOLDER && git pull --ff-only origin main"
   exit 3
 }
@@ -117,6 +121,20 @@ write is idempotent. Fix forward.
 ```bash
 SCAFFOLDER=~/.claude/skills/agenticapps-workflow
 mkdir -p "$HOME/.agenticapps/bin"
+# The scaffolder pins these three rather than vendoring them (ADR-0047):
+# core-vendor.manifest names one core commit and a sha256 per file, and
+# resolve-core-artifact.sh turns that into verified bytes. Fails CLOSED — an
+# unresolvable pin aborts the step rather than publishing whatever is at hand.
+# This step does not run under `set -e`, so each resolve is checked explicitly.
+_resolve() {
+  "$SCAFFOLDER/bin/resolve-core-artifact.sh" "$SCAFFOLDER/tools/core-vendor.manifest" "$1"
+}
+_gate_src="$(_resolve bin/openspec-change-gate.sh)" || {
+  echo "ABORT: could not resolve the gate from core — nothing published."; exit 3; }
+_rp_src="$(_resolve bin/run-plan-review.sh)" || {
+  echo "ABORT: could not resolve the producer from core — nothing published."; exit 3; }
+_rc_src="$(_resolve bin/reviewer-cli.sh)" || {
+  echo "ABORT: could not resolve the wrapper from core — nothing published."; exit 3; }
 # ~/.agenticapps/bin is SHARED by claude / codex / opencode / pi. Writing it
 # unconditionally is last-writer-wins: a host vendoring an older gate silently
 # republishes it over a newer one and reverts the fix for every agent on the
@@ -133,16 +151,16 @@ gate_version() {
   awk '/^# gate-version: [0-9]+\.[0-9]+\.[0-9]+[ \t]*$/ { print $3; found=1; exit }
        END { if (!found) print "0.0.0" }' "$1"
 }
-_incoming="$(gate_version "$SCAFFOLDER/bin/openspec-change-gate.sh")"
+_incoming="$(gate_version "$_gate_src")"
 _installed="$(gate_version "$HOME/.agenticapps/bin/openspec-change-gate.sh")"
 _older="$(printf '%s\n%s\n' "$_incoming" "$_installed" | sort -V | head -n1)"
 if [ "$_installed" != "$_incoming" ] && [ "$_older" = "$_incoming" ]; then
-  echo "NOTE: shared gate is $_installed, newer than this repo's $_incoming — refusing to downgrade."
-  echo "      Update this scaffolder (git pull) so every host publishes the same version."
+  echo "NOTE: shared gate is $_installed, newer than the pinned $_incoming — refusing to downgrade."
+  echo "      Advance core_commit in the scaffolder's tools/core-vendor.manifest."
 else
-  install -m 0755 "$SCAFFOLDER/bin/openspec-change-gate.sh" "$HOME/.agenticapps/bin/openspec-change-gate.sh"
+  install -m 0755 "$_gate_src" "$HOME/.agenticapps/bin/openspec-change-gate.sh"
 fi
-install -m 0755 "$SCAFFOLDER/bin/run-plan-review.sh"      "$HOME/.agenticapps/bin/run-plan-review.sh"
+install -m 0755 "$_rp_src"      "$HOME/.agenticapps/bin/run-plan-review.sh"
 # The producer's vendor wrapper is the SAME shared-path hazard as the gate, and
 # it already fired: a host installer delivered the arbitrated 1.2.2 gate and, in
 # the same run, blind-installed a 3-arm wrapper over the 4-arm one. The
@@ -155,15 +173,16 @@ reviewer_cli_version() {
   awk '/^# reviewer-cli-version: [0-9]+\.[0-9]+\.[0-9]+[ \t]*$/ { print $3; found=1; exit }
        END { if (!found) print "0.0.0" }' "$1"
 }
-_rc_incoming="$(reviewer_cli_version "$SCAFFOLDER/bin/reviewer-cli.sh")"
+_rc_incoming="$(reviewer_cli_version "$_rc_src")"
 _rc_installed="$(reviewer_cli_version "$HOME/.agenticapps/bin/reviewer-cli.sh")"
 _rc_older="$(printf '%s\n%s\n' "$_rc_incoming" "$_rc_installed" | sort -V | head -n1)"
 if [ "$_rc_installed" != "$_rc_incoming" ] && [ "$_rc_older" = "$_rc_incoming" ]; then
-  echo "NOTE: shared reviewer-cli is $_rc_installed, newer than this repo's $_rc_incoming — refusing to downgrade."
-  echo "      Update this scaffolder (git pull) so every host publishes the same version."
+  echo "NOTE: shared reviewer-cli is $_rc_installed, newer than the pinned $_rc_incoming — refusing to downgrade."
+  echo "      Advance core_commit in the scaffolder's tools/core-vendor.manifest."
 else
-  install -m 0755 "$SCAFFOLDER/bin/reviewer-cli.sh" "$HOME/.agenticapps/bin/reviewer-cli.sh"
+  install -m 0755 "$_rc_src" "$HOME/.agenticapps/bin/reviewer-cli.sh"
 fi
+rm -f "$_gate_src" "$_rp_src" "$_rc_src"
 hooks_dir="$(git rev-parse --git-path hooks)"
 mkdir -p "$hooks_dir"
 if [ -e "$hooks_dir/pre-commit" ] && ! grep -q 'openspec-change-gate' "$hooks_dir/pre-commit" 2>/dev/null; then

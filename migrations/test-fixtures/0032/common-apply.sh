@@ -13,6 +13,24 @@ SCAFFOLDER=~/.claude/skills/agenticapps-workflow
 
 # ── Step 1 — gate + producer + git floor ────────────────────────────────────
 mkdir -p "$HOME/.agenticapps/bin"
+# FIXTURE-ONLY source resolution (skipped by apply-parity, like SCAFFOLDER=).
+# The migration resolves these three from core via the pin and ABORTS if it
+# cannot. A fixture must do neither: aborting would fail every fixture on a
+# machine with no scaffolder clone — which is CI — and reaching the network
+# would make the migration suite non-hermetic.
+#
+# So resolve if possible, and otherwise leave the variable empty. An empty
+# source makes the `install` below fail to stderr and continue, which is
+# EXACTLY the behaviour these fixtures already relied on when the files were
+# vendored and absent. Every line after this point is byte-identical to the
+# migration, which is the half apply-parity actually needs to cover.
+_resolve_or_empty() {
+  "$SCAFFOLDER/bin/resolve-core-artifact.sh" \
+    "$SCAFFOLDER/tools/core-vendor.manifest" "$1" 2>/dev/null || true
+}
+_gate_src="$(_resolve_or_empty bin/openspec-change-gate.sh)"
+_rp_src="$(_resolve_or_empty bin/run-plan-review.sh)"
+_rc_src="$(_resolve_or_empty bin/reviewer-cli.sh)"
 # ~/.agenticapps/bin is SHARED by claude / codex / opencode / pi. Writing it
 # unconditionally is last-writer-wins: a host vendoring an older gate silently
 # republishes it over a newer one and reverts the fix for every agent on the
@@ -29,16 +47,16 @@ gate_version() {
   awk '/^# gate-version: [0-9]+\.[0-9]+\.[0-9]+[ \t]*$/ { print $3; found=1; exit }
        END { if (!found) print "0.0.0" }' "$1"
 }
-_incoming="$(gate_version "$SCAFFOLDER/bin/openspec-change-gate.sh")"
+_incoming="$(gate_version "$_gate_src")"
 _installed="$(gate_version "$HOME/.agenticapps/bin/openspec-change-gate.sh")"
 _older="$(printf '%s\n%s\n' "$_incoming" "$_installed" | sort -V | head -n1)"
 if [ "$_installed" != "$_incoming" ] && [ "$_older" = "$_incoming" ]; then
-  echo "NOTE: shared gate is $_installed, newer than this repo's $_incoming — refusing to downgrade."
-  echo "      Update this scaffolder (git pull) so every host publishes the same version."
+  echo "NOTE: shared gate is $_installed, newer than the pinned $_incoming — refusing to downgrade."
+  echo "      Advance core_commit in the scaffolder's tools/core-vendor.manifest."
 else
-  install -m 0755 "$SCAFFOLDER/bin/openspec-change-gate.sh" "$HOME/.agenticapps/bin/openspec-change-gate.sh"
+  install -m 0755 "$_gate_src" "$HOME/.agenticapps/bin/openspec-change-gate.sh"
 fi
-install -m 0755 "$SCAFFOLDER/bin/run-plan-review.sh"      "$HOME/.agenticapps/bin/run-plan-review.sh"
+install -m 0755 "$_rp_src"      "$HOME/.agenticapps/bin/run-plan-review.sh"
 # The producer's vendor wrapper is the SAME shared-path hazard as the gate, and
 # it already fired: a host installer delivered the arbitrated 1.2.2 gate and, in
 # the same run, blind-installed a 3-arm wrapper over the 4-arm one. The
@@ -51,15 +69,16 @@ reviewer_cli_version() {
   awk '/^# reviewer-cli-version: [0-9]+\.[0-9]+\.[0-9]+[ \t]*$/ { print $3; found=1; exit }
        END { if (!found) print "0.0.0" }' "$1"
 }
-_rc_incoming="$(reviewer_cli_version "$SCAFFOLDER/bin/reviewer-cli.sh")"
+_rc_incoming="$(reviewer_cli_version "$_rc_src")"
 _rc_installed="$(reviewer_cli_version "$HOME/.agenticapps/bin/reviewer-cli.sh")"
 _rc_older="$(printf '%s\n%s\n' "$_rc_incoming" "$_rc_installed" | sort -V | head -n1)"
 if [ "$_rc_installed" != "$_rc_incoming" ] && [ "$_rc_older" = "$_rc_incoming" ]; then
-  echo "NOTE: shared reviewer-cli is $_rc_installed, newer than this repo's $_rc_incoming — refusing to downgrade."
-  echo "      Update this scaffolder (git pull) so every host publishes the same version."
+  echo "NOTE: shared reviewer-cli is $_rc_installed, newer than the pinned $_rc_incoming — refusing to downgrade."
+  echo "      Advance core_commit in the scaffolder's tools/core-vendor.manifest."
 else
-  install -m 0755 "$SCAFFOLDER/bin/reviewer-cli.sh" "$HOME/.agenticapps/bin/reviewer-cli.sh"
+  install -m 0755 "$_rc_src" "$HOME/.agenticapps/bin/reviewer-cli.sh"
 fi
+rm -f "$_gate_src" "$_rp_src" "$_rc_src"
 hooks_dir="$(git rev-parse --git-path hooks)"
 mkdir -p "$hooks_dir"
 if [ -e "$hooks_dir/pre-commit" ] && ! grep -q 'openspec-change-gate' "$hooks_dir/pre-commit" 2>/dev/null; then

@@ -1,0 +1,63 @@
+# core-vendor.manifest — the pin. Names ONE commit of
+# agenticapps-eu/agenticapps-workflow-core and a sha256 per file.
+# Read by bin/resolve-core-artifact.sh and by migrations/run-tests.sh
+# (test_core_artifacts_resolve_from_pin). Do NOT hand-edit a sha: re-pin by
+# recomputing every entry at the new commit.
+#
+# core_commit is a COMMIT, not a branch. A core checkout is a live workspace
+# and may sit mid-change on a feature branch, and origin/main can advance
+# BETWEEN two commands. Resolve it ONCE and take every file from that one
+# revision — a per-file rev-parse is how the gate and the harness ended up
+# from different commits on 2026-07-25.
+#
+# ONE commit covers EVERY file listed, and every file this repo takes from
+# core is listed. Consistency among the entries present is not sufficient: a
+# manifest naming four of seven files is internally consistent while recording
+# nothing about the three it omits.
+#
+# Advancing core_commit therefore means RE-VERIFYING the files already listed
+# at the new revision, not just appending the new ones.
+#
+# ── two categories, deliberately different ───────────────────────────────────
+#
+# RESOLVED — install.sh and migration 0032 publish these into the shared
+#   ~/.agenticapps/bin/. They are NOT vendored in this repo. Vendoring them is
+#   what ADR-0047 removed: the runtime never read the copies, so they existed
+#   only to feed the installer, and they drifted. On 2026-07-31 all three were
+#   stale at once (gate 1.3.1 vs 2.0.0, producer 1.0.0 vs 1.2.0, wrapper 1.1.0
+#   vs 1.2.0) and the suite was red for exactly that.
+#
+# VENDORED — still on disk, because each has a reason it cannot be resolved:
+#   resolve-core-artifact.sh is the bootstrap and cannot resolve itself;
+#   install-shared-artifact.sh is invoked by hand during a publication; the two
+#   conformance harnesses are executed from the repo by CI. They are pinned
+#   anyway, and the test compares the bytes on disk to the bytes named here.
+#
+# ── the pin ──────────────────────────────────────────────────────────────────
+#
+# 6cd3b9c is core's main at the merge of PR #47 — the merge commit itself. It
+# carries gate 2.0.0, producer 1.2.0, wrapper 1.2.0 and shared-install 1.0.1.
+#
+# It first pinned 2b82a91, a commit on #47's branch, while that PR was open;
+# #47 was then merged with a MERGE COMMIT rather than a squash, precisely so
+# that sha stayed reachable and the pin could not break underneath this repo.
+# Advancing to a main commit is the follow-through, not a fix for a breakage.
+#
+# Every one of the seven entries below was re-verified at 6cd3b9c and all seven
+# are byte-identical to what they were at 2b82a91. That is the manifest's rule
+# honoured, not skipped: advancing core_commit means re-checking the files
+# already listed, not just appending new ones. Same bytes, said about a
+# different and more durable revision.
+core_repo=agenticapps-eu/agenticapps-workflow-core
+core_commit=6cd3b9c40eb409ab1b256e3b9e8d50c7268538ab
+
+# RESOLVED at install time — not vendored in this repo.
+file=bin/openspec-change-gate.sh sha256=4ad996cb7f95ebc45c35177eaad70781c23f166fb14283dc693a8ecc31476780
+file=bin/run-plan-review.sh sha256=f3dae9bacc86733cd66c36d54506e7a3ae1492a58d7e1723d9bf78be6067578e
+file=bin/reviewer-cli.sh sha256=9a26ebcda9f8c7e3839778337c1b56a4a421610735c08b8b5de1bb528397b11a
+
+# VENDORED on disk — pinned so the copies are checkable against a fixed commit.
+file=bin/resolve-core-artifact.sh sha256=1274598c07c0853b91c08d9b27da85d46cc754eff57b9c456cb79f293caf11ac
+file=bin/install-shared-artifact.sh sha256=c5dbdbe29e211b924dbbdc6d3d25e8dde8936fac3a4f2d46ebdef59f71ed9e8a
+file=tools/change-gate-conformance.sh sha256=e99ca5eded430925107c53a78d992d4df01599ee16dc47fdffab9aae0853d316
+file=tools/reviewer-cli-conformance.sh sha256=cee2ab002e5261df8c504e56b2cde0d0e4c14df7a897ec5ac498b3b4ea3fdc14

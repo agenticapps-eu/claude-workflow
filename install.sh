@@ -152,6 +152,60 @@ echo "  GATE   $AA_BIN/reviewer-cli.sh           (the producer's vendor wrapper)
 echo "  HOOK   .git/hooks/pre-commit             (agent-agnostic floor)"
 run mkdir -p "$AA_BIN"
 
+# ── where the bytes come from (ADR-0047) ─────────────────────────────────────
+# This repo does NOT vendor the three artifacts above. It records WHICH core
+# revision it trusts and WHAT each file must hash to; resolve-core-artifact.sh
+# turns that into verified bytes on disk.
+#
+# Vendoring is what this replaced. The runtime never read the vendored copies —
+# the project hook resolves ~/.agenticapps/bin first — so they existed purely to
+# feed this script, and they drifted: on 2026-07-31 the gate here was 1.3.1
+# against core's 2.0.0, the producer 1.0.0 against 1.2.0, the wrapper 1.1.0
+# against 1.2.0. Three stale copies, one green install, nothing published.
+#
+# Fails CLOSED, deliberately. An installer that cannot verify what it is about
+# to publish into a directory shared by every agent on this machine must stop,
+# not fall back to whatever bytes happen to be lying around — a fallback would
+# have republished 1.3.1 over 2.0.0 and reverted the fix for every host.
+MANIFEST="$SCAFFOLDER/tools/core-vendor.manifest"
+RESOLVER="$SCAFFOLDER/bin/resolve-core-artifact.sh"
+RESOLVED=()   # temp copies to clean up on the way out
+cleanup_resolved() { [ "${#RESOLVED[@]}" -gt 0 ] && rm -f "${RESOLVED[@]}" || true; }
+trap cleanup_resolved EXIT
+
+# Answers in $RESOLVE_OUT rather than on stdout, and is called DIRECTLY rather
+# than in a command substitution. `x="$(resolve_core ...)"` would run this in a
+# subshell, so the `RESOLVED+=` below would be discarded with it and the trap
+# would have nothing to clean — verified: three leaked temp copies per run.
+RESOLVE_OUT=""
+resolve_core() { # $1 = logical path, e.g. bin/run-plan-review.sh
+  local out
+  # stderr is NOT folded into $out. The resolver prints a path on stdout and
+  # diagnostics on stderr; merging them means one stray warning on a SUCCESSFUL
+  # resolve turns the captured path into "warning\n/path" and `install` fails
+  # somewhere much less obvious than here.
+  if ! out="$("$RESOLVER" "$MANIFEST" "$1")"; then
+    echo "  ✗ could not resolve $1 from core (diagnostics above)." >&2
+    echo "      Nothing was published. Fix the pin or the source, then re-run." >&2
+    echo "      Offline with no core checkout? Clone core beside this repo, or set" >&2
+    echo "      CORE_CHECKOUT=/path/to/agenticapps-workflow-core." >&2
+    return 1
+  fi
+  RESOLVED+=("$out")
+  RESOLVE_OUT="$out"
+}
+
+if [ ! -x "$RESOLVER" ] || [ ! -f "$MANIFEST" ]; then
+  echo "  ✗ missing $([ -x "$RESOLVER" ] || echo "bin/resolve-core-artifact.sh")$([ -f "$MANIFEST" ] || echo " tools/core-vendor.manifest")" >&2
+  echo "      This repo publishes core's artifacts by pin, not by copy — without" >&2
+  echo "      both files there is nothing to publish. Re-clone or git pull." >&2
+  exit 1
+fi
+
+resolve_core bin/openspec-change-gate.sh || exit 1; _gate_src="$RESOLVE_OUT"
+resolve_core bin/run-plan-review.sh      || exit 1; _rp_src="$RESOLVE_OUT"
+resolve_core bin/reviewer-cli.sh         || exit 1; _rc_src="$RESOLVE_OUT"
+
 # $AA_BIN is SHARED by every host installer (claude / codex / opencode / pi), so
 # writing it unconditionally is last-writer-wins: a host still vendoring an older
 # gate silently republishes it over a newer one and reverts the fix for every
@@ -173,15 +227,15 @@ gate_version() {
   awk '/^# gate-version: [0-9]+\.[0-9]+\.[0-9]+[ \t]*$/ { print $3; found=1; exit }
        END { if (!found) print "0.0.0" }' "$1"
 }
-_incoming="$(gate_version "$SCAFFOLDER/bin/openspec-change-gate.sh")"
+_incoming="$(gate_version "$_gate_src")"
 _installed="$(gate_version "$AA_BIN/openspec-change-gate.sh")"
 _older="$(printf '%s\n%s\n' "$_incoming" "$_installed" | sort -V | head -n1)"
 if [ "$_installed" != "$_incoming" ] && [ "$_older" = "$_incoming" ]; then
-  echo "  SKIP   gate: installed $_installed is NEWER than this repo's $_incoming"
-  echo "         Refusing to downgrade the shared gate. Update this scaffolder"
-  echo "         (git pull) so every host publishes the same version."
+  echo "  SKIP   gate: installed $_installed is NEWER than the pinned $_incoming"
+  echo "         Refusing to downgrade the shared gate. Advance core_commit in"
+  echo "         tools/core-vendor.manifest so every host publishes the same version."
 else
-  run install -m 0755 "$SCAFFOLDER/bin/openspec-change-gate.sh" "$AA_BIN/openspec-change-gate.sh"
+  run install -m 0755 "$_gate_src" "$AA_BIN/openspec-change-gate.sh"
   [ "$_installed" = "$_incoming" ] || echo "  OK     gate: $_installed -> $_incoming"
 fi
 # The PRODUCER is the third artifact in this shared directory, and until now the
@@ -194,15 +248,15 @@ run_plan_review_version() {
   awk '/^# run-plan-review-version: [0-9]+\.[0-9]+\.[0-9]+[ \t]*$/ { print $3; found=1; exit }
        END { if (!found) print "0.0.0" }' "$1"
 }
-_rp_incoming="$(run_plan_review_version "$SCAFFOLDER/bin/run-plan-review.sh")"
+_rp_incoming="$(run_plan_review_version "$_rp_src")"
 _rp_installed="$(run_plan_review_version "$AA_BIN/run-plan-review.sh")"
 _rp_older="$(printf '%s\n%s\n' "$_rp_incoming" "$_rp_installed" | sort -V | head -n1)"
 if [ "$_rp_installed" != "$_rp_incoming" ] && [ "$_rp_older" = "$_rp_incoming" ]; then
-  echo "  SKIP   run-plan-review: installed $_rp_installed is NEWER than this repo's $_rp_incoming"
-  echo "         Refusing to downgrade the shared producer. Update this scaffolder"
-  echo "         (git pull) so every host publishes the same version."
+  echo "  SKIP   run-plan-review: installed $_rp_installed is NEWER than the pinned $_rp_incoming"
+  echo "         Refusing to downgrade the shared producer. Advance core_commit in"
+  echo "         tools/core-vendor.manifest so every host publishes the same version."
 else
-  run install -m 0755 "$SCAFFOLDER/bin/run-plan-review.sh" "$AA_BIN/run-plan-review.sh"
+  run install -m 0755 "$_rp_src" "$AA_BIN/run-plan-review.sh"
   [ "$_rp_installed" = "$_rp_incoming" ] || echo "  OK     run-plan-review: $_rp_installed -> $_rp_incoming"
 fi
 
@@ -220,15 +274,15 @@ reviewer_cli_version() {
   awk '/^# reviewer-cli-version: [0-9]+\.[0-9]+\.[0-9]+[ \t]*$/ { print $3; found=1; exit }
        END { if (!found) print "0.0.0" }' "$1"
 }
-_rc_incoming="$(reviewer_cli_version "$SCAFFOLDER/bin/reviewer-cli.sh")"
+_rc_incoming="$(reviewer_cli_version "$_rc_src")"
 _rc_installed="$(reviewer_cli_version "$AA_BIN/reviewer-cli.sh")"
 _rc_older="$(printf '%s\n%s\n' "$_rc_incoming" "$_rc_installed" | sort -V | head -n1)"
 if [ "$_rc_installed" != "$_rc_incoming" ] && [ "$_rc_older" = "$_rc_incoming" ]; then
-  echo "  SKIP   reviewer-cli: installed $_rc_installed is NEWER than this repo's $_rc_incoming"
-  echo "         Refusing to downgrade the shared wrapper. Update this scaffolder"
-  echo "         (git pull) so every host publishes the same version."
+  echo "  SKIP   reviewer-cli: installed $_rc_installed is NEWER than the pinned $_rc_incoming"
+  echo "         Refusing to downgrade the shared wrapper. Advance core_commit in"
+  echo "         tools/core-vendor.manifest so every host publishes the same version."
 else
-  run install -m 0755 "$SCAFFOLDER/bin/reviewer-cli.sh" "$AA_BIN/reviewer-cli.sh"
+  run install -m 0755 "$_rc_src" "$AA_BIN/reviewer-cli.sh"
   [ "$_rc_installed" = "$_rc_incoming" ] || echo "  OK     reviewer-cli: $_rc_installed -> $_rc_incoming"
 fi
 if [ -d "$SCAFFOLDER/.git" ] || [ -f "$SCAFFOLDER/.git" ]; then
