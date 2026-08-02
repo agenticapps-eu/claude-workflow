@@ -1,68 +1,107 @@
 #!/usr/bin/env bash
-# Hook 1 — Database Sentinel (PreToolUse)
+# database-sentinel — shim. Resolves the fleet-shared implementation and hands over.
 #
-# Blocks dangerous DB operations and edits to protected files at the
-# tool-call boundary. Promotes the AgenticApps "database-sentinel" gate
-# from CLAUDE.md prose intent to non-overridable enforcement.
+# shim-contract: 1.0.0
 #
-# Fires on PreToolUse matcher: Bash|Edit|Write
-# Reads tool_input from stdin (JSON).
-# Exit 2 = BLOCK (with stderr message routed to Claude as feedback).
-# Exit 0 = ALLOW.
+# This file is a SHIM, not an implementation. Editing it changes nothing about
+# what the hook enforces; the implementation lives in agenticapps-workflow-core
+# at reference-implementations/project-hooks/database-sentinel.sh and is published to
+# ~/.agenticapps/bin/ by install-project-hooks.sh. See that directory's
+# README.md for the contract this file implements.
 #
-# Latency budget: sub-100ms. Regex only; no DB calls, no network.
+# Profile: published-resolution (design Decision 17). It resolves a PUBLISHED
+# copy, so the two-candidate resolution order and byte-identity across every
+# project both bind it.
 #
-# Source: synthesis report §3 Hook 1 + handoff prompt Phase 2B.
+# The other profile is self-hosting: core's own
+# .claude/hooks/openspec-change-gate.sh resolves its WORKING-TREE reference
+# implementation instead, because ADR-0028 requires core to score the bytes it
+# ships rather than whichever host's installer ran last. Resolution order and
+# byte-identity cannot apply to it; the contract marker, the behaviour-free rule
+# and fail-open-and-report still do.
+#
+# A hook has exactly ONE self-hosting binder. Two would be two authorities,
+# which the project-hook-binding capability's first requirement forbids.
 
-set -e
+set -u
 
-INPUT=$(cat)
-TOOL=$(echo "$INPUT" | jq -r '.tool_name // empty')
-COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
-FILE=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
+HOOK="database-sentinel"
 
-# Bash tool — block dangerous SQL.
-if [ "$TOOL" = "Bash" ]; then
-  # DROP TABLE, TRUNCATE TABLE, DELETE FROM <table> without WHERE.
-  # Case-insensitive. Allow DELETE FROM ... WHERE ... (legitimate use).
-  if echo "$COMMAND" | grep -qiE 'drop[[:space:]]+table|truncate[[:space:]]+table'; then
-    echo "❌ Database Sentinel: blocked dangerous SQL DDL" >&2
-    echo "   Command: $COMMAND" >&2
-    echo "   Reason: matches DROP/TRUNCATE TABLE pattern" >&2
-    echo "   Override: run via psql directly outside Claude Code, OR" >&2
-    echo "             reference an ADR that accepts the destructive operation" >&2
-    exit 2
+# --- resolution -------------------------------------------------------------
+# Two candidates, in order. There is deliberately NO third <repo>/bin/ candidate:
+# a repo-local copy is the drift this shim exists to remove, and as a fallback it
+# would keep the drift while hiding it on exactly the machines nobody checks.
+
+OVERRIDE_VAR="$(printf '%s' "$HOOK" | tr 'a-z-' 'A-Z_')_OVERRIDE"
+OVERRIDE="${!OVERRIDE_VAR-}"
+SHARED="$HOME/.agenticapps/bin/$HOOK.sh"
+
+# --- reporting --------------------------------------------------------------
+# Exit 1, never 2. Per the host's hook contract, an exit code other than 0 or 2
+# is a non-blocking error: the transcript shows a "<hook> hook error" notice
+# followed by THE FIRST LINE of stderr, and execution continues. Exit 2 would
+# block, which is the one thing an unresolvable shim must not do — these hooks
+# are registered on broad matchers, so blocking here blocks every command and
+# every edit in the repository rather than the narrow thing the hook guards.
+#
+# The first line therefore has to carry the whole message. Everything after it
+# reaches the debug log only.
+
+report() { printf '%s\n' "$@" >&2; }
+
+# The unresolvable-implementation condition is persistent: on an unprovisioned
+# machine it holds on every Bash, Edit and Write, indefinitely. Reporting each
+# time is the alarm fatigue this change rejects elsewhere, so it is rate limited
+# to once per hour, per hook, per machine.
+#
+# ONCE PER HOUR, NOT ONCE PER SESSION, and the reason is recorded rather than
+# the option dropped silently (task 2.11a): the session identifier exists only
+# in the stdin payload — the host exports no session-id environment variable —
+# and a shim that reads stdin to find it has consumed the implementation's
+# input. An hour approximates a session closely enough to serve, while
+# guaranteeing a long session sees the condition more than once.
+#
+# One marker path, read and written. No tool payload is inspected.
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/agenticapps"
+MARKER="$STATE_DIR/$HOOK.unresolved-report"
+
+report_rate_limited() {
+  local now last
+  now=$(( $(date +%s) / 3600 ))
+  last=$(cat "$MARKER" 2>/dev/null) || last=""
+  [ "$last" = "$now" ] && return 0
+  mkdir -p "$STATE_DIR" 2>/dev/null && printf '%s\n' "$now" > "$MARKER" 2>/dev/null
+  report "$@"
+}
+
+# --- candidate 1: the explicit override -------------------------------------
+# An override that is set but unusable does NOT fall through to the shared
+# install. Falling through would silently ignore an explicit instruction, and
+# the operator who set it would never learn it had no effect.
+#
+# This report is deliberately NOT rate limited (task 2.11c). The override is a
+# kill switch: it is the only signal that a hook has been switched off on an
+# otherwise healthy machine, and a rate limit adopted to quiet the benign,
+# self-correcting condition above must not also silence it.
+if [ -n "$OVERRIDE" ]; then
+  if [ -x "$OVERRIDE" ]; then
+    exec "$OVERRIDE" "$@"
   fi
-  if echo "$COMMAND" | grep -qiE 'delete[[:space:]]+from[[:space:]]+[a-z_][a-z0-9_]*[[:space:]]*(;|$)'; then
-    echo "❌ Database Sentinel: blocked DELETE without WHERE clause" >&2
-    echo "   Command: $COMMAND" >&2
-    echo "   Reason: deletes all rows. Add a WHERE clause or run outside Claude Code." >&2
-    exit 2
-  fi
+  report "$HOOK hook: $OVERRIDE_VAR is set to '$OVERRIDE', which is not an executable file — this hook did NOT run, and no fallback was used" \
+         "  Unset $OVERRIDE_VAR to use the shared install at $SHARED," \
+         "  or point it at an executable implementation."
+  exit 1
 fi
 
-# Edit/Write — protect sensitive paths.
-if [ "$TOOL" = "Edit" ] || [ "$TOOL" = "Write" ]; then
-  case "$FILE" in
-    .env|.env.local|.env.production|.env.staging|.env.development|*/.env|*/.env.local|*/.env.production|*/.env.staging|*/.env.development)
-      echo "❌ Database Sentinel: blocked edit to env file" >&2
-      echo "   File: $FILE" >&2
-      echo "   Reason: env files contain secrets — use Infisical or similar" >&2
-      echo "   Allowed: .env.example, .env.template" >&2
-      exit 2
-      ;;
-    migrations/*|*/migrations/*)
-      # Only allow migration edits when the phase has been approved.
-      if [ ! -f .planning/current-phase/migrations-approved ]; then
-        echo "❌ Database Sentinel: blocked edit to migration without phase approval" >&2
-        echo "   File: $FILE" >&2
-        echo "   Reason: no .planning/current-phase/migrations-approved sentinel" >&2
-        echo "   Fix: in /gsd-discuss-phase, mark migration scope approved:" >&2
-        echo "        touch .planning/current-phase/migrations-approved" >&2
-        exit 2
-      fi
-      ;;
-  esac
+# --- candidate 2: the shared install ----------------------------------------
+if [ -x "$SHARED" ]; then
+  exec "$SHARED" "$@"
 fi
 
-exit 0
+# --- unresolvable: allow, and report ----------------------------------------
+report_rate_limited \
+  "$HOOK hook: not installed at $SHARED — this hook did NOT run, and the tool call was allowed" \
+  "  This machine is unprovisioned. Run install-shared-artifact.sh from" \
+  "  agenticapps-workflow-core to publish the shared implementations." \
+  "  Reported at most once per hour per hook; see shim-contract 1.0.0."
+exit 1

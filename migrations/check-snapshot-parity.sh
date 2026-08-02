@@ -48,8 +48,17 @@ fi
 # programmatic hooks are all wired. Catches the factiv finding that the seed
 # template was missing the pre-code review gate binding — which under spec
 # 1.0.0 is openspec-change-gate.sh (the §18 retarget of multi-ai-review-gate.sh).
+# phase-sentinel.sh was removed fleet-wide by shim-project-hooks, with four
+# other hooks. It gated on `.planning/current-phase/checklist.md`, which exists
+# in no repo in either family — permanently inert. Requiring the binding of a
+# hook the workflow no longer ships would make this guard demand the very drift
+# it exists to catch.
+#
+# database-sentinel.sh takes its place in the list. It is load-bearing and was
+# never required here, so after the shim rollout an unbound one would have been
+# invisible to the guard.
 REQUIRED_HOOK_BINDINGS=(
-  phase-sentinel.sh
+  database-sentinel.sh
   normalize-claude-md.sh
   openspec-change-gate.sh
 )
