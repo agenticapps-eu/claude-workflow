@@ -6,8 +6,22 @@
 # This file is a SHIM, not an implementation. Editing it changes nothing about
 # what the hook enforces; the implementation lives in agenticapps-workflow-core
 # at reference-implementations/project-hooks/database-sentinel.sh and is published to
-# ~/.agenticapps/bin/ by install-shared-artifact.sh. See that directory's
+# ~/.agenticapps/bin/ by install-project-hooks.sh. See that directory's
 # README.md for the contract this file implements.
+#
+# Profile: published-resolution (design Decision 17). It resolves a PUBLISHED
+# copy, so the two-candidate resolution order and byte-identity across every
+# project both bind it.
+#
+# The other profile is self-hosting: core's own
+# .claude/hooks/openspec-change-gate.sh resolves its WORKING-TREE reference
+# implementation instead, because ADR-0028 requires core to score the bytes it
+# ships rather than whichever host's installer ran last. Resolution order and
+# byte-identity cannot apply to it; the contract marker, the behaviour-free rule
+# and fail-open-and-report still do.
+#
+# A hook has exactly ONE self-hosting binder. Two would be two authorities,
+# which the project-hook-binding capability's first requirement forbids.
 
 set -u
 
