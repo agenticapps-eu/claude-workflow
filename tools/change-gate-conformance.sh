@@ -53,6 +53,49 @@ fail=0
 inconclusive=0
 WORK=""
 
+# ── target screening (capability: conformance-harness-reporting) ─────────────
+# A harness must never exit 0 having scored nothing, and must never silently
+# skip a target a caller named. `[ -f ]` alone is not enough to decide whether
+# a target can be scored:
+#
+#   * a ZERO-BYTE file passes `[ -f ]`, and an empty script exits 0 on every
+#     invocation — so it passes every `expect 0` row and fails only the
+#     `expect 2` rows. Partial credit, manufactured out of a file containing no
+#     code. This is what a truncated download or a half-finished
+#     materialise step leaves behind.
+#   * a DIRECTORY passes `[ -s ]`, which reports a non-zero size for one.
+#   * an UNREADABLE file is not a false-green risk — the shell refuses it with
+#     126 and the rows fail loudly — but it is illegible: the operator is shown
+#     forty failing rows when the fault is a file mode. NOTE this check is a
+#     no-op under root, where `test -r` is true regardless of mode.
+#
+# Sets REASON and returns 1 when the target cannot be scored. Precedence is
+# fixed — not-found, not-a-regular-file, empty, unreadable — so the report is
+# reproducible across platforms whose `test` builtins short-circuit differently.
+harness_screen_target() { # $1 = path
+  REASON=""
+  if [ -L "$1" ] && [ ! -e "$1" ]; then REASON="not a regular file (dangling symlink)"; return 1; fi
+  if [ ! -e "$1" ]; then REASON="not found"; return 1; fi
+  if [ ! -f "$1" ]; then REASON="not a regular file"; return 1; fi
+  if [ ! -s "$1" ]; then REASON="empty"; return 1; fi
+  if [ ! -r "$1" ]; then REASON="unreadable"; return 1; fi
+  return 0
+}
+
+# Renders a path inert for printing. A path is attacker-influenceable in the
+# general case, and a harness whose output can be forged with an embedded
+# newline can be made to print a line that reads like a PASS.
+harness_safe_label() { # $1 = path
+  printf '%s' "$1" | LC_ALL=C tr -c '[:print:]' '?'
+}
+
+# Reports a target that could not be scored, distinguishably from one that was
+# scored and failed rows — both make the run red, and they call for different
+# responses.
+harness_report_unscoreable() { # $1 = label, $2 = reason
+  echo "  UNSCOREABLE  $1 — $2"
+}
+
 cleanup() { [ -n "$WORK" ] && rm -rf "$WORK"; }
 trap cleanup EXIT
 
@@ -302,8 +345,13 @@ score_gate() {
   # gate path would resolve to nothing there and score 127 on every row.
   GATE="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
   local p0="$pass" f0="$fail" i0="$inconclusive"
+  # $2 is a stable logical label supplied by roster mode. Without it the
+  # heading printed the resolved absolute path on every entry, which put $HOME
+  # and the workspace root into the log regardless of how the coverage line was
+  # rendered — so logicalising the coverage line alone bought nothing.
+  local heading="${2:-$(harness_safe_label "$GATE")}"
   echo
-  echo "═══ $GATE"
+  echo "═══ $heading"
   echo "    ($(wc -l < "$GATE" | tr -d ' ') lines)"
 
   local fx
@@ -865,26 +913,152 @@ score_gate() {
 }
 
 # ── entry point ──────────────────────────────────────────────────────────────
-if [ "${1:-}" = "--family" ]; then
-  FAMILY="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-  set --
-  for c in \
-    "$FAMILY/agenticapps-workflow-core/reference-implementations/openspec-change-gate/openspec-change-gate.sh" \
-    "$FAMILY/claude-workflow/bin/openspec-change-gate.sh" \
-    "$FAMILY/codex-workflow/bin/openspec-change-gate.sh" \
-    "$FAMILY/opencode-workflow/bin/openspec-change-gate.sh" \
-    "$FAMILY/pi-agentic-apps-workflow/bin/openspec-change-gate.sh" \
-    "$HOME/.agenticapps/bin/openspec-change-gate.sh"
-  do [ -f "$c" ] && set -- "$@" "$c"; done
+USAGE="usage: $0 <gate-script> [...] | --family [--resolve]"
+
+FAMILY_MODE=0
+RESOLVE=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --family)  FAMILY_MODE=1; shift ;;
+    --resolve) RESOLVE=1; shift ;;
+    *)         break ;;
+  esac
+done
+
+# A roster flag with explicit paths used to discard the paths silently — the
+# same defect this harness exists to close, reached through argument parsing
+# instead of a file check.
+if [ "$FAMILY_MODE" = "1" ] && [ "$#" -gt 0 ]; then
+  echo "$USAGE" >&2
+  echo "--family cannot be combined with explicit target paths (got: $(harness_safe_label "$1"))" >&2
+  exit 2
+fi
+if [ "$RESOLVE" = "1" ] && [ "$FAMILY_MODE" != "1" ]; then
+  echo "$USAGE" >&2; echo "--resolve requires --family" >&2; exit 2
 fi
 
-[ "$#" -gt 0 ] || { echo "usage: $0 <gate-script> [...] | --family" >&2; exit 2; }
+if [ "$FAMILY_MODE" = "1" ]; then
+  FAMILY="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+  # label|path. Entries are named by a STABLE LOGICAL LABEL throughout roster
+  # output. An absolute path differs per machine, so two complete sweeps would
+  # produce output that cannot be diffed; it also carries $HOME and workspace
+  # roots into CI logs.
+  ROSTER="core|$FAMILY/agenticapps-workflow-core/reference-implementations/openspec-change-gate/openspec-change-gate.sh
+claude-workflow|$FAMILY/claude-workflow/bin/openspec-change-gate.sh
+codex-workflow|$FAMILY/codex-workflow/bin/openspec-change-gate.sh
+opencode-workflow|$FAMILY/opencode-workflow/bin/openspec-change-gate.sh
+pi-agentic-apps-workflow|$FAMILY/pi-agentic-apps-workflow/bin/openspec-change-gate.sh
+shared-install|$HOME/.agenticapps/bin/openspec-change-gate.sh"
 
-for g in "$@"; do
-  [ -f "$g" ] || { echo "  SKIP  $g (not found)"; continue; }
-  score_gate "$g"
-done
+  roster_total=0
+  roster_scored=0
+  roster_unscored=""
+
+  # The absence filter runs AFTER this point, never before the argument count
+  # is checked. Filtering first made a fully-absent roster collapse to zero
+  # arguments and report a usage error — telling the operator their command
+  # line was malformed when in fact their fleet was missing.
+  while IFS='|' read -r label path; do
+    [ -n "$label" ] || continue
+    roster_total=$((roster_total + 1))
+    if harness_screen_target "$path"; then
+      p0="$pass"; f0="$fail"
+      score_gate "$path" "$label"
+      # An entry counts as scored only if it contributed at least one scored
+      # row. Counting it because the harness reached it would permit
+      # `scored 6 of 6` over a run whose scored total is zero.
+      if [ $((pass - p0 + fail - f0)) -gt 0 ]; then
+        roster_scored=$((roster_scored + 1))
+      else
+        roster_unscored="$roster_unscored  $label — reached but produced no scored row"$'\n'
+      fi
+      continue
+    fi
+
+    # "Not vendored" and "unscoreable" are different facts. A host that moved
+    # to pin-and-resolve did not become unmeasurable; the harness merely
+    # declined to go and get the bytes.
+    host_dir="${path%/bin/openspec-change-gate.sh}"
+    if [ "$REASON" = "not found" ] &&
+       [ -f "$host_dir/bin/resolve-core-artifact.sh" ] &&
+       [ -f "$host_dir/tools/core-vendor.manifest" ]; then
+      if [ "$RESOLVE" = "1" ]; then
+        # The resolver's stdout is a PATH THIS HARNESS WILL EXECUTE, and it
+        # comes from a script in another repository. The pin makes the resolver
+        # trustworthy about BYTES — it accepts nothing that does not hash to the
+        # manifest — but it says nothing about where it puts them. Treating that
+        # stdout as an arbitrary filesystem path meant executing whatever it
+        # named and then deleting it.
+        #
+        # So: the resolve runs into a scratch directory this harness owns, the
+        # returned path must land inside it, and the path is screened like any
+        # other target before it is scored. Cleanup removes the scratch
+        # directory, never a path the resolver chose.
+        rdir="$(mktemp -d)"
+        resolved="$(cd "$rdir" && TMPDIR="$rdir" bash \
+                      "$host_dir/bin/resolve-core-artifact.sh" \
+                      "$host_dir/tools/core-vendor.manifest" \
+                      bin/openspec-change-gate.sh 2>/dev/null)"
+        rrc=$?
+        # Absolutise before comparing: a relative path from the resolver would
+        # otherwise never match the prefix and would be rejected as an escape.
+        case "$resolved" in
+          /*) rabs="$resolved" ;;
+          *)  rabs="$rdir/$resolved" ;;
+        esac
+        if [ "$rrc" -eq 0 ] && [ -n "$resolved" ] &&
+           [ "${rabs#"$rdir"/}" != "$rabs" ] && harness_screen_target "$rabs"; then
+          p0="$pass"; f0="$fail"
+          score_gate "$rabs" "$label (resolved from pin)"
+          [ $((pass - p0 + fail - f0)) -gt 0 ] && roster_scored=$((roster_scored + 1))
+          rm -rf "$rdir"
+          continue
+        fi
+        rm -rf "$rdir"
+        if [ "$rrc" -eq 0 ] && [ -n "$resolved" ]; then
+          roster_unscored="$roster_unscored  $label — resolver returned a path outside its scratch dir; refused"$'\n'
+        else
+          roster_unscored="$roster_unscored  $label — resolve from pin FAILED"$'\n'
+        fi
+      else
+        roster_unscored="$roster_unscored  $label — not vendored; resolvable from pin, not attempted (--resolve)"$'\n'
+      fi
+    else
+      roster_unscored="$roster_unscored  $label — $REASON"$'\n'
+    fi
+  done <<< "$ROSTER"
+
+  echo
+  # Emitted on EVERY roster run, including complete ones. A line that appears
+  # only when something is wrong becomes the signal, and its absence then has
+  # to be noticed to mean anything.
+  echo "═══ COVERAGE: scored $roster_scored of $roster_total roster entries"
+  if [ -n "$roster_unscored" ]; then
+    printf '%s' "$roster_unscored"
+  fi
+else
+  [ "$#" -gt 0 ] || { echo "$USAGE" >&2; exit 2; }
+
+  for g in "$@"; do
+    # Naming a target is the caller asserting it should be there. Skipping it
+    # and exiting 0 converts that assertion into this harness's silence.
+    if harness_screen_target "$g"; then
+      score_gate "$g"
+    else
+      harness_report_unscoreable "$(harness_safe_label "$g")" "$REASON"
+      fail=$((fail + 1))
+    fi
+  done
+fi
 
 echo
 echo "═══ TOTAL: $pass passed, $fail failed, $inconclusive inconclusive"
+# The backstop, folded into the one place the exit code is computed. An
+# inconclusive row is NOT a scored row — it is reported precisely when the
+# answer could not be determined, and counting it as evidence gathered would
+# turn "I could not tell" into "I checked".
+if [ $((pass + fail)) -eq 0 ]; then
+  echo "openspec-conformance: certified NOTHING — no row reached a verdict" >&2
+  exit 1
+fi
 [ "$fail" -eq 0 ]

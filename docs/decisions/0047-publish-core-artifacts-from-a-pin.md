@@ -102,14 +102,20 @@ hard failure. Projects that already applied it are unaffected either way.
 - **Migration 0032 installs the producer without version arbitration.** It is a
   pre-existing hazard, untouched here to keep the edit to a shipped migration as
   small as possible. The gate and wrapper are arbitrated; the producer is not.
-- **`change-gate-conformance.sh` reports success for a file that is not there.**
-  Given a missing path it prints `SKIP (not found)` and `TOTAL: 0 passed, 0
-  failed`, and exits 0. `reviewer-cli-conformance.sh`, given the same missing
-  file, fails. Only the second caught the deletion; the gate's own harness went
-  green. A harness that certifies nothing while looking green is the failure
-  mode the harness exists to prevent. Worked around here with a `test -s` after
-  each resolve in `openspec-gate.yml`; **the fix belongs in core**, which owns
-  both harnesses, and is not made by this change.
-- **The other three hosts still vendor.** `codex-workflow` keeps its copies and
-  a provenance-style manifest; `pi-agentic-apps-workflow` has no manifest at
-  all. This ADR covers claude-workflow only.
+- ~~**`change-gate-conformance.sh` reports success for a file that is not
+  there.**~~ **Closed 2026-07-31.** Given a missing path it used to print `SKIP
+  (not found)` and `TOTAL: 0 passed, 0 failed`, and exit 0, while
+  `reviewer-cli-conformance.sh` failed on the same input. Only the second caught
+  a deletion; the gate's own harness went green having certified nothing. The
+  fix belonged in core, which owns both harnesses, and core made it in PR #49
+  (spec 1.4.0 / §20): a named target that is absent, empty or unreadable is now
+  reported as `UNSCOREABLE <label> — <reason>` and fails. It reached this repo
+  by advancing the pin `6cd3b9c` → `ef030d0`, which is what a pin is for — the
+  fix arrives as a re-verified revision, not as a re-vendor PR. The `test -s`
+  after each resolve in `openspec-gate.yml` is now redundant; removing it is a
+  separate change, because a redundant assertion is not a defect.
+- **Two of the other three hosts still vendor.** `codex-workflow` adopted the
+  resolver and this manifest shape in its PR #33 and now pins the same core
+  commit. `opencode-workflow` and `pi-agentic-apps-workflow` have no resolver
+  and no manifest, and sit on gate 1.3.1 / wrapper 1.1.0. This ADR covers
+  claude-workflow only.
