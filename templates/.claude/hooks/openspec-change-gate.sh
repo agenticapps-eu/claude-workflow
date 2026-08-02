@@ -72,11 +72,26 @@ report_rate_limited() {
   report "$@"
 }
 
-# Name this host so its own reviews do not count toward the independence
-# calculation the gate REPORTS. Retained deliberately: the companion change
-# `track-and-conform-plan-review` retires OPENSPEC_GATE_SELF as an identity
-# source, and both changes editing this line would conflict.
-export OPENSPEC_GATE_SELF="${OPENSPEC_GATE_SELF:-claude}"
+# NO `export OPENSPEC_GATE_SELF` — and this is a deliberate removal, not an
+# omission (tasks 4b.4, 4b.7).
+#
+# Every project's shim exported it, with a comment saying it named this host so
+# its own reviews would not count toward the independence threshold. That
+# comment stopped being true at gate 1.5.0: `OPENSPEC_GATE_SELF` is IGNORED,
+# retained by the implementation "only so an operator who exported it is not
+# misled by silence". The implementing host is read from the artifact's trailer,
+# because CI and pre-commit evaluate evidence OTHER hosts produced and an
+# environment identity names the wrong party.
+#
+# Task 4b.4 said to leave the line alone because the companion change
+# `track-and-conform-plan-review` would also edit it and the two would conflict.
+# That premise expired: the companion change was ARCHIVED on 2026-08-01, which
+# is why 4b.7 asks for the residual to be re-checked rather than restated. It is
+# checked, and it is discharged — so this change fixes THREE of the gate shim's
+# three violations, not two.
+#
+# Setting a variable the implementation ignores, under a comment claiming it
+# does something, is exactly the stale residue this change exists to remove.
 
 # Candidate 1. An override that is set but unusable does NOT fall through — a
 # silently ignored explicit instruction is worse than a loud one. Not rate
