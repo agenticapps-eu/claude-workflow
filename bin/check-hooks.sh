@@ -110,11 +110,15 @@ if [ "$HOOK_FILES_OK" -eq 1 ] && [ -n "$HOOK_FILES" ]; then
     expected=""
     case "$base" in
       database-sentinel)      expected="PreToolUse" ;;
-      design-shotgun-gate)    expected="PreToolUse" ;;
+      openspec-change-gate)   expected="PreToolUse" ;;
       multi-ai-review-gate)   expected="PreToolUse" ;;
-      skill-router-log)       expected="PostToolUse" ;;
-      session-bootstrap)      expected="SessionStart" ;;
-      phase-sentinel)         expected="Stop" ;;
+      normalize-claude-md)    expected="PostToolUse" ;;
+      # design-shotgun-gate, skill-router-log, session-bootstrap and
+      # phase-sentinel were deleted fleet-wide by shim-project-hooks. They are
+      # not merely absent from this map: asserting an expected event for a hook
+      # the workflow no longer ships would encode a binding the change removed.
+      # The two SURVIVING load-bearing gates were never asserted here at all,
+      # which is the gap that mattered - openspec-change-gate is the §18 gate.
     esac
     if [ -n "$expected" ]; then
       if printf '%s' "$ev" | tr ',' '\n' | grep -qxF "$expected"; then
@@ -156,10 +160,18 @@ if [ -f .claude/settings.json ] && jq empty .claude/settings.json 2>/dev/null; t
     check_fail "cannot check for dead hooks — hook set derivation failed above"
   fi
   # The plan-review gate is load-bearing (spec §02 plan-review, ADR-0025).
-  if [ "$HOOK_FILES_OK" -eq 1 ] && printf '%s\n' "$HOOK_FILES" | grep -qxF "multi-ai-review-gate.sh"; then
-    check_ok "plan-review gate (multi-ai-review-gate) registered"
+  #
+  # Spec §18 RETARGETED it: multi-ai-review-gate.sh became openspec-change-gate.sh,
+  # same hook slot and same mechanism, new predicate. This check still demanded
+  # the pre-retarget filename, so it reported every §18-conformant project as
+  # having an unbound §02 gate — a stale name outliving the thing it named,
+  # which is the failure class shim-project-hooks exists to remove. Either name
+  # satisfies it, so a project that has not yet migrated is not newly broken.
+  if [ "$HOOK_FILES_OK" -eq 1 ] && printf '%s\n' "$HOOK_FILES" \
+       | grep -qxE "multi-ai-review-gate\.sh|openspec-change-gate\.sh"; then
+    check_ok "plan-review gate registered (§18: openspec-change-gate, or the pre-retarget multi-ai-review-gate)"
   else
-    check_fail "plan-review gate (multi-ai-review-gate) NOT registered — spec §02 gate unbound"
+    check_fail "plan-review gate NOT registered — spec §02 gate unbound (expected openspec-change-gate.sh)"
   fi
 else
   check_fail ".claude/settings.json missing or invalid JSON"
