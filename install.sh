@@ -40,6 +40,25 @@ for arg in "$@"; do
 done
 run() { if [ "$DRY_RUN" -eq 1 ]; then echo "    would run: $*"; else "$@"; fi; }
 
+# git is a declared prerequisite (core spec §21). It is invoked below for the
+# submodule refresh and further down to resolve this repo's own hooks
+# directory, and was never checked for — so on a machine without it the failure
+# surfaced as git's own "command not found", naming the symptom rather than the
+# missing tool. §21 requires reporting a missing prerequisite BY NAME together
+# with what will not work without it.
+#
+# It is reported and never offered: git is a system runtime, and installing one
+# is platform-dependent in ways a shell script handles badly — a package
+# manager per OS, a version manager that may already own the tool, and a sudo
+# prompt this cannot reason about. Skill linking does not need git, so this is
+# a warning and not a failure; the steps that do need it say so where they are.
+if ! command -v git >/dev/null 2>&1; then
+  echo "WARNING: 'git' not found on PATH." >&2
+  echo "  the vendor/agenticapps-shared submodule refresh and this repo's own" >&2
+  echo "  pre-commit hook wiring will be skipped. Skill linking is unaffected." >&2
+  echo "  git is a system runtime — install it with your OS package manager." >&2
+fi
+
 # Advance the agenticapps-shared submodule (idempotent: safe on fresh AND existing clones).
 # A3: do NOT guard on VERSION-missing — after a `git pull` an existing clone must move to the
 # new gitlink SHA. sync picks up any .gitmodules URL change; update --init advances/initialises.
